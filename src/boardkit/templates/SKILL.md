@@ -1,15 +1,15 @@
 ---
 name: $skill_name
-description: Retrieve work state from GitHub for this repo — the $project_name board and its issues — efficiently, by filtering server-side instead of listing everything. Use whenever the question is what to work on next, what is ready or in flight, where an issue or workstream stands, what is blocked or awaiting a decision, whether something was already done, or what changed for an item — and before citing any work item. Triggers on "what next", "what should I work on", "what's ready", "status of", "which workstream", "is X done", "has this been discussed", plus any request to plan, prioritize, or pick up product work here.
+description: Retrieve work state from GitHub for this repo — the $project_name Project board and its issues — efficiently, by filtering server-side instead of listing everything. Use whenever the question is what to work on next, what is ready or in flight, where an issue or workstream stands, what is blocked or awaiting a decision, whether something was already done, or what changed for an item — and before citing any work item. Triggers on "what next", "what should I work on", "what's ready", "status of", "which workstream", "is X done", "has this been discussed", plus any request to plan, prioritize, or pick up product work here.
 ---
 
 # Retrieving work state from GitHub
 
-The [$project_name Project]($project_url) owns execution state. The plans and
-documents in this repository own intent, and they stay approved long after
-their work is finished — so ranking work from plans alone reliably proposes
-something already done, already blocked, or not yet refined enough to start.
-Query GitHub first, every time.
+The [$project_name Project]($project_url)
+owns execution state. The plans and documents in this repository own intent,
+and they stay approved long after their work is finished — so ranking work
+from plans alone reliably proposes something already done, already blocked, or
+not yet refined enough to start. Query GitHub first, every time.
 
 ## The rule that generalizes
 
@@ -23,7 +23,7 @@ Run `board` from anywhere in the repository.
 
 | Command | Answers |
 |---|---|
-| `board` | $group_by-by-status rollup. Start here. |
+| `board` | $group_title-by-status rollup. Start here. |
 | `board ready` | What is actually startable now. |
 | `board group <name>` | One $group_by, grouped by status. |
 | `board item <n>` | One item plus its sub-issues. |
@@ -53,15 +53,16 @@ and joins the result back to the board.
 
 ## The limit worth knowing
 
-Status$field_list are Project fields, not issue fields, so
-`gh issue list --search` cannot filter on them; a topic search must be joined
-back to the board.
+Status$field_list
+are Project fields, not issue fields, so `gh issue list --search` cannot
+filter on them; a topic search must be joined back to the board.
 
 ## Reading the columns
 
-Columns are claims about refinement, not priority: $status_list. A parent can
-sit in an in-flight column while every child of it is still unstartable, so
-check children before proposing a parent.
+Columns are claims about refinement, not priority:
+$status_list.
+A parent can sit in an in-flight column while every child of it is still
+unstartable, so check children before proposing a parent.
 
 Several workstreams may be deliberately in flight at once. Their order assigns
 no priority, and neither does an issue number. When none has been chosen,

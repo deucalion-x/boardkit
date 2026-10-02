@@ -25,10 +25,20 @@ def test_the_frontmatter_stays_first_so_the_skill_still_loads(tmp_path):
     assert render(config(tmp_path)).startswith("---\nname: places-github")
 
 
+def flat(text: str) -> str:
+    """The template hard-wraps, so compare sentences without their line breaks."""
+    return " ".join(text.split())
+
+
 def test_field_names_come_from_the_config(tmp_path):
-    assert "Status, workstream and effort are Project fields" in render(config(tmp_path))
+    assert "Status, workstream and effort are Project fields" in flat(render(config(tmp_path)))
     one = render(config(tmp_path, fields=("team",)))
-    assert "Status and team are Project fields" in one
+    assert "Status and team are Project fields" in flat(one)
+
+
+def test_the_rollup_label_follows_the_grouping_field(tmp_path):
+    assert "| `board` | Workstream-by-status rollup." in render(config(tmp_path))
+    assert "| `board` | Team-by-status rollup." in render(config(tmp_path, fields=("team",)))
 
 
 def test_project_notes_are_appended_verbatim(tmp_path):
