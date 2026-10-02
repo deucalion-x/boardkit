@@ -21,6 +21,9 @@ from .config import load
 from .gh import BoardError
 
 
+BOARD_COMMANDS = {"rollup", "ready", "group", "ws", "item", "find", "json"}
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     command = argv[0] if argv else "rollup"
@@ -53,6 +56,10 @@ def dispatch(command: str, args: list[str]) -> int:
         return usage()
     if command in {"-h", "--help", "help"}:
         return usage(0)
+    if command not in BOARD_COMMANDS:
+        return usage()
+    if command == "item" and not (args and args[0].lstrip("#").isdigit()):
+        return usage()
 
     items = board_module.rows(config)
     index = {item["number"]: item for item in items}
@@ -65,8 +72,6 @@ def dispatch(command: str, args: list[str]) -> int:
         field, name = config.grouping_field, " ".join(args).lower()
         board_module.show([i for i in items if name in str(i[field]).lower()], config)
     elif command == "item":
-        if not args or not args[0].lstrip("#").isdigit():
-            return usage()
         number = int(args[0].lstrip("#"))
         board_module.show([index[number]] if number in index else [], config)
         kids = [index[n] for n in board_module.children(number, config) if n in index]
@@ -79,8 +84,6 @@ def dispatch(command: str, args: list[str]) -> int:
     elif command == "json":
         json.dump(items, sys.stdout, indent=2)
         print()
-    else:
-        return usage()
     return 0
 
 
