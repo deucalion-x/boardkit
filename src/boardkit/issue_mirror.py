@@ -23,7 +23,7 @@ BANNER = (
 
 def render(config: Config) -> str:
     issues = gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                     "--limit", "200", "--json", "number,title,body,labels")
+                     "--limit", str(config.item_limit), "--json", "number,title,body,labels")
     issues.sort(key=lambda issue: issue["number"])
     # Markdown, one line per line of body, so a reworded sentence shows up as a
     # one-line diff instead of one enormous escaped string.

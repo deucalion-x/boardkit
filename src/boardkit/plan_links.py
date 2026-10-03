@@ -32,7 +32,7 @@ def patterns(config: Config) -> tuple[re.Pattern, re.Pattern, re.Pattern, str]:
 
 def issues(config: Config) -> list[dict]:
     return gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                   "--limit", "200", "--json", "number,body")
+                   "--limit", str(config.item_limit), "--json", "number,body")
 
 
 def sha_for(path: str, config: Config) -> str | None:

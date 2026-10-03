@@ -67,7 +67,7 @@ def open_numbers(config: Config) -> set[int]:
     """Issue numbers still open. `gh project item-list` does not carry state,
     so a closed issue stays on the board and would be counted as work."""
     issues = gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                     "--limit", "200", "--json", "number")
+                     "--limit", str(config.item_limit), "--json", "number")
     return {issue["number"] for issue in issues}
 
 

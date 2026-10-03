@@ -138,3 +138,10 @@ def test_a_dedicated_file_wins_over_a_table_in_pyproject(tmp_path):
     write(tmp_path, "boardkit.toml",
           'owner = "dedicated"\nproject = "9"\nrepo = "dedicated/widgets"\n')
     assert load(tmp_path).owner == "dedicated"
+
+
+def test_the_fetch_sizes_are_modest_because_graphql_charges_for_them(tmp_path):
+    """Points are charged for nodes requested, not requests made."""
+    write(tmp_path, "pyproject.toml", BARE)
+    config = load(tmp_path)
+    assert (config.item_limit, config.field_limit) == (100, 30)

@@ -112,9 +112,9 @@ def pull(config: Config, store: Store) -> Snapshot:
     project = gh_json("project", "view", target, "--owner", config.owner,
                       "--format", "json")
     listed = gh_json("project", "field-list", target, "--owner", config.owner,
-                     "--limit", "50", "--format", "json")
+                     "--limit", str(config.field_limit), "--format", "json")
     items = gh_json("project", "item-list", target, "--owner", config.owner,
-                    "--limit", "200", "--format", "json")
+                    "--limit", str(config.item_limit), "--format", "json")
     # Fields are parsed first: when config declares none, they are what says
     # which keys an item carries.
     fields = parse_fields(listed.get("fields", []), config)

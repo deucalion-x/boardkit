@@ -18,15 +18,16 @@ import time
 # and `gh` hands us its message without the status code or the `retry-after`
 # header that would tell us how long to wait. So the message is the signal.
 LIMITED = re.compile(r"rate limit|secondary rate|abuse detection", re.IGNORECASE)
-# Only used when GitHub declines to say how long to wait. Its own guidance for
-# a secondary limit with no `retry-after` is to wait at least a minute, so the
-# first step matches that rather than guessing shorter and tripping again.
+# Only reached when the budget is fine and GitHub still refused — the burst
+# limiter, which sends no header anyone can read. GitHub's guidance for that
+# case is to wait at least a minute.
 BACKOFF = (60, 150, 300)
+# Below this many points, a failure is the budget rather than a burst.
+LOW = 100
 RETRIES = 0
 # `retry-after` is in seconds; a response carrying it is GitHub answering the
 # question directly, which beats any schedule chosen here.
-# No `retry-after` is parsed anywhere: see `budget_reset` for why there is
-# never one to read through `gh`.
+
 
 
 class BoardError(RuntimeError):
@@ -41,32 +42,31 @@ def once(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True)
 
 
-def budget_reset() -> int | None:
-    """Seconds until the hourly budget refills, when it is what ran out.
+REMAINING = re.compile(r"^x-ratelimit-remaining:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
+RESET_AT = re.compile(r"^x-ratelimit-reset:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
+# One trivial query, costing a single point, to read the headers that carry
+# the truth.
+PROBE = ["gh", "api", "graphql", "--include", "-f", "query={viewer{login}}"]
 
-    GitHub limits two different ways and they need different waits. The hourly
-    point budget reports itself and refills at a known time, possibly most of
-    an hour away. The burst limiter does not report at all: `gh project` hands
-    us a message with no status code, and `/rate_limit` is exempt from limiting
-    so it answers 200 with a full budget even while calls are being refused —
-    which is how this function came to exist and then to do less than it first
-    appeared to. Its `retry-after` is never there to read.
 
-    So: this tells budget exhaustion from a burst. Only the first has a
-    knowable wait.
+def budget() -> tuple[int, int] | None:
+    """Points left on the GraphQL budget, and seconds until it refills.
+
+    Read from a real response's headers rather than from `gh api rate_limit`,
+    which reports a different and lower figure — it said 210 points used while
+    the headers said 4983, and acting on it led to diagnosing a request burst
+    where the budget was simply spent.
+
+    The cost is not one point per call: GraphQL charges for the nodes a query
+    touches, so `item-list --limit 200` against a small board is expensive and
+    a day of syncing can exhaust 5000 without ever making many requests.
     """
-    result = once(["gh", "api", "rate_limit"])
-    if result.returncode != 0:
+    result = once(PROBE)
+    headers = (result.stdout or "") + (result.stderr or "")
+    left, reset = REMAINING.search(headers), RESET_AT.search(headers)
+    if not left or not reset:
         return None
-    try:
-        resources = json.loads(result.stdout)["resources"]
-    except (ValueError, KeyError):
-        return None
-    for name in ("graphql", "core"):
-        found = resources.get(name, {})
-        if found.get("remaining") == 0:
-            return max(0, int(found.get("reset", 0)) - int(time.time()))
-    return None
+    return int(left.group(1)), max(0, int(reset.group(1)) - int(time.time()))
 
 
 def run(args: list[str], retries: int | None = None) -> str:
@@ -94,15 +94,17 @@ def run(args: list[str], retries: int | None = None) -> str:
                     f"lost — queued changes are kept. Try again in a few "
                     f"minutes, or use `--wait` to sit through it.")
             raise BoardError(f"{' '.join(args)} failed: {detail}")
-        spent = budget_reset()
-        if spent is not None:
-            print(f"the hourly API budget is spent; it refills in {spent}s. "
-                  f"Not waiting that out.", file=sys.stderr)
+        found = budget()
+        if found is not None and found[0] < LOW:
+            left, refill = found
             raise RateLimited(
-                f"the hourly GitHub API budget is spent and refills in "
-                f"{spent}s. Queued changes are kept; run this again after.")
+                f"the GraphQL budget is spent ({left} of 5000 points left). It "
+                f"refills in {refill}s ({refill // 60}m). Queued changes are "
+                f"kept; run this again after then.")
+        # Budget to spare, so this is the burst limiter, which reports nothing
+        # and has to be waited out blind.
         pause = BACKOFF[attempt]
-        print(f"rate limited by a request burst; waiting {pause}s "
+        print(f"rate limited with budget to spare; waiting {pause}s "
               f"({attempt + 1} of {retries})", file=sys.stderr)
         time.sleep(pause)
     raise BoardError(f"{' '.join(args)} failed")

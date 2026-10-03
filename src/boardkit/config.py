@@ -104,6 +104,11 @@ class Config(BaseModel):
     fields: tuple[ProjectField, ...] = ()
     group_by: str = ""
     # `mirror` and `links` are optional; a repo may want the board reader alone.
+    # GraphQL charges for the nodes a query asks for, not for the request, so
+    # `--limit 200` against a 36-item board costs as if it had 200. These are
+    # deliberately modest; raise them for a board that outgrows them.
+    item_limit: int = 100
+    field_limit: int = 30
     mirror_path: str = ""
     docs_prefix: str = "docs/"
     project_name: str = ""

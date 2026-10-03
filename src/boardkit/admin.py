@@ -47,7 +47,7 @@ def existing(config: Config, number: str) -> tuple[str, tuple[ProjectField, ...]
     project = gh_json("project", "view", number, "--owner", config.owner,
                       "--format", "json")
     fields = gh_json("project", "field-list", number, "--owner", config.owner,
-                     "--limit", "50", "--format", "json")
+                     "--limit", str(config.field_limit), "--format", "json")
     return project.get("id", ""), parse_fields(fields.get("fields", []), config)
 
 

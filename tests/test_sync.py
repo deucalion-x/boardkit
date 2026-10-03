@@ -247,35 +247,41 @@ def test_waiting_is_not_the_default_so_a_prompt_comes_back(monkeypatch):
     assert len(calls) == 1
 
 
-def test_a_spent_hourly_budget_is_refused_rather_than_waited_out(monkeypatch):
-    """Minutes away, and knowable — unlike a burst, which is neither."""
+def headers(remaining: int, in_seconds: int) -> str:
+    """What a real GraphQL response carries. `gh api rate_limit` reports a
+    different, lower number — reading that is what made a spent budget look
+    like a request burst."""
+    from boardkit import gh as plumbing
+    return (f"HTTP/2.0 200 OK\nX-Ratelimit-Limit: 5000\n"
+            f"X-Ratelimit-Remaining: {remaining}\nX-Ratelimit-Resource: graphql\n"
+            f"X-Ratelimit-Reset: {int(plumbing.time.time()) + in_seconds}\n\n{{}}")
+
+
+def test_a_spent_budget_says_exactly_when_it_refills(monkeypatch):
     import subprocess
 
     from boardkit import gh as plumbing
-    now = int(plumbing.time.time())
 
     def limited(args):
-        if args[:3] == ["gh", "api", "rate_limit"]:
-            return subprocess.CompletedProcess(args, 0, plumbing.json.dumps(
-                {"resources": {"graphql": {"remaining": 0, "reset": now + 900}}}), "")
+        if args[:3] == ["gh", "api", "graphql"]:
+            return subprocess.CompletedProcess(args, 0, headers(16, 120), "")
         return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
 
     monkeypatch.setattr(plumbing, "once", limited)
     monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
-    with pytest.raises(plumbing.RateLimited, match="hourly GitHub API budget"):
+    with pytest.raises(plumbing.RateLimited, match="16 of 5000 points left"):
         plumbing.run(["gh", "project", "view"], retries=2)
 
 
-def test_a_burst_with_budget_to_spare_uses_the_schedule(monkeypatch):
+def test_a_refusal_with_budget_to_spare_is_a_burst_and_is_waited_out(monkeypatch):
     import subprocess
 
     from boardkit import gh as plumbing
     waits = []
 
     def limited(args):
-        if args[:3] == ["gh", "api", "rate_limit"]:
-            return subprocess.CompletedProcess(args, 0, plumbing.json.dumps(
-                {"resources": {"graphql": {"remaining": 4790, "reset": 0}}}), "")
+        if args[:3] == ["gh", "api", "graphql"]:
+            return subprocess.CompletedProcess(args, 0, headers(4800, 1800), "")
         return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
 
     monkeypatch.setattr(plumbing, "once", limited)
