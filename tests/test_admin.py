@@ -167,3 +167,51 @@ def test_a_view_that_already_exists_is_left_alone(monkeypatch):
     monkeypatch.setattr(admin, "make_view",
                         lambda *a: (_ for _ in ()).throw(AssertionError("made again")))
     admin.apply_views(config, "5", "PVT_1", ())
+
+
+def test_an_option_differing_only_in_case_is_renamed_not_duplicated():
+    """GitHub seeds `In Progress`; a config asking for `In progress` was
+    getting both, with the items split between two columns."""
+    from boardkit.admin import align
+    wanted = ProjectField(name="status", data_type="SINGLE_SELECT",
+                          options=("Inbox", "Todo", "In progress", "Done"))
+    present = ProjectField(name="status", data_type="SINGLE_SELECT",
+                           options=("Todo", "In Progress", "Done"),
+                           option_ids={"Todo": "a", "In Progress": "b", "Done": "c"})
+    sent = align(wanted, present)
+    assert [o["name"] for o in sent] == ["Inbox", "Todo", "In progress", "Done"]
+    # The id travels with it, so the one card in that column stays put.
+    assert next(o for o in sent if o["name"] == "In progress")["id"] == "b"
+
+
+def test_an_option_the_board_has_and_config_does_not_is_kept():
+    from boardkit.admin import align
+    wanted = ProjectField(name="status", data_type="SINGLE_SELECT",
+                          options=("Todo", "Done"))
+    present = ProjectField(name="status", data_type="SINGLE_SELECT",
+                           options=("Todo", "Blocked", "Done"),
+                           option_ids={"Todo": "a", "Blocked": "b", "Done": "c"})
+    assert [o["name"] for o in align(wanted, present)] == ["Todo", "Done", "Blocked"]
+
+
+def test_a_board_already_carrying_both_spellings_keeps_both():
+    """Dropping one would unset every item sitting in it — the thing this
+    verb promises never to do."""
+    from boardkit.admin import align, duplicates
+    wanted = ProjectField(name="status", data_type="SINGLE_SELECT",
+                          options=("Todo", "In progress", "Done"))
+    present = ProjectField(name="status", data_type="SINGLE_SELECT",
+                           options=("Todo", "In progress", "Done", "In Progress"),
+                           option_ids={"Todo": "a", "In progress": "mine",
+                                       "Done": "c", "In Progress": "githubs"})
+    sent = align(wanted, present)
+    assert {o.get("id") for o in sent} == {"a", "mine", "c", "githubs"}
+    # The one config names keeps the id that has the items in it.
+    assert next(o for o in sent if o["name"] == "In progress")["id"] == "mine"
+    assert duplicates(present) == [("In progress", "In Progress")]
+
+
+def test_options_that_agree_are_not_reported_as_duplicates():
+    from boardkit.admin import duplicates
+    assert duplicates(ProjectField(name="status", data_type="SINGLE_SELECT",
+                                   options=("Todo", "Done"))) == []

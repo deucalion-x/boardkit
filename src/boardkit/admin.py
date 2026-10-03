@@ -87,16 +87,56 @@ def align(wanted: ProjectField, present: ProjectField) -> list[dict] | None:
     are. Nothing is ever dropped: deleting an option unsets every item in it,
     and that is not a side effect `create` should have. An option the board
     has but config does not keeps its place, at the end.
+
+    Matching ignores case, because GitHub seeds a new project with `In
+    Progress` and a config asking for `In progress` was getting a second
+    column rather than the one it meant — two columns one keystroke apart,
+    with the items split between them. Keeping the id means the option is
+    renamed to the spelling config asked for rather than replaced.
+
+    A board that already carries both keeps both: the one config names is
+    renamed, and the other stays at the end rather than being deleted under
+    the items sitting in it. `duplicates` is what says so out loud.
     """
     if wanted.data_type != "SINGLE_SELECT" or not wanted.options:
         return None
     if list(present.options) == list(wanted.options):
         return None
-    known = dict(present.option_ids)
-    extra = [name for name in present.options if name not in wanted.options]
+    ids = dict(present.option_ids)
+    # An exactly-spelled option is the one to rename; only when there is none
+    # does a differently-cased one stand in for it.
+    chosen: dict[str, str] = {}
+    for name in wanted.options:
+        if name in ids:
+            chosen[name] = ids[name]
+    for name in wanted.options:
+        if name in chosen:
+            continue
+        match = next((have for have in present.options
+                      if have.lower() == name.lower() and ids.get(have) not in chosen.values()),
+                     None)
+        if match:
+            chosen[name] = ids[match]
+    taken = set(chosen.values())
+    extra = [name for name in present.options if ids.get(name) not in taken]
     ordered = [*wanted.options, *extra]
-    return [{"name": name, **({"id": known[name]} if name in known else {})}
+    return [{"name": name, **({"id": chosen[name]} if name in chosen else
+                              {"id": ids[name]} if name in ids else {})}
             for name in ordered]
+
+
+def duplicates(present: ProjectField) -> list[tuple[str, ...]]:
+    """Options on the board that differ only in case.
+
+    Two such columns split the same work in a way nobody notices from the
+    board itself, so `apply` says which they are. They are not merged here:
+    moving items between columns is a change to contents, and this verb
+    changes shape.
+    """
+    seen: dict[str, list[str]] = {}
+    for name in present.options:
+        seen.setdefault(name.lower(), []).append(name)
+    return [tuple(names) for names in seen.values() if len(names) > 1]
 
 
 DEFAULT_COLOR = "GRAY"
@@ -250,6 +290,11 @@ def apply(config: Config, dry: bool = False) -> int:
             print(f"  aligned {current.display} options")
             note("aligned_options", field=current.name,
                     options=[o["name"] for o in options])
+        for pair in duplicates(current) if current else []:
+            print(f"  warning: {current.display} has {' and '.join(repr(n) for n in pair)}, "
+                  f"which differ only in case. Items are split between them; "
+                  f"move them in the browser and delete the empty one.")
+            note("duplicate_options", field=current.name, options=list(pair))
 
     project_id = found[0] if found else ""
     for field in missing:
