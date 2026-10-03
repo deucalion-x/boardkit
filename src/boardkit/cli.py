@@ -11,9 +11,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
 
   board set <n> <field> <v>  queue a local change
   board rejected [--clear]   local changes that lost to a remote change
+  board log [n]              what boardkit did, for audit and debugging
   board sync [push|status]   pull, drain the queue, or report
-                             --wait: sit through a rate limit instead of
-                             stopping, for an unattended run
   board auth [--refresh]     what this gh login is allowed to do
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
@@ -32,7 +31,6 @@ import sys
 from . import board as board_module
 from . import admin, auth, issue_mirror, plan_links, setup, skill, sync
 from .config import load
-from . import gh as gh_module
 from .gh import BoardError
 from .store import Store
 
@@ -77,12 +75,12 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "auth":
         return auth.report(config, refresh="--refresh" in args)
     if command == "sync":
-        if "--wait" in args:
-            gh_module.RETRIES = len(gh_module.BACKOFF)
         verbs = [a for a in args if not a.startswith("-")]
         return run_sync(config, store, verbs[0] if verbs else "pull")
     if command == "set":
         return queue(store, args)
+    if command == "log":
+        return history(store, int(args[0]) if args and args[0].isdigit() else 30)
     if command == "rejected":
         return rejected(store, clear="--clear" in args)
     if command == "mirror":
@@ -190,11 +188,24 @@ def rejected(store: Store, clear: bool) -> int:
         return 0
     for rejection in rejections:
         write = rejection.write
-        print(f"#{write.number} {write.field}: wanted {write.value!r}, "
-              f"GitHub holds {rejection.remote!r} — {rejection.reason}")
+        holds = f"GitHub holds {rejection.remote!r}; " if rejection.remote else ""
+        print(f"#{write.number} {write.field}: wanted {write.value!r} — "
+              f"{holds}{rejection.reason}")
     print(f"\n{len(rejections)} rejected. Re-decide, then `board set` again; "
           f"`board rejected --clear` to drop them.")
     return 1
+
+
+def history(store: Store, limit: int) -> int:
+    entries = store.history(limit)
+    if not entries:
+        print("Nothing recorded yet.")
+        return 0
+    for entry in entries:
+        detail = "  ".join(f"{key}={value}" for key, value in entry.items()
+                           if key not in {"at", "action"})
+        print(f'{entry["at"]}  {entry["action"]:18} {detail}')
+    return 0
 
 
 def report_queue(store: Store) -> int:

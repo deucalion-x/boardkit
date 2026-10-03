@@ -10,23 +10,15 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 import time
+
+from .trail import note
 
 # GitHub limits requests two ways. The hourly point budget is generous and
 # reports itself in headers; the burst limiter is the one that actually bites,
 # and `gh` hands us its message without the status code or the `retry-after`
 # header that would tell us how long to wait. So the message is the signal.
 LIMITED = re.compile(r"rate limit|secondary rate|abuse detection", re.IGNORECASE)
-# Only reached when the budget is fine and GitHub still refused — the burst
-# limiter, which sends no header anyone can read. GitHub's guidance for that
-# case is to wait at least a minute.
-BACKOFF = (60, 150, 300)
-# Below this many points, a failure is the budget rather than a burst.
-LOW = 100
-RETRIES = 0
-# `retry-after` is in seconds; a response carrying it is GitHub answering the
-# question directly, which beats any schedule chosen here.
 
 
 
@@ -69,45 +61,42 @@ def budget() -> tuple[int, int] | None:
     return int(left.group(1)), max(0, int(reset.group(1)) - int(time.time()))
 
 
-def run(args: list[str], retries: int | None = None) -> str:
+def record(args: list[str], detail: str, found: tuple[int, int] | None) -> None:
+    """A refusal, with the budget as it stood and GitHub's own words.
+
+    Recorded because the alternative is reasoning about our own paraphrase:
+    this package spent an afternoon treating a spent budget as a request burst,
+    because the message had been reworded and the numbers came from an endpoint
+    reporting a different figure.
+    """
+    left, refill = found if found is not None else (None, None)
+    note("refused", command=" ".join(args[:3]), remaining=left,
+         reset_in=refill, said=detail)
+
+
+def run(args: list[str]) -> str:
     """Run a command and return stdout, turning the usual failures into advice.
 
-    A rate-limited call fails immediately unless waiting was asked for. The
-    caller can do nothing but wait, but making them wait at a prompt for
-    minutes is worse than telling them to come back: the queue is durable, so
-    nothing is lost by stopping. `--wait` is for an unattended sync, where
-    there is no one to come back.
+    A rate-limited call is not retried. The queue is durable, so stopping costs
+    nothing, and the one thing worth saying is when the budget comes back —
+    which the headers answer exactly.
     """
     if shutil.which(args[0]) is None:
         raise BoardError(f"{args[0]} is not installed or not on PATH")
-    retries = RETRIES if retries is None else retries
-    for attempt in range(retries + 1):
-        result = once(args)
-        if result.returncode == 0:
-            return result.stdout
-        detail = (result.stderr or result.stdout).strip()
-        if not LIMITED.search(detail) or attempt == retries:
-            if LIMITED.search(detail):
-                waited = f" after {sum(BACKOFF[:retries])}s" if retries else ""
-                raise RateLimited(
-                    f"GitHub is rate limiting this account{waited}. Nothing was "
-                    f"lost — queued changes are kept. Try again in a few "
-                    f"minutes, or use `--wait` to sit through it.")
-            raise BoardError(f"{' '.join(args)} failed: {detail}")
-        found = budget()
-        if found is not None and found[0] < LOW:
-            left, refill = found
-            raise RateLimited(
-                f"the GraphQL budget is spent ({left} of 5000 points left). It "
-                f"refills in {refill}s ({refill // 60}m). Queued changes are "
-                f"kept; run this again after then.")
-        # Budget to spare, so this is the burst limiter, which reports nothing
-        # and has to be waited out blind.
-        pause = BACKOFF[attempt]
-        print(f"rate limited with budget to spare; waiting {pause}s "
-              f"({attempt + 1} of {retries})", file=sys.stderr)
-        time.sleep(pause)
-    raise BoardError(f"{' '.join(args)} failed")
+    result = once(args)
+    if result.returncode == 0:
+        return result.stdout
+    detail = (result.stderr or result.stdout).strip()
+    if not LIMITED.search(detail):
+        raise BoardError(f"{' '.join(args)} failed: {detail}")
+    found = budget()
+    record(args, detail, found)
+    when = (f" It refills in {found[1]}s ({found[1] // 60}m)."
+            if found is not None else "")
+    left = f"{found[0]} of 5000 points left." if found is not None else ""
+    raise RateLimited(
+        f"GitHub refused this for rate. {left}{when} Queued changes are kept; "
+        f"run this again after.\n  GitHub said: {detail}")
 
 
 def run_json(args: list[str]):

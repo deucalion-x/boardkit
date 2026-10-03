@@ -82,6 +82,7 @@ def test_a_write_loses_when_the_field_moved_on_github():
     applies, lost = plan([Write(number=7, field="status", value="In progress",
                                 was="Done")], snapshot())
     assert applies == [] and lost[0][1] == "Ready"
+    assert "changed on GitHub" in lost[0][2]
 
 
 def test_a_write_already_true_remotely_is_dropped_rather_than_pushed():
@@ -92,7 +93,9 @@ def test_a_write_already_true_remotely_is_dropped_rather_than_pushed():
 
 def test_a_write_against_an_item_that_left_the_board_loses():
     applies, lost = plan([Write(number=99, field="status", value="Ready")], snapshot())
-    assert applies == [] and "no longer on the board" in lost[0][1]
+    # The reason is a reason, not a value dressed up as one.
+    assert applies == [] and lost[0][1] == ""
+    assert "closed or no longer on the board" in lost[0][2]
 
 
 def test_rejected_writes_land_in_the_store_with_both_values(tmp_path):
@@ -183,26 +186,32 @@ def test_a_repo_that_names_no_columns_is_not_warned_about_them():
     assert drift(snapshot(), CONFIG.model_copy(update={"status_order": ()})) == []
 
 
-def test_a_rate_limited_call_is_retried_rather_than_failed(monkeypatch):
-    """The caller can do nothing but wait, and a half-drained queue is worse."""
+def headers(remaining: int, in_seconds: int) -> str:
+    """What a real GraphQL response carries. `gh api rate_limit` reports a
+    different, lower number — reading that is what made a spent budget look
+    like something else entirely."""
+    from boardkit import gh as plumbing
+    return (f"HTTP/2.0 200 OK\nX-Ratelimit-Limit: 5000\n"
+            f"X-Ratelimit-Remaining: {remaining}\nX-Ratelimit-Resource: graphql\n"
+            f"X-Ratelimit-Reset: {int(plumbing.time.time()) + in_seconds}\n\n{{}}")
+
+
+def test_a_rate_limited_call_says_when_the_budget_returns(monkeypatch):
     import subprocess
 
     from boardkit import gh as plumbing
-    attempts = []
 
-    def flaky(args):
-        attempts.append(args)
-        if len(attempts) < 3:
-            return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
-        return subprocess.CompletedProcess(args, 0, "done", "")
+    def limited(args):
+        if args[:3] == ["gh", "api", "graphql"]:
+            return subprocess.CompletedProcess(args, 0, headers(16, 120), "")
+        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
 
-    monkeypatch.setattr(plumbing, "once", flaky)
-    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
-    assert plumbing.run(["gh", "project", "view"], retries=3) == "done"
-    assert len(attempts) == 3
+    monkeypatch.setattr(plumbing, "once", limited)
+    with pytest.raises(plumbing.RateLimited, match="16 of 5000 points left"):
+        plumbing.run(["gh", "project", "view"])
 
 
-def test_a_failure_that_is_not_about_rate_is_raised_at_once(monkeypatch):
+def test_a_failure_that_is_not_about_rate_is_raised_as_itself(monkeypatch):
     import subprocess
 
     from boardkit import gh as plumbing
@@ -216,79 +225,6 @@ def test_a_failure_that_is_not_about_rate_is_raised_at_once(monkeypatch):
     with pytest.raises(BoardError, match="could not resolve"):
         plumbing.run(["gh", "project", "view"])
     assert len(calls) == 1
-
-
-def test_giving_up_says_what_to_do_and_that_nothing_was_lost(monkeypatch):
-    import subprocess
-
-    from boardkit import gh as plumbing
-    monkeypatch.setattr(plumbing, "once", lambda args: subprocess.CompletedProcess(
-        args, 1, "", "You have exceeded a secondary rate limit"))
-    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
-    with pytest.raises(plumbing.RateLimited, match="queued changes are kept"):
-        plumbing.run(["gh", "project", "view"], retries=1)
-
-
-def test_waiting_is_not_the_default_so_a_prompt_comes_back(monkeypatch):
-    """A person at a terminal is told to come back; the queue keeps their work."""
-    import subprocess
-
-    from boardkit import gh as plumbing
-    calls = []
-
-    def limited(args):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
-
-    monkeypatch.setattr(plumbing, "once", limited)
-    monkeypatch.setattr(plumbing, "RETRIES", 0)
-    with pytest.raises(plumbing.RateLimited, match="--wait"):
-        plumbing.run(["gh", "project", "view"])
-    assert len(calls) == 1
-
-
-def headers(remaining: int, in_seconds: int) -> str:
-    """What a real GraphQL response carries. `gh api rate_limit` reports a
-    different, lower number — reading that is what made a spent budget look
-    like a request burst."""
-    from boardkit import gh as plumbing
-    return (f"HTTP/2.0 200 OK\nX-Ratelimit-Limit: 5000\n"
-            f"X-Ratelimit-Remaining: {remaining}\nX-Ratelimit-Resource: graphql\n"
-            f"X-Ratelimit-Reset: {int(plumbing.time.time()) + in_seconds}\n\n{{}}")
-
-
-def test_a_spent_budget_says_exactly_when_it_refills(monkeypatch):
-    import subprocess
-
-    from boardkit import gh as plumbing
-
-    def limited(args):
-        if args[:3] == ["gh", "api", "graphql"]:
-            return subprocess.CompletedProcess(args, 0, headers(16, 120), "")
-        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
-
-    monkeypatch.setattr(plumbing, "once", limited)
-    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
-    with pytest.raises(plumbing.RateLimited, match="16 of 5000 points left"):
-        plumbing.run(["gh", "project", "view"], retries=2)
-
-
-def test_a_refusal_with_budget_to_spare_is_a_burst_and_is_waited_out(monkeypatch):
-    import subprocess
-
-    from boardkit import gh as plumbing
-    waits = []
-
-    def limited(args):
-        if args[:3] == ["gh", "api", "graphql"]:
-            return subprocess.CompletedProcess(args, 0, headers(4800, 1800), "")
-        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
-
-    monkeypatch.setattr(plumbing, "once", limited)
-    monkeypatch.setattr(plumbing.time, "sleep", waits.append)
-    with pytest.raises(plumbing.RateLimited):
-        plumbing.run(["gh", "project", "view"], retries=2)
-    assert waits == list(plumbing.BACKOFF[:2])
 
 
 def test_what_was_written_is_folded_in_rather_than_pulled_again():
@@ -305,3 +241,25 @@ def test_folding_in_leaves_items_nobody_wrote_to_alone():
     before = snapshot()
     after = patched(before, [Write(number=99, field="status", value="Done")])
     assert after.item(7) == before.item(7)
+
+
+# What GraphQL returns, where `gh project field-list` reports a multi-select
+# field as {"id": "", "name": "", ...} and makes it unusable.
+GRAPHQL_FIELDS = [
+    {"id": "F_S", "name": "Status", "dataType": "SINGLE_SELECT",
+     "options": [{"id": "O_R", "name": "Ready"}]},
+    {"id": "F_A", "name": "Area", "dataType": "MULTI_SELECT",
+     "multiSelectOptions": [{"id": "O_C", "name": "config"},
+                            {"id": "O_D", "name": "docs"}]},
+]
+
+
+def test_a_multi_select_field_survives_being_read():
+    # Built rather than copied: model_copy skips the validator that turns a
+    # name into a ProjectField.
+    config = Config(root=pathlib.Path("/repo"), owner="octo", repo="octo/widgets",
+                    fields=("area",))
+    fields = parse_fields(GRAPHQL_FIELDS, config)
+    area = next(f for f in fields if f.name == "area")
+    assert area.data_type == "MULTI_SELECT" and area.id == "F_A"
+    assert area.option_ids == {"config": "O_C", "docs": "O_D"}

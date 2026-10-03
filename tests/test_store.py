@@ -64,3 +64,45 @@ def test_a_write_is_replaced_atomically_and_leaves_no_temporary(tmp_path):
 
 def test_the_cache_excludes_itself_from_git(tmp_path):
     assert store(tmp_path).ignore_file().read_text() == "*\n"
+
+
+def test_a_refusal_is_recorded_with_the_budget_and_github_s_own_words(tmp_path):
+    """Our paraphrase is what made today's limit hard to diagnose."""
+    import subprocess
+
+    from boardkit import gh as plumbing
+    store(tmp_path)          # constructing the store names the trail
+
+    def limited(args):
+        if args[:3] == ["gh", "api", "graphql"]:
+            return subprocess.CompletedProcess(
+                args, 0, "HTTP/2.0 200\nX-Ratelimit-Remaining: 9\n"
+                         f"X-Ratelimit-Reset: {int(plumbing.time.time()) + 60}\n\n{{}}", "")
+        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded for user")
+
+    original = plumbing.once
+    plumbing.once = limited
+    try:
+        plumbing.run(["gh", "project", "view"])
+    except plumbing.RateLimited as refused:
+        assert "GitHub said: API rate limit exceeded for user" in str(refused)
+    finally:
+        plumbing.once = original
+
+    written = (tmp_path / ".boardkit" / "log.jsonl").read_text()
+    assert '"remaining": 9' in written
+    assert "API rate limit exceeded" in written
+
+
+def test_the_trail_rotates_rather_than_growing_without_bound(tmp_path):
+    from boardkit import trail
+    store(tmp_path)
+    trail.MAX_BYTES, original = 2048, trail.MAX_BYTES
+    try:
+        for index in range(400):
+            trail.note("queued", number=index, field="status", value="x" * 40)
+    finally:
+        trail.MAX_BYTES = original
+    here = tmp_path / ".boardkit"
+    assert (here / "log.jsonl").stat().st_size < 8192
+    assert (here / "log.jsonl.1").exists()

@@ -9,9 +9,10 @@ can then be tested without a token or a project.
 """
 from __future__ import annotations
 
-from .board import normalize, open_numbers
+from .board import MISSING, normalize
 from .config import Config, ProjectField
 from .gh import BoardError, gh, gh_json, run_json
+from .trail import note
 from .store import Snapshot, Store, Write, now
 
 # `item-list` names a field by camelCasing it, while `field-list` reports the
@@ -45,7 +46,10 @@ def parse_fields(payload: list[dict], config: Config) -> tuple[ProjectField, ...
         name = entry.get("name", "")
         if key(name) in BUILT_IN and key(name) != key(config.status_field):
             continue
-        options = tuple(option.get("name", "") for option in entry.get("options", []))
+        # A single select calls them `options`, a multi select
+        # `multiSelectOptions`; both mean the same thing here.
+        choices = entry.get("options") or entry.get("multiSelectOptions") or []
+        options = tuple(option.get("name", "") for option in choices)
         fields.append(ProjectField(
             # Stored under the name config uses, so a lookup from a snapshot
             # and a lookup from config find the same field.
@@ -54,13 +58,13 @@ def parse_fields(payload: list[dict], config: Config) -> tuple[ProjectField, ...
             options=options,
             id=entry.get("id", ""),
             option_ids={option.get("name", ""): option.get("id", "")
-                        for option in entry.get("options", [])},
+                        for option in choices},
         ))
     return tuple(fields)
 
 
 def data_type_of(entry: dict) -> str:
-    """`field-list` reports either a dataType or the GraphQL type name."""
+    """GraphQL reports a dataType directly; `field-list` only a type name."""
     if entry.get("dataType"):
         return entry["dataType"]
     kind = entry.get("type", "")
@@ -70,6 +74,86 @@ def data_type_of(entry: dict) -> str:
         "ProjectV2IterationField": "ITERATION",
         "ProjectV2Field": "TEXT",
     }.get(kind, "TEXT")
+
+
+VALUE_FRAGMENTS = """
+    ... on ProjectV2ItemFieldTextValue { text field { ...fieldName } }
+    ... on ProjectV2ItemFieldNumberValue { number field { ...fieldName } }
+    ... on ProjectV2ItemFieldDateValue { date field { ...fieldName } }
+    ... on ProjectV2ItemFieldSingleSelectValue { name field { ...fieldName } }
+    ... on ProjectV2ItemFieldIterationValue { title field { ...fieldName } }
+    ... on ProjectV2ItemFieldMultiSelectValue {
+          options { name } field { ...fieldName } }
+"""
+
+
+def fetch_items(config: Config, number: str) -> list[dict]:
+    """The board's items, flattened to the shape `normalize` already reads.
+
+    Through GraphQL rather than `gh project item-list` for the same reason as
+    the fields: `gh` cannot serialise a multi-select, so its value is simply
+    absent from the output and every item looks unset. The same query carries
+    the issue's open/closed state, which `item-list` does not — that used to
+    cost a second call to `gh issue list` on every pull.
+    """
+    kind = "organization" if config.owner_type == "org" else "user"
+    query = (
+        "fragment fieldName on ProjectV2FieldCommon { name } "
+        f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
+        f"items(first: {config.item_limit}) {{ nodes {{ id type "
+        "content { ... on Issue { number title url state } "
+        "          ... on PullRequest { number title url state } } "
+        f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
+        "} } } } }")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    nodes = payload["data"][kind]["projectV2"]["items"]["nodes"]
+    return [flatten(node) for node in nodes if node]
+
+
+def flatten(node: dict) -> dict:
+    """One GraphQL item as the flat mapping the rest of the package expects."""
+    content = node.get("content") or {}
+    flat = {"id": node.get("id", ""), "content": {**content, "type": node.get("type")}}
+    for value in (node.get("fieldValues") or {}).get("nodes") or []:
+        name = ((value.get("field") or {}).get("name") or "").strip()
+        if not name:
+            continue
+        flat[key(name)] = value_of(value)
+    return flat
+
+
+def value_of(value: dict):
+    """Whichever of the typed shapes this value arrived in."""
+    for shape in ("name", "text", "title", "date"):
+        if value.get(shape) is not None:
+            return value[shape]
+    if value.get("number") is not None:
+        return value["number"]
+    if value.get("options") is not None:
+        return [option.get("name", "") for option in value["options"]]
+    return MISSING
+
+
+def fetch_fields(config: Config, number: str) -> list[dict]:
+    """The project's fields, read through GraphQL rather than `gh`.
+
+    `gh project field-list` cannot serialise a multi-select field: it reports
+    one as `{"id": "", "name": "", "type": "ProjectV2MultiSelectField"}`, so
+    the field is invisible and any write to it fails for want of an id. The
+    same query also carries `dataType` outright, which `field-list` leaves to
+    be guessed from a GraphQL type name.
+    """
+    kind = "organization" if config.owner_type == "org" else "user"
+    query = (
+        f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
+        f"fields(first: {config.field_limit}) {{ nodes {{ "
+        "... on ProjectV2FieldCommon { id name dataType } "
+        "... on ProjectV2SingleSelectField { options { id name } } "
+        "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
+        "} } } } }")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    nodes = payload["data"][kind]["projectV2"]["fields"]["nodes"]
+    return [node for node in nodes if node]
 
 
 def find_project(payload: list[dict], config: Config) -> str:
@@ -111,24 +195,26 @@ def pull(config: Config, store: Store) -> Snapshot:
     target = number(config, store)
     project = gh_json("project", "view", target, "--owner", config.owner,
                       "--format", "json")
-    listed = gh_json("project", "field-list", target, "--owner", config.owner,
-                     "--limit", str(config.field_limit), "--format", "json")
-    items = gh_json("project", "item-list", target, "--owner", config.owner,
-                    "--limit", str(config.item_limit), "--format", "json")
+    rows = fetch_items(config, target)
     # Fields are parsed first: when config declares none, they are what says
     # which keys an item carries.
-    fields = parse_fields(listed.get("fields", []), config)
+    fields = parse_fields(fetch_fields(config, target), config)
     names = config.synced_names or tuple(field.name for field in fields)
+    # The state arrives with each item now, so a closed one is dropped without
+    # the separate `gh issue list` call this used to need.
+    still_open = {row["content"]["number"] for row in rows
+                  if row.get("content", {}).get("state") == "OPEN"}
     snapshot = Snapshot(
         project_id=project.get("id", ""),
         project_number=target,
         synced_at=now(),
         fields=fields,
-        items=tuple(normalize(items.get("items", []), open_numbers(config),
-                              config, names)),
+        items=tuple(normalize(rows, still_open, config, names)),
     )
     store.save_state(snapshot)
     store.ignore_file()
+    note("pulled", project=target, items=len(snapshot.items),
+            fields=len(snapshot.fields))
     for warning in drift(snapshot, config):
         print(f"warning: {warning}")
     return snapshot
@@ -237,23 +323,28 @@ def apply(write: Write, snapshot: Snapshot, config: Config) -> None:
     gh(*edit_args(write, snapshot, config))
 
 
-def plan(writes: list[Write], remote: Snapshot) -> tuple[list[Write], list[tuple[Write, str]]]:
+def plan(writes: list[Write],
+         remote: Snapshot) -> tuple[list[Write], list[tuple[Write, str, str]]]:
     """Split pending writes into those that still apply and those that lost.
 
     A write loses when the field it targets changed on GitHub after the write
-    was made — compared against `was`, the value the agent decided against.
+    was made — compared against `was`, the value the agent decided against —
+    or when the item left the board entirely. Each loss carries the remote
+    value and why, because "it changed" and "it is gone" call for different
+    decisions from whoever re-decides.
     """
     applies, lost = [], []
     for write in writes:
         item = remote.item(write.number)
         if item is None:
-            lost.append((write, "the item is no longer on the board"))
+            lost.append((write, "", "the item is closed or no longer on the board"))
             continue
         current = item.field(write.field)
         if current == write.value:
             continue  # Already true remotely; nothing to push.
         if current != write.was:
-            lost.append((write, current))
+            lost.append((write, current,
+                         "the field changed on GitHub after this write was made"))
             continue
         applies.append(write)
     return applies, lost
@@ -287,10 +378,12 @@ def push(config: Config, store: Store) -> tuple[int, int]:
         return 0, 0
     remote = pull(config, store)
     applies, lost = plan(writes, remote)
-    for write, current in lost:
-        store.reject(write, remote=current)
+    for write, current, why in lost:
+        store.reject(write, remote=current, reason=why)
     for write in applies:
         apply(write, remote, config)
+        note("pushed", id=write.id, number=write.number, field=write.field,
+                value=write.value, was=write.was)
     store.save_pending([])
     if applies:
         store.save_state(patched(remote, applies))

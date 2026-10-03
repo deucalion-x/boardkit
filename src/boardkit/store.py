@@ -23,7 +23,9 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import trail
 from .board import ProjectItem
+from .trail import note
 from .config import Config, ProjectField
 
 DIRECTORY = ".boardkit"
@@ -106,7 +108,7 @@ class Rejection(BaseModel):
     write: Write
     remote: str
     at: str = Field(default_factory=now)
-    reason: str = "the field changed on GitHub after this write was made"
+    reason: str = ""
 
 
 class Store:
@@ -115,6 +117,9 @@ class Store:
     def __init__(self, config: Config):
         self.config = config
         self.directory = config.path(DIRECTORY)
+        # Refusals are recorded beside the snapshot rather than printed and
+        # lost, so an unexpected limit is noticed rather than reasoned about.
+        trail.configure(self.directory / "log.jsonl")
 
     def _read(self, name: str, default: str) -> object:
         path = self.directory / name
@@ -151,6 +156,8 @@ class Store:
         write = Write(number=number, field=field, value=value,
                       was=item.field(field) if item else "")
         self.save_pending([*self.pending(), write])
+        note("queued", id=write.id, number=number, field=field,
+                value=value, was=write.was)
         return write
 
     # rejected ------------------------------------------------------------
@@ -160,15 +167,22 @@ class Store:
     def save_rejected(self, rejections: list[Rejection]) -> None:
         self._write(REJECTED, [row.model_dump(mode="json") for row in rejections])
 
-    def reject(self, write: Write, remote: str) -> Rejection:
-        rejection = Rejection(write=write, remote=remote)
+    def reject(self, write: Write, remote: str, reason: str = "") -> Rejection:
+        rejection = Rejection(write=write, remote=remote, reason=reason)
         self.save_rejected([*self.rejected(), rejection])
+        note("rejected", id=write.id, number=write.number, field=write.field,
+             wanted=write.value, was=write.was, remote=remote, reason=reason)
         return rejection
 
     def clear_rejected(self) -> int:
         count = len(self.rejected())
         self.save_rejected([])
+        note("cleared_rejections", count=count)
         return count
+
+    def history(self, limit: int = 50) -> list[dict]:
+        """The last few things boardkit did, newest last."""
+        return trail.read(limit)
 
     def ignore_file(self) -> pathlib.Path:
         return directory(self.config) / ".gitignore"

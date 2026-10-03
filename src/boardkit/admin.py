@@ -20,8 +20,9 @@ import datetime
 from . import auth
 from .config import CREATABLE, Config, ProjectField
 from .gh import BoardError, gh, gh_json, run_json
+from .trail import note
 from .store import Store
-from .sync import find_project, parse_fields
+from .sync import fetch_fields, find_project, parse_fields
 
 
 def locate(config: Config) -> str:
@@ -46,9 +47,8 @@ def existing(config: Config, number: str) -> tuple[str, tuple[ProjectField, ...]
         return None
     project = gh_json("project", "view", number, "--owner", config.owner,
                       "--format", "json")
-    fields = gh_json("project", "field-list", number, "--owner", config.owner,
-                     "--limit", str(config.field_limit), "--format", "json")
-    return project.get("id", ""), parse_fields(fields.get("fields", []), config)
+    return (project.get("id", ""),
+            parse_fields(fetch_fields(config, number), config))
 
 
 def wanted(config: Config) -> tuple[ProjectField, ...]:
@@ -230,6 +230,7 @@ def apply(config: Config, dry: bool = False) -> int:
                        "--title", config.name, "--format", "json")
         number = str(made.get("number", ""))
         print(f"Created project {number}: {made.get('url', '')}")
+        note("created_project", project=number, title=config.name)
         # GitHub seeds a new project with its own Status field, so what is
         # missing has to be recomputed against what it actually arrived with.
         found = existing(config, number)
@@ -243,11 +244,15 @@ def apply(config: Config, dry: bool = False) -> int:
         if options:
             apply_options(config, number, current, options)
             print(f"  aligned {current.display} options")
+            note("aligned_options", field=current.name,
+                    options=[o["name"] for o in options])
 
     project_id = found[0] if found else ""
     for field in missing:
         add_field(project_id, field)
         print(f"  added {field.display} [{field.data_type}]")
+        note("created_field", field=field.display, data_type=field.data_type,
+                options=list(field.options))
 
     if not missing:
         print("  every configured field already exists.")
