@@ -17,12 +17,11 @@ jobs:
         # between them are not interesting enough to pay for.
         python: ["3.12", "3.14"]
     steps:
-      # Pinned exactly: setup-uv publishes no floating major tag past v7,
-      # so `@v10` does not resolve. Pin both the same way rather than
-      # keep two conventions in six lines.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
 
@@ -31,7 +30,7 @@ jobs:
           UV_PYTHON: ${{ matrix.python }}
 
       - name: lint
-        run: uv run ruff check src tests
+        run: uv run ruff check src tests scripts
 
       - name: types
         run: uv run mypy
@@ -45,32 +44,22 @@ jobs:
   # silently — and `board install-skill` is the first thing a new repo runs.
   package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
 
-      - name: build
-        run: uv build --out-dir dist
+      - name: build distributions
+        run: uv build --no-sources
 
-      - name: install the wheel into a clean environment
-        run: |
-          uv venv /tmp/clean
-          VIRTUAL_ENV=/tmp/clean uv pip install dist/*.whl
+      - name: smoke-test wheel
+        run: uv run --isolated --no-project --with dist/*.whl scripts/smoke_package.py
 
-      - name: the installed command runs
-        run: /tmp/clean/bin/board --help
-
-      - name: the templates travelled with it
-        run: |
-          /tmp/clean/bin/python - <<'PY'
-          import pathlib, boardkit
-          root = pathlib.Path(boardkit.__file__).parent / "templates"
-          want = ["board-template.toml", "skills/board.md", "skills/board-admin.md"]
-          missing = [name for name in want if not (root / name).is_file()]
-          if missing:
-              raise SystemExit(f"missing from the wheel: {missing}")
-          print(f"all {len(want)} template(s) present")
-          PY
+      - name: smoke-test source distribution
+        run: uv run --isolated --no-project --with dist/*.tar.gz scripts/smoke_package.py

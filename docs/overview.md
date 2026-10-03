@@ -1,50 +1,38 @@
-# Objective
+# Overview
 
-* creates git projects 
-* manage local cache of git projects for offline use
+Boardkit gives people and agents one repository-owned interface to a GitHub
+Project. It can create the project, fields and saved views declared by the
+repository, and it keeps a local working copy for fast and offline reads.
 
-Agents can use boardkit to manage tasks.
-Reads are local so no network hits on read, no api quotas used.
+## Local-first operation
 
+`board sync` snapshots the remote project under `.boardkit/`. Read commands
+use that snapshot and therefore make no network request and spend no GitHub API
+quota.
 
-## Creating a new git project
+A field change is written to the durable local queue before boardkit attempts
+to send it. Before sending, boardkit refreshes the target item and refuses to
+overwrite a field that changed remotely. A successful write updates the local
+snapshot. An offline or rate-limited write stays queued for `board sync push`;
+a conflicting write moves to the rejection log with both values preserved.
 
-* boardkit creates git projects
-* boardkit creates customizable work items
-* boardkit creates customizable views
+GitHub remains the source of truth. The local store is a disposable working
+copy, while queued and rejected writes preserve decisions that have not landed.
 
-## Local cache
+## Repository configuration
 
-## How syncing local and github projects board works
+Each consuming repository commits `boardkit.toml`, or a `[tool.boardkit]`
+table in `pyproject.toml`. That file identifies the project and may declare the
+fields and views `board admin apply` should create. Runtime state and credentials
+never belong in this committed configuration.
 
-* Reads are local so no network hits on read, no api quotas used.
-* Writes will happen immediately on changes
-  * First pull remote state
-  * If no conflict, push changes
-  * Otherwise, record the conflict
-    * when conflict is resolve, push can occur
+## Agent integration
 
-## Offline use
+An installed Python package cannot expose a repository skill by itself: agent
+skills are discovered inside the repository where the agent is working.
+Boardkit therefore ships canonical skill templates and `board install-skill`
+copies them into `.claude/skills/` in the consuming repository.
 
-* At each write we tried to push to the remote
-  * if offline
-    * write items are collected
-      * successive writes on the same item are not creating several updates but merge right away
-  * if online
-    * proceed to syncing
-
-
-## agent use of this tool
-
-* the tool is a package othe project needing it will import as a package. 
-* we need in addition to install a skill that expose the api to a agent.
-  * a package alone cannot do it: Claude Code only loads skills from
-    `.claude/skills/` in the repo it works in, so a skill inside the installed
-    package is never found
-  * so the package ships the skill as a template and `board install-skill`
-    renders it into the consuming repo, where it is committed
-  * rendering fills in that repo's board url, columns, fields and grouping,
-    from its config and its last sync
-  * the rendered copy is generated, never hand-edited: change the template or
-    the repo's `skill_notes` and run `board install-skill` again
-  * `board install-skill --check` fails when the committed copy has drifted
+Commit the generated skills so every contributor gets the same interface.
+Do not edit generated copies; change the templates in boardkit and regenerate
+them. `board install-skill --check` detects drift.

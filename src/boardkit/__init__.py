@@ -1,11 +1,10 @@
-"""Query a GitHub Project board, and keep its issues reviewable from git.
+"""A local-first command-line client for repository-owned GitHub Projects."""
 
-The strategy this package exists to enforce is to filter at the server and
-then read. Nothing here is clever; what it buys is that every query narrows
-before it prints, and that the repo-specific names — the project number, the
-custom field names, the status columns — live in one config table instead of
-being spread across a handful of scripts.
-"""
+from importlib.metadata import PackageNotFoundError, version
 
 __all__ = ["__version__"]
-__version__ = "0.1.0"
+
+try:
+    __version__ = version("boardkit")
+except PackageNotFoundError:  # Running directly from an unpackaged source tree.
+    __version__ = "0+unknown"

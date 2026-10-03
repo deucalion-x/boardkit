@@ -19,9 +19,16 @@ the configuration schema rather than a validation layer bolted onto it.
 
 ## Install
 
+Install the current source directly from GitHub:
+
 ```bash
-uv add --dev boardkit            # once published
-uv add --dev boardkit --editable ../boardkit    # from a checkout
+uv tool install "git+https://github.com/agerardin/boardkit.git"
+```
+
+Or install a development checkout:
+
+```bash
+uv tool install --editable .
 ```
 
 ## Configure

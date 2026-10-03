@@ -1,21 +1,17 @@
-# Local-first board, with background sync
+# Local-first board with immediate writes
 
 ## Goal
 
 Agents do project and task management against a local store. Reads never hit
-the API. Writes are queued locally and pushed by a background sync. GitHub
-remains the real store; the local copy is a working copy.
+the API. Writes enter a durable queue and boardkit immediately tries to push
+them. GitHub remains the real store; the local copy is a working copy.
 
-## What this replaces
+## Why reads are local
 
-boardkit's current principle is "filter at the server, then read" — every verb
-narrows before it prints, and nothing is cached. That was right for a reader.
-It is wrong for an agent that asks ten questions to plan one change: each one
-costs a round trip, and `gh project item-list` fetches the whole board anyway.
-
-So the principle inverts: fetch the board once, answer from the copy, sync in
-the background. The README and the generated skill both state the old rule and
-will need rewriting when this lands.
+An agent may ask ten questions while planning one change. Fetching the board for
+every question would add latency and spend API quota without making the answer
+materially fresher. Boardkit fetches once, answers reads from the snapshot, and
+names its sync time so callers can decide when they need a new pull.
 
 ## The store
 
@@ -40,18 +36,21 @@ until an agent reads it.
 | Actor | Reads | Writes |
 |---|---|---|
 | An agent answering a question | `state` | — |
-| An agent making a change | `state`, `rejected` | appends to `pending` |
-| The sync | `state`, `pending` | all three |
+| A change command | `state`, `pending`, remote target | `pending`, then `state` or `rejected` |
+| `board sync` | remote project | `state` |
+| `board sync push` | `state`, `pending`, remote targets | all three |
 
-An agent never calls `gh`. That is the point.
+Read commands never call `gh`. Change and sync commands use it behind the
+boardkit interface.
 
 ## Conflict rule
 
 Remote is the source of truth, and nothing is dropped silently.
 
-On sync, for each pending write: if the remote changed that same field since
-the snapshot the write was based on, the write loses — it moves to `rejected`
-carrying both values, and the agent is told. Otherwise it is pushed.
+Before a push, boardkit refreshes the items named by pending writes. If the
+remote changed that same field since the snapshot the write was based on, the
+write loses — it moves to `rejected` carrying both values, and the agent is
+told. Otherwise it is pushed.
 
 The agent's recourse is to re-decide against reality, not to retry blindly.
 A human's edit in the web UI therefore always wins, which is the behaviour we
@@ -72,29 +71,30 @@ The queue earns its place twice over instead:
   five writes one at a time costs five pulls and pushing them together costs
   one. The saving is in the pull, not the writes.
 
-So the queue should drain promptly — when an agent finishes its changes, not on
-a timer tuned for traffic.
+Boardkit attempts to drain the queue as part of each ordinary change. `--later`
+deliberately skips that attempt, and `board sync push` retries whatever remains
+after an offline or rate-limited run. There is no background daemon.
 
 ## Sync loop
 
-1. Pull the project: items, fields, and their ids.
-2. For each entry in `pending`, compare the field's remote value against the
-   snapshot it was based on. Changed → `rejected`. Unchanged → push.
-3. Write the fresh snapshot to `state` and clear what drained from `pending`.
+1. Read the durable queue.
+2. Fetch current values only for the items named by queued writes.
+3. Compare each remote field with the value the write was decided against.
+4. Move conflicts to `rejected` and batch the safe mutations into one request.
+5. Remove only mutations GitHub reports as successful, then patch `state` with
+   the values that landed.
 
-Push is `gh project item-edit --id … --field-id … --single-select-option-id …`,
-so the snapshot must carry item ids, field ids and option ids. That is the one
-hard requirement this design puts on the read path.
+The snapshot carries project, item, field and option ids because GitHub's
+mutations require them. A full `board sync` refreshes the complete snapshot;
+a push fetches only its targets.
 
 ## Transport
 
-`gh` subcommands, not GraphQL. `gh project` already covers the whole surface
-we need: `item-list`, `field-list`, `item-create`, `item-add`, `item-edit`,
-`item-archive`, `field-create`, `create`, `link`.
-
-GraphQL is only needed for things `gh` does not expose — view creation
-(`createProjectV2View`) and card ordering (`updateProjectV2ItemPosition`).
-Neither is required for a usable board, so neither is in scope yet.
+Boardkit uses the authenticated `gh` command as its transport. Ordinary issue
+and project operations use `gh` subcommands. A full pull and operations the CLI
+does not expose—multi-select values, some field types, batched mutations and
+saved views—go through `gh api graphql`. Boardkit therefore stores no GitHub
+token and shares the account already selected by `gh`.
 
 ## Vocabulary
 
@@ -137,11 +137,11 @@ invalidates it with no expiry to tune.
 Never run `gh auth login` or `gh auth refresh` automatically: both are
 interactive and mutate global state. Print the command.
 
-## Open
+## Deliberate boundaries
 
-- What drains the queue: end of an agent's turn seems right, but nothing
-  enforces it yet. A timer is the fallback for a process that dies mid-turn.
-- `issue_mirror` becomes redundant: `state.json` is a better snapshot, and the
-  mirror exists only to make issue-text changes reviewable in a diff. Keep it
-  for that one purpose, or drop it?
-- `pending` needs an ordering guarantee if two writes touch one field.
+- There is no background process. Commands attempt writes immediately, and
+  the explicit push command retries durable work.
+- The issue mirror remains separate from the snapshot because its purpose is
+  review: issue-text changes should appear in a git diff.
+- Repeated pending writes to one item field collapse to the newest value while
+  keeping the original comparison value for conflict detection.
