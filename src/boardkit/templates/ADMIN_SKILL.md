@@ -54,6 +54,19 @@ can see what is in it.
 Two options differing only in case are reported rather than merged: moving
 items between columns is a change to contents, not shape.
 
+## When a sync reports drift
+
+`board sync` says when config declares a field or an option the board does
+not have. Boards are edited in the browser, so this is ordinary, not an
+error, and it has two honest resolutions:
+
+- the board is right — delete the line from `[board]` in the config
+- the config is right — run `board admin apply` to create what is missing
+
+Pick by asking which is in use: `board json` shows what items actually carry.
+Do not apply by reflex; recreating a field someone deliberately removed puts
+back a column they wanted gone.
+
 ## After changing the shape
 
 ```bash
