@@ -5,6 +5,13 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.1.0 — 2026-10-03
+
+First tagged version. Boardkit has been in internal use throughout; this is
+the point at which its artifacts are built and verified reproducibly.
+
 - Prepare package metadata, documentation, and registry-neutral release
   artifacts for future public or internal distribution.
 - Add `scripts/contract.py`, a live check that exercises every board mutation
@@ -35,3 +42,9 @@ All notable changes to boardkit are recorded here. Releases follow
   being set and never caught, so the one failure it was added to handle was
   the only one without a message. It is now reported as unreachable, and the
   two probes that treat failure as an answer answer no.
+- Correct the documented command list, which still advertised `board ready`
+  and `board group` after both were removed, and the claim that all six
+  creatable field types can be set — `board set` refuses an `ITERATION`
+  field, so declaring one creates a column nothing can fill (#20).
+- Remove `docs/seed-issues.md`, a pre-board backlog that had become a second
+  list disagreeing with the board. Its two live entries are #21 and #22.

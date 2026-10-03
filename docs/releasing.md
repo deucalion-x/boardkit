@@ -49,7 +49,7 @@ having one. So it is run by hand, and the result goes in the table below.
 
 | Version | Run | Covered |
 |---|---|---|
-| unreleased | 2026-10-03, full, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on both a draft and a real issue; five cleared; every value re-written to confirm an already-true write settles; an iteration write refused; the issue deleted. |
+| 0.1.0 | 2026-10-03, full, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on both a draft and a real issue; five cleared; every value re-written to confirm an already-true write settles; an iteration write refused; the issue deleted. |
 
 Add a row per release. A release whose row says the run failed, or that it was
 skipped, is a release whose mutations were never confirmed against GitHub —
