@@ -39,6 +39,7 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     if values:
         place(config, store, 0, made.get("id", ""), title, values)
     sync.pull(config, store)
+    remember(store, made.get("id", ""), 0, title, body or "", values)
     return 0
 
 
@@ -67,7 +68,27 @@ def add(config: Config, store: Store, title: str, body: str,
 
     from . import sync
     sync.pull(config, store)
+    remember(store, added.get("id", ""), issue, title, body or "", values)
     return 0
+
+
+def remember(store: Store, item_id: str, issue: int, title: str, body: str,
+             values: dict[str, str]) -> None:
+    """Put the new item in the snapshot when the pull did not see it.
+
+    A pull taken moments after creating one does not reliably return it —
+    GitHub takes a moment to index — which left the item invisible to every
+    read until the next sync, though it was plainly on the board.
+    """
+    from .board import ProjectItem
+
+    snapshot = store.state()
+    if any(item.id == item_id for item in snapshot.items):
+        return
+    made = ProjectItem(number=issue, id=item_id, title=title, body=body,
+                       type="ISSUE" if issue else "DRAFT_ISSUE", fields=dict(values))
+    store.save_state(snapshot.model_copy(update={"items": (*snapshot.items, made)}))
+    note("remembered", ref=made.ref, reason="not in the pull that followed creating it")
 
 
 def place(config: Config, store: Store, issue: int, item_id: str,
