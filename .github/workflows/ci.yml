@@ -38,3 +38,39 @@ jobs:
 
       - name: test
         run: uv run pytest -q
+
+  # Everything above runs against `src/` through `pythonpath`, which cannot
+  # see a file that is missing from the distribution. The skill templates are
+  # data, not code, so they are exactly what a packaging mistake drops
+  # silently — and `board install-skill` is the first thing a new repo runs.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - name: build
+        run: uv build --out-dir dist
+
+      - name: install the wheel into a clean environment
+        run: |
+          uv venv /tmp/clean
+          VIRTUAL_ENV=/tmp/clean uv pip install dist/*.whl
+
+      - name: the installed command runs
+        run: /tmp/clean/bin/board --help
+
+      - name: the templates travelled with it
+        run: |
+          /tmp/clean/bin/python - <<'PY'
+          import pathlib, boardkit
+          root = pathlib.Path(boardkit.__file__).parent / "templates"
+          want = ["board-template.toml", "skills/board.md", "skills/board-admin.md"]
+          missing = [name for name in want if not (root / name).is_file()]
+          if missing:
+              raise SystemExit(f"missing from the wheel: {missing}")
+          print(f"all {len(want)} template(s) present")
+          PY

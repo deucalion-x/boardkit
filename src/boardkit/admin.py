@@ -19,7 +19,7 @@ import datetime
 
 from . import auth
 from .config import CREATABLE, Config, ProjectField
-from .gh import BoardError, gh, gh_json, run_json
+from .gh import BoardError, gh, gh_json, quoted, run_json
 from .sync import fetch_fields, find_project, parse_fields
 from .trail import note
 
@@ -153,14 +153,15 @@ def creation_query(project_id: str, field: ProjectField) -> str:
     only four of the six creatable types. The API itself creates all of them,
     so the limit was the wrapper's and not GitHub's.
     """
-    body = (f'projectId: "{project_id}", dataType: {field.data_type}, '
-            f'name: "{field.display}"')
+    body = (f"projectId: {quoted(project_id)}, dataType: {field.data_type}, "
+            f"name: {quoted(field.display)}")
     if field.data_type in {"SINGLE_SELECT", "MULTI_SELECT"}:
         if not field.options:
             raise BoardError(f"`{field.name}` is a {field.data_type.lower()} "
                              f"with no options")
         rows = ", ".join(
-            "{" + f'name: "{name}", color: {DEFAULT_COLOR}, description: ""' + "}"
+            "{" + f"name: {quoted(name)}, color: {DEFAULT_COLOR}, "
+            'description: ""' + "}"
             for name in field.options)
         key = "singleSelectOptions" if field.data_type == "SINGLE_SELECT" \
             else "multiSelectOptions"
@@ -206,8 +207,9 @@ def decorated(config: Config, number: str, field: ProjectField,
     declaring it.
     """
     kind = "organization" if config.owner_type == "org" else "user"
-    query = (f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) '
-             f'{{ field(name: "{field.display}") {{ '
+    query = (f"{{ {kind}(login: {quoted(config.owner)}) "
+             f"{{ projectV2(number: {number}) "
+             f"{{ field(name: {quoted(field.display)}) {{ "
              "... on ProjectV2SingleSelectField "
              "{ options { id name color description } } } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
@@ -226,10 +228,10 @@ def decorated(config: Config, number: str, field: ProjectField,
 def rendered(options: list[dict]) -> str:
     parts = []
     for option in options:
-        identity = f'id: "{option["id"]}", ' if "id" in option else ""
-        parts.append("{" + identity + f'name: "{option["name"]}", '
-                     f'color: {option["color"]}, '
-                     f'description: "{option["description"]}"' + "}")
+        identity = f"id: {quoted(option['id'])}, " if "id" in option else ""
+        parts.append("{" + identity + f"name: {quoted(option['name'])}, "
+                     f"color: {option['color']}, "
+                     f"description: {quoted(option['description'])}" + "}")
     return ", ".join(parts)
 
 
@@ -324,7 +326,8 @@ def apply(config: Config, dry: bool = False) -> int:
 def existing_views(config: Config, number: str) -> dict[str, str]:
     """Saved tabs by name, so `apply` adds what is missing and nothing else."""
     kind = "organization" if config.owner_type == "org" else "user"
-    query = (f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) '
+    query = (f"{{ {kind}(login: {quoted(config.owner)}) "
+             f"{{ projectV2(number: {number}) "
              f"{{ views(first: {config.page_size}) {{ nodes {{ id name }} }} }} }} }}")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     nodes = payload["data"][kind]["projectV2"]["views"]["nodes"]
@@ -344,7 +347,7 @@ def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
         listed = ", ".join(f'"{identity}"' for identity in chosen)
         visible = f", configuration: {{visibleFieldIds: [{listed}]}}"
     query = ("mutation { createProjectV2View(input: {"
-             f' projectId: "{project_id}", name: "{view.name}",'
+             f" projectId: {quoted(project_id)}, name: {quoted(view.name)},"
              f" layout: {view.layout}_LAYOUT{visible}"
              " }) { projectV2View { id } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
@@ -353,7 +356,7 @@ def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
 
 def filter_view(view_id: str, expression: str) -> None:
     query = ("mutation { updateProjectV2View(input: {"
-             f' viewId: "{view_id}", filter: "{expression}"'
+             f" viewId: {quoted(view_id)}, filter: {quoted(expression)}"
              " }) { projectV2View { id } } }")
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 

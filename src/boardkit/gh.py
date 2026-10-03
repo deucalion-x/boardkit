@@ -41,10 +41,27 @@ OFFLINE = re.compile(
     re.IGNORECASE)
 
 
+# Long enough for a slow page of a large board, short enough that a wedged
+# process fails instead of hanging a terminal — or a CI job — forever.
+TIMEOUT = 120
+
+
+def quoted(value: object) -> str:
+    """One value as a GraphQL string literal, escaped.
+
+    GraphQL string syntax is JSON string syntax, so `json.dumps` is the
+    encoder rather than a hand-rolled one. Interpolating a bare f-string
+    here is how a quote in a field description, a view name or a filter
+    turns committed configuration into a malformed — or forged — document.
+    """
+    return json.dumps("" if value is None else str(value))
+
+
 def once(args: list[str]) -> subprocess.CompletedProcess:
     # `check=False` throughout: a non-zero exit from `gh` is a result to
     # read, not a crash. The callers turn it into a message.
-    return subprocess.run(args, capture_output=True, text=True, check=False)
+    return subprocess.run(args, capture_output=True, text=True, check=False,
+                          timeout=TIMEOUT)
 
 
 REMAINING = re.compile(r"^x-ratelimit-remaining:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
@@ -141,11 +158,12 @@ def probe(args: list[str]) -> tuple[bool, str]:
     """
     if shutil.which(args[0]) is None:
         return False, f"{args[0]} is not installed or not on PATH"
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    result = subprocess.run(args, capture_output=True, text=True,
+                            check=False, timeout=TIMEOUT)
     return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
 
 
 def git_ok(*args: str) -> bool:
     """True when the command exits zero. For probes, where failure is an answer."""
     return subprocess.run(["git", *args], capture_output=True,
-                          check=False).returncode == 0
+                          check=False, timeout=TIMEOUT).returncode == 0
