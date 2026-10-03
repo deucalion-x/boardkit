@@ -20,9 +20,8 @@ import datetime
 from . import auth
 from .config import CREATABLE, Config, ProjectField
 from .gh import BoardError, gh, gh_json, run_json
-from .trail import note
-from .store import Store
 from .sync import fetch_fields, find_project, parse_fields
+from .trail import note
 
 
 def locate(config: Config) -> str:
@@ -181,7 +180,7 @@ def iterations_for(field: ProjectField) -> str:
     """
     setup = field.iteration
     start = datetime.date.fromisoformat(
-        setup.start_date or datetime.date.today().isoformat())
+        setup.start_date or datetime.datetime.now(datetime.UTC).date().isoformat())
     rows = []
     for index in range(setup.iterations):
         begins = start + datetime.timedelta(days=setup.duration * index)

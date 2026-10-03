@@ -79,7 +79,6 @@ def test_an_unrecognised_item_kind_is_recorded_rather_than_rejected():
 
 def test_a_board_that_declares_nothing_is_read_from_its_own_fields():
     from boardkit.board import shape
-    from boardkit.config import ProjectField
     bare = Config(root=pathlib.Path("/repo"), owner="octo", repo="octo/widgets")
     found = (ProjectField(name="status", options=("Inbox", "Todo", "Done")),
              ProjectField(name="area", options=("sync", "docs")))
@@ -90,7 +89,6 @@ def test_a_board_that_declares_nothing_is_read_from_its_own_fields():
 
 def test_what_a_repo_does_declare_wins_over_the_board():
     from boardkit.board import shape
-    from boardkit.config import ProjectField
     stated = Config(root=pathlib.Path("/repo"), owner="octo", repo="octo/widgets",
                     status_order=("Todo", "Done"), fields=("effort",))
     found = (ProjectField(name="status", options=("Inbox", "Todo", "Done")),
@@ -187,7 +185,9 @@ def test_searching_for_nothing_finds_nothing():
 def test_an_empty_listing_says_what_the_board_can_hold():
     """Otherwise the first card has to be filed against guessed names: the
     listing is the only place the board's shape appears."""
-    import io, contextlib
+    import contextlib
+    import io
+
     from boardkit.board import show
     out = io.StringIO()
     with contextlib.redirect_stdout(out):

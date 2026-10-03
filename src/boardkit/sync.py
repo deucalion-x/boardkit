@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from .board import MISSING, normalize
 from .config import Config, ProjectField
-from .gh import BoardError, RateLimited, Unreachable, gh, gh_json, run_json
-from .trail import note
+from .gh import BoardError, RateLimited, Unreachable, gh_json, run_json
 from .store import Snapshot, Store, Write, now
+from .trail import note
+
 
 # `item-list` names a field by camelCasing it, while `field-list` reports the
 # name as configured. Comparing them stripped and lowercased matches "Status"
@@ -158,10 +159,11 @@ def fetch_board(config: Config, number: str) -> dict:
     field_page = project["fields"]["pageInfo"]
 
     while field_page.get("hasNextPage"):
-        more = run_json(["gh", "api", "graphql", "-f", "query="
-                         f'{{ {kind}(login: "{config.owner}") '
-                         f"{{ projectV2(number: {number}) {{ "
-                         f"{fields_block(config, field_page['endCursor'])}}} }} }}"])
+        more = run_json(["gh", "api", "graphql", "-f",
+                         ("query="
+                          f'{{ {kind}(login: "{config.owner}") '
+                          f"{{ projectV2(number: {number}) {{ "
+                          f"{fields_block(config, field_page['endCursor'])}}} }} }}")])
         block = more["data"][kind]["projectV2"]["fields"]
         fields += [node for node in block["nodes"] if node]
         field_page = block["pageInfo"]
@@ -169,11 +171,12 @@ def fetch_board(config: Config, number: str) -> dict:
     while page.get("hasNextPage"):
         pages += 1
         note("pulling", page=pages, so_far=len(items))
-        more = run_json(["gh", "api", "graphql", "-f", f"query="
-                         "fragment fieldName on ProjectV2FieldCommon { name } "
-                         f'{{ {kind}(login: "{config.owner}") '
-                         f"{{ projectV2(number: {number}) {{ "
-                         f"{items_block(config, page['endCursor'])}}} }} }}"])
+        more = run_json(["gh", "api", "graphql", "-f",
+                         ("query="
+                          "fragment fieldName on ProjectV2FieldCommon { name } "
+                          f'{{ {kind}(login: "{config.owner}") '
+                          f"{{ projectV2(number: {number}) {{ "
+                          f"{items_block(config, page['endCursor'])}}} }} }}")])
         block = more["data"][kind]["projectV2"]["items"]
         items += [flatten(node) for node in block["nodes"] if node]
         page = block["pageInfo"]
@@ -381,8 +384,8 @@ def view_drift(snapshot: Snapshot, config: Config) -> list[str]:
     gone = [view.name for view in config.views if view.name not in snapshot.views]
     if not gone:
         return []
-    return [f"config declares view(s) {', '.join(repr(n) for n in gone)} the board "
-            f"does not have; `board admin apply` would recreate them"]
+    return [(f"config declares view(s) {', '.join(repr(n) for n in gone)} the "
+             f"board does not have; `board admin apply` would recreate them")]
 
 
 def field_drift(snapshot: Snapshot, config: Config) -> list[str]:

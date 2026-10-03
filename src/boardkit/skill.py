@@ -15,7 +15,6 @@ from __future__ import annotations
 import pathlib
 
 from .config import Config
-from .store import Store
 from .trail import note
 
 TEMPLATES = pathlib.Path(__file__).with_name("templates")

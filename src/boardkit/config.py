@@ -14,8 +14,7 @@ import pathlib
 import tomllib
 from typing import Literal
 
-from pydantic import (BaseModel, ConfigDict, Field, ValidationError, field_validator,
-                      model_validator)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .gh import BoardError
 

@@ -15,7 +15,7 @@ import json
 import pathlib
 
 from .config import CONFIG_FILES, Config, ProjectField
-from .gh import BoardError, git, gh_json
+from .gh import BoardError, gh_json, git
 
 TABLE = "[tool.boardkit]"
 
