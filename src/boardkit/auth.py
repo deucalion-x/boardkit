@@ -85,7 +85,7 @@ def parse_status(output: str) -> Capability:
     """Read `gh auth status`. Local, so this is the cheap half of the answer."""
     account = ACCOUNT.search(output)
     scopes = SCOPES.search(output)
-    found = ()
+    found: tuple[str, ...] = ()
     if scopes:
         found = tuple(sorted(part.strip().strip("'\"")
                              for part in scopes.group(1).split(",") if part.strip()))

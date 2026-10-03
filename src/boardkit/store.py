@@ -22,6 +22,7 @@ import json
 import os
 import pathlib
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -145,7 +146,7 @@ class Store:
         # lost, so an unexpected limit is noticed rather than reasoned about.
         trail.configure(self.directory / "log.jsonl")
 
-    def _read(self, name: str, default: str) -> object:
+    def _read(self, name: str, default: str) -> Any:
         path = self.directory / name
         if not path.exists():
             return json.loads(default)

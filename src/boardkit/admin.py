@@ -268,11 +268,11 @@ def apply(config: Config, dry: bool = False) -> int:
         for field in missing:
             detail = f" ({', '.join(field.options)})" if field.options else ""
             print(f"  would add {field.display} [{field.data_type}]{detail}")
-        standing = existing_views(config, number) if number else {}
+        saved = existing_views(config, number) if number else {}
         for view in config.views:
-            if view.name not in standing:
+            if view.name not in saved:
                 print(f"  would add view {view.name} [{view.layout}]")
-        if not missing and all(v.name in standing for v in config.views):
+        if not missing and all(v.name in saved for v in config.views):
             print("  nothing missing.")
         return 0
 
@@ -291,13 +291,17 @@ def apply(config: Config, dry: bool = False) -> int:
     standing = {field.name: field for field in present}
     for field in wanted(config):
         current = standing.get(field.name)
-        options = align(field, current) if current else None
+        # A field config declares and the board lacks is in `missing`, and is
+        # created below. There is nothing to align here.
+        if current is None:
+            continue
+        options = align(field, current)
         if options:
             apply_options(config, number, current, options)
             print(f"  aligned {current.display} options")
             note("aligned_options", field=current.name,
                     options=[o["name"] for o in options])
-        for pair in duplicates(current) if current else []:
+        for pair in duplicates(current):
             print(f"  warning: {current.display} has {' and '.join(repr(n) for n in pair)}, "
                   f"which differ only in case. Items are split between them; "
                   f"move them in the browser and delete the empty one.")

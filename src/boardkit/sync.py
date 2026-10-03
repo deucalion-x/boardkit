@@ -10,7 +10,7 @@ can then be tested without a token or a project.
 from __future__ import annotations
 
 from .board import MISSING, normalize
-from .config import Config, ProjectField
+from .config import Config, DataType, ProjectField
 from .gh import BoardError, RateLimited, Unreachable, gh_json, run_json
 from .store import Snapshot, Store, Write, now
 from .trail import note
@@ -67,17 +67,18 @@ def parse_fields(payload: list[dict], config: Config) -> tuple[ProjectField, ...
     return tuple(fields)
 
 
-def data_type_of(entry: dict) -> str:
+def data_type_of(entry: dict) -> DataType:
     """GraphQL reports a dataType directly; `field-list` only a type name."""
     if entry.get("dataType"):
         return entry["dataType"]
     kind = entry.get("type", "")
-    return {
+    by_name: dict[str, DataType] = {
         "ProjectV2SingleSelectField": "SINGLE_SELECT",
         "ProjectV2MultiSelectField": "MULTI_SELECT",
         "ProjectV2IterationField": "ITERATION",
         "ProjectV2Field": "TEXT",
-    }.get(kind, "TEXT")
+    }
+    return by_name.get(kind, "TEXT")
 
 
 VALUE_FRAGMENTS = """
@@ -567,7 +568,7 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
     only if GitHub normalised the value; the next pull settles that, as it
     settles everything else here.
     """
-    changes: dict[int, dict[str, str]] = {}
+    changes: dict[str, dict[str, str]] = {}
     for write in writes:
         changes.setdefault(write.ref, {})[write.field] = write.value
     items = tuple(
