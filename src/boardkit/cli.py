@@ -5,7 +5,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board                      rollup by grouping field x status
   board ready                startable items only
   board group <name>         one group, by status            (alias: ws)
-  board item <n>             one item with its children
+  board item <n>             one item with its text and children
   board find <terms>         full-text search on GitHub, joined to the board
   board json                 normalized items on stdout, for jq or python
 
@@ -125,6 +125,11 @@ def dispatch(command: str, args: list[str]) -> int:
     elif command == "item":
         number = int(args[0].lstrip("#"))
         board_module.show([index[number]] if number in index else [], view)
+        found = index.get(number)
+        if found is not None and found.body:
+            print()
+            print(found.body.rstrip())
+            print()
         # Parent links are not in the snapshot, so children cost a call.
         kids = [index[n] for n in board_module.children(number, config) if n in index]
         if kids:

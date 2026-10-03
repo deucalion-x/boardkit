@@ -42,6 +42,10 @@ class ProjectItem(BaseModel):
 
     title: str = ""
     url: str = ""
+    # The issue text, carried so that deciding what to work on — which means
+    # reading the acceptance criteria — needs no API call. A scalar on a node
+    # already fetched, so it costs bytes and no rate-limit points.
+    body: str = ""
     fields: dict[str, str] = {}
 
     @field_validator("type", mode="before")
@@ -59,6 +63,8 @@ class ProjectItem(BaseModel):
     def flat(self) -> dict:
         """One row per item, field values inlined — the shape `board json`
         has always printed, and what a jq pipeline is written against."""
+        # The body is deliberately absent: `board json` feeds jq pipelines,
+        # and a page of prose per item buries the rows. `board item` shows it.
         return {"number": self.number, "title": self.title, "url": self.url,
                 **self.fields}
 
@@ -107,6 +113,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             type=entry.get("content", {}).get("type", "ISSUE") or "ISSUE",
             title=content.get("title", ""),
             url=content.get("url", ""),
+            body=content.get("body") or "",
             fields=fields,
         ))
     return items

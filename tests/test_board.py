@@ -113,3 +113,14 @@ def test_what_a_repo_does_declare_wins_over_the_board():
     assert view.columns == ("Todo", "Done")
     # Declared first, then whatever else the board turned out to have.
     assert view.names == ("effort", "area")
+
+
+def test_the_issue_text_travels_with_the_item():
+    """Deciding what to work on means reading the acceptance criteria."""
+    carried = [{"content": {"number": 1, "title": "T", "body": "Done when: it works"}}]
+    assert normalize(carried, {1}, CONFIG)[0].body == "Done when: it works"
+
+
+def test_json_leaves_the_body_out_so_a_pipeline_stays_readable():
+    carried = [{"content": {"number": 1, "title": "T", "body": "pages of prose"}}]
+    assert "body" not in normalize(carried, {1}, CONFIG)[0].flat()

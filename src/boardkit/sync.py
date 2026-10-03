@@ -101,8 +101,11 @@ def fetch_items(config: Config, number: str) -> list[dict]:
         "fragment fieldName on ProjectV2FieldCommon { name } "
         f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
         f"items(first: {config.item_limit}) {{ nodes {{ id type "
-        "content { ... on Issue { number title url state } "
-        "          ... on PullRequest { number title url state } } "
+        # `body` is a scalar on a node already being fetched, so it costs no
+        # points — only bytes. Worth it: deciding what to work on means reading
+        # the acceptance criteria, and without it that is an API call.
+        "content { ... on Issue { number title url state body } "
+        "          ... on PullRequest { number title url state body } } "
         f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
         "} } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
