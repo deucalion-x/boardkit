@@ -370,3 +370,40 @@ def test_a_failed_page_aborts_the_pull_and_keeps_the_previous_snapshot(tmp_path,
         sync.pull(config, kept)
     assert kept.state().synced_at == "earlier"
     assert kept.state().item(1) is not None
+
+
+def test_every_write_travels_in_one_request(monkeypatch):
+    """GitHub takes one field per mutation; GraphQL takes many per document."""
+    from boardkit import sync
+    sent = []
+    monkeypatch.setattr(sync, "run_json",
+                        lambda args: (sent.append(args[-1]), {"data": {}})[1])
+    writes = [Write(number=7, field="status", value="In progress"),
+              Write(number=7, field="workstream", value="Maps"),
+              Write(number=7, field="due", value="2026-11-01")]
+    landed = sync.apply_all(writes, snapshot())
+    assert len(sent) == 1                      # one request, not three
+    assert sent[0].count("updateProjectV2ItemFieldValue") == 3
+    assert "m0:" in sent[0] and "m2:" in sent[0]
+    assert len(landed) == 3
+
+
+def test_a_write_github_names_in_an_error_stays_queued(monkeypatch):
+    from boardkit import sync
+    monkeypatch.setattr(sync, "run_json", lambda args: {
+        "data": {}, "errors": [{"path": ["m1"], "message": "nope"}]})
+    writes = [Write(number=7, field="status", value="In progress"),
+              Write(number=7, field="workstream", value="Maps")]
+    landed = sync.apply_all(writes, snapshot())
+    assert [write.field for write in landed] == ["status"]
+
+
+def test_each_field_type_is_sent_in_the_shape_the_mutation_wants(monkeypatch):
+    from boardkit import sync
+    sent = []
+    monkeypatch.setattr(sync, "run_json",
+                        lambda args: (sent.append(args[-1]), {"data": {}})[1])
+    sync.apply_all([Write(number=7, field="status", value="In progress"),
+                    Write(number=7, field="due", value="2026-11-01")], snapshot())
+    assert 'singleSelectOptionId: "O_P"' in sent[0]
+    assert 'date: "2026-11-01"' in sent[0]

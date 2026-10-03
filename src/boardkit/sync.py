@@ -410,14 +410,58 @@ def multi_select_query(write: Write, snapshot: Snapshot) -> str:
             " }) { projectV2Item { id } } }")
 
 
-def apply(write: Write, snapshot: Snapshot, config: Config) -> None:
-    """Send one write, by whichever route its field type needs."""
-    field = snapshot.field(write.field)
-    if field is not None and field.data_type == "MULTI_SELECT":
-        run_json(["gh", "api", "graphql", "-f",
-                  f"query={multi_select_query(write, snapshot)}"])
-        return
-    gh(*edit_args(write, snapshot, config))
+def value_literal(write: Write, field: ProjectField) -> str:
+    """One write's value, in the shape `ProjectV2FieldValue` wants it."""
+    if field.data_type in {"SINGLE_SELECT", "MULTI_SELECT"}:
+        ids = chosen(write, field)
+        if field.data_type == "SINGLE_SELECT":
+            if len(ids) != 1:
+                raise BoardError(
+                    f"`{write.field}` takes one value, not {len(ids)}")
+            return f'{{singleSelectOptionId: "{ids[0]}"}}'
+        listed = ", ".join(f'"{identity}"' for identity in ids)
+        return f"{{multiSelectOptionIds: [{listed}]}}"
+    if field.data_type == "NUMBER":
+        return f"{{number: {float(write.value)}}}"
+    if field.data_type == "DATE":
+        return f'{{date: "{write.value}"}}'
+    if field.data_type == "TEXT":
+        escaped = write.value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'{{text: "{escaped}"}}'
+    raise BoardError(f"boardkit cannot write a {field.data_type} field yet")
+
+
+def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
+    """Send every write in one request, and return those that landed.
+
+    GitHub takes one field per mutation, so a dozen changes are a dozen
+    mutations — but GraphQL carries them in a single document, aliased. That
+    turns a dozen round trips into one, and a dozen per-request point charges
+    into one.
+
+    Mutations in a document run in order and do not roll back, so a failure
+    partway leaves the earlier ones applied. The aliases say which: anything
+    GitHub names in an error is reported back as not landed, and stays queued.
+    """
+    if not writes:
+        return []
+    parts = []
+    for index, write in enumerate(writes):
+        item, field = snapshot.item(write.number), snapshot.field(write.field)
+        if item is None or not item.id:
+            raise BoardError(f"#{write.number} is not in the snapshot; pull first")
+        if field is None or not field.id:
+            raise BoardError(
+                f"field `{write.field}` has no id in the snapshot; pull first")
+        parts.append(
+            f"m{index}: updateProjectV2ItemFieldValue(input: {{"
+            f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
+            f" fieldId: \"{field.id}\", value: {value_literal(write, field)}"
+            " }) { projectV2Item { id } }")
+    document = "mutation { " + " ".join(parts) + " }"
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={document}"])
+    failed = {str(error.get("path", [""])[0]) for error in payload.get("errors", [])}
+    return [write for index, write in enumerate(writes) if f"m{index}" not in failed]
 
 
 def plan(writes: list[Write],
@@ -527,12 +571,17 @@ def push(config: Config, store: Store) -> tuple[int, int]:
     # no-op.
     for write, current, why in lost:
         store.reject(write, remote=current, reason=why)
-    for write in applies:
-        apply(write, remote, config)
+    landed = apply_all(applies, remote)
+    for write in landed:
         note("pushed", id=write.id, number=write.number, field=write.field,
              value=write.value, was=write.was)
+    sent = {write.id for write in landed}
     with store.held():
-        store.save_pending([])
-    if applies:
-        store.save_state(patched(remote, applies))
-    return len(applies), len(lost)
+        # Anything that did not land stays queued: a document's mutations run
+        # in order and do not roll back, so a partial failure is possible.
+        store.save_pending([w for w in store.pending()
+                            if w.id not in sent and not any(
+                                lost_write.id == w.id for lost_write, _, _ in lost)])
+    if landed:
+        store.save_state(patched(remote, landed))
+    return len(landed), len(lost)
