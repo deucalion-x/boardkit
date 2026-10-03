@@ -39,7 +39,7 @@ SKILL_NAME = "board"
 # visible on the board.
 # Being blocked is not a stage: it can happen at any of them, and the card
 # does not move when it does. So it is a field holding why, empty when the
-# card can move, and `board ready` leaves out whatever carries one.
+# card can move, and a listing shows it beside whatever else the item holds.
 BLOCKED_FIELD = "blocked"
 DEFAULT_STATUS = {
     "Inbox": "captured, not yet refined",

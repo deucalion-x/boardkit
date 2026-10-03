@@ -57,7 +57,7 @@ def test_help_exits_clean(repo):
 
 def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["ready"]) == 1
+    assert cli.main(["list"]) == 1
     assert "no boardkit configuration" in capsys.readouterr().err
 
 

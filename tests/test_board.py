@@ -2,7 +2,6 @@ import pathlib
 
 from boardkit.board import ProjectItem, Shape, normalize, rank
 from boardkit.config import Config, ProjectField
-from boardkit.config import Config
 
 # Columns are named here rather than relied on as a default: boardkit ships
 # GitHub's generic three, and a consuming repo names its own.
@@ -25,7 +24,9 @@ def test_closed_issues_are_dropped_even_though_the_board_still_lists_them():
     assert [item.number for item in items] == [1, 3]
 
 
-def test_a_draft_item_with_no_issue_is_skipped():
+def test_an_item_with_no_content_at_all_is_skipped():
+    """Not a draft — a draft is kept. This is an entry GitHub returned with
+    nothing in it, which has no number to match against the open set."""
     assert all(item.number for item in normalize(ITEMS, {1, 3}, CONFIG))
 
 
@@ -53,11 +54,11 @@ def test_status_is_reachable_as_a_field_like_any_other():
     assert item.field("status") == "Ready"
 
 
-# The shapes `gh project item-list` really returns, taken from a live board.
+# One item as `flatten` hands it over, taken from a live board. Field values
+# have already been reduced to a scalar or a list of names by `value_of`.
 LIVE = [
     {"id": "PVTI_x", "status": "Done", "workstream": "UI style",
-     "sprint": {"duration": 14, "iterationId": "149447a6",
-                "startDate": "2026-09-26", "title": "Sprint 1"},
+     "sprint": "Sprint 1",
      "labels": ["feature", "design"],
      "content": {"number": 62, "title": "Short place names", "type": "Issue",
                  "url": "https://github.com/agerardin/places/issues/62"}},
@@ -65,14 +66,6 @@ LIVE = [
 LIVE_CONFIG = Config(root=pathlib.Path("/repo"), owner="octo", project="4",
                      repo="octo/places", fields=("workstream", "sprint", "labels"),
                      status_order=("Ready", "Done"))
-
-
-def test_the_item_type_gh_prints_is_read_as_the_graphql_enum():
-    assert normalize(LIVE, {62}, LIVE_CONFIG)[0].type == "ISSUE"
-
-
-def test_an_iteration_value_prints_its_title_not_its_object():
-    assert normalize(LIVE, {62}, LIVE_CONFIG)[0].field("sprint") == "Sprint 1"
 
 
 def test_a_list_value_is_joined_rather_than_stringified():
@@ -158,13 +151,11 @@ def test_an_issue_is_still_named_by_its_number():
     assert normalize(LIVE, {62}, LIVE_CONFIG)[0].ref == "62"
 
 
-def test_the_kind_is_taken_in_either_spelling():
-    """GraphQL says DRAFT_ISSUE, `gh` said DraftIssue, and splitting an
-    already-spelled value on capitals turned it into nonsense."""
+def test_an_already_spelled_enum_passes_through_untouched():
+    """It once went through a camel-case split, which turned DRAFT_ISSUE into
+    D_R_A_F_T___I_S_S_U_E and landed a draft in REDACTED as a hidden item."""
     from boardkit.board import ProjectItem
     assert ProjectItem(number=1, type="DRAFT_ISSUE").type == "DRAFT_ISSUE"
-    assert ProjectItem(number=1, type="DraftIssue").type == "DRAFT_ISSUE"
-    assert ProjectItem(number=1, type="Issue").type == "ISSUE"
     assert ProjectItem(number=1, type="Mystery").type == "REDACTED"
 
 
