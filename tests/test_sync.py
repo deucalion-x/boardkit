@@ -245,3 +245,57 @@ def test_waiting_is_not_the_default_so_a_prompt_comes_back(monkeypatch):
     with pytest.raises(plumbing.RateLimited, match="--wait"):
         plumbing.run(["gh", "project", "view"])
     assert len(calls) == 1
+
+
+def test_a_spent_hourly_budget_is_refused_rather_than_waited_out(monkeypatch):
+    """Minutes away, and knowable — unlike a burst, which is neither."""
+    import subprocess
+
+    from boardkit import gh as plumbing
+    now = int(plumbing.time.time())
+
+    def limited(args):
+        if args[:3] == ["gh", "api", "rate_limit"]:
+            return subprocess.CompletedProcess(args, 0, plumbing.json.dumps(
+                {"resources": {"graphql": {"remaining": 0, "reset": now + 900}}}), "")
+        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
+
+    monkeypatch.setattr(plumbing, "once", limited)
+    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
+    with pytest.raises(plumbing.RateLimited, match="hourly GitHub API budget"):
+        plumbing.run(["gh", "project", "view"], retries=2)
+
+
+def test_a_burst_with_budget_to_spare_uses_the_schedule(monkeypatch):
+    import subprocess
+
+    from boardkit import gh as plumbing
+    waits = []
+
+    def limited(args):
+        if args[:3] == ["gh", "api", "rate_limit"]:
+            return subprocess.CompletedProcess(args, 0, plumbing.json.dumps(
+                {"resources": {"graphql": {"remaining": 4790, "reset": 0}}}), "")
+        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
+
+    monkeypatch.setattr(plumbing, "once", limited)
+    monkeypatch.setattr(plumbing.time, "sleep", waits.append)
+    with pytest.raises(plumbing.RateLimited):
+        plumbing.run(["gh", "project", "view"], retries=2)
+    assert waits == list(plumbing.BACKOFF[:2])
+
+
+def test_what_was_written_is_folded_in_rather_than_pulled_again():
+    from boardkit.sync import patched
+    after = patched(snapshot(), [Write(number=7, field="status", value="In progress",
+                                       was="Ready")])
+    assert after.item(7).field("status") == "In progress"
+    # Untouched fields survive the copy.
+    assert after.item(7).field("workstream") == "Maps"
+
+
+def test_folding_in_leaves_items_nobody_wrote_to_alone():
+    from boardkit.sync import patched
+    before = snapshot()
+    after = patched(before, [Write(number=99, field="status", value="Done")])
+    assert after.item(7) == before.item(7)

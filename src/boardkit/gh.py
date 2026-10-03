@@ -18,13 +18,15 @@ import time
 # and `gh` hands us its message without the status code or the `retry-after`
 # header that would tell us how long to wait. So the message is the signal.
 LIMITED = re.compile(r"rate limit|secondary rate|abuse detection", re.IGNORECASE)
-# Each probe against a burst limit can extend it, so the waits are long and
-# few rather than short and many — which is also why waiting is not the
-# default. A person at a terminal should get their prompt back and be told to
-# come back later; only an unattended sync should sit through it. `--wait`
-# raises this.
-BACKOFF = (30, 90, 240)
+# Only used when GitHub declines to say how long to wait. Its own guidance for
+# a secondary limit with no `retry-after` is to wait at least a minute, so the
+# first step matches that rather than guessing shorter and tripping again.
+BACKOFF = (60, 150, 300)
 RETRIES = 0
+# `retry-after` is in seconds; a response carrying it is GitHub answering the
+# question directly, which beats any schedule chosen here.
+# No `retry-after` is parsed anywhere: see `budget_reset` for why there is
+# never one to read through `gh`.
 
 
 class BoardError(RuntimeError):
@@ -37,6 +39,34 @@ class RateLimited(BoardError):
 
 def once(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True)
+
+
+def budget_reset() -> int | None:
+    """Seconds until the hourly budget refills, when it is what ran out.
+
+    GitHub limits two different ways and they need different waits. The hourly
+    point budget reports itself and refills at a known time, possibly most of
+    an hour away. The burst limiter does not report at all: `gh project` hands
+    us a message with no status code, and `/rate_limit` is exempt from limiting
+    so it answers 200 with a full budget even while calls are being refused —
+    which is how this function came to exist and then to do less than it first
+    appeared to. Its `retry-after` is never there to read.
+
+    So: this tells budget exhaustion from a burst. Only the first has a
+    knowable wait.
+    """
+    result = once(["gh", "api", "rate_limit"])
+    if result.returncode != 0:
+        return None
+    try:
+        resources = json.loads(result.stdout)["resources"]
+    except (ValueError, KeyError):
+        return None
+    for name in ("graphql", "core"):
+        found = resources.get(name, {})
+        if found.get("remaining") == 0:
+            return max(0, int(found.get("reset", 0)) - int(time.time()))
+    return None
 
 
 def run(args: list[str], retries: int | None = None) -> str:
@@ -64,8 +94,15 @@ def run(args: list[str], retries: int | None = None) -> str:
                     f"lost — queued changes are kept. Try again in a few "
                     f"minutes, or use `--wait` to sit through it.")
             raise BoardError(f"{' '.join(args)} failed: {detail}")
+        spent = budget_reset()
+        if spent is not None:
+            print(f"the hourly API budget is spent; it refills in {spent}s. "
+                  f"Not waiting that out.", file=sys.stderr)
+            raise RateLimited(
+                f"the hourly GitHub API budget is spent and refills in "
+                f"{spent}s. Queued changes are kept; run this again after.")
         pause = BACKOFF[attempt]
-        print(f"rate limited by GitHub; waiting {pause}s before retrying "
+        print(f"rate limited by a request burst; waiting {pause}s "
               f"({attempt + 1} of {retries})", file=sys.stderr)
         time.sleep(pause)
     raise BoardError(f"{' '.join(args)} failed")

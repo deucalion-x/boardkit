@@ -259,6 +259,27 @@ def plan(writes: list[Write], remote: Snapshot) -> tuple[list[Write], list[tuple
     return applies, lost
 
 
+def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
+    """The snapshot with what was just written folded in.
+
+    A second pull would be the thorough way to learn the new values, and it is
+    not worth its cost: the snapshot is a cache that is stale the moment any
+    pull finishes, and the guarantee boardkit makes — that a write never
+    silently overwrites — rests entirely on the pull *before* the push. What
+    this records is what was sent rather than what GitHub stored, which differs
+    only if GitHub normalised the value; the next pull settles that, as it
+    settles everything else here.
+    """
+    changes: dict[int, dict[str, str]] = {}
+    for write in writes:
+        changes.setdefault(write.number, {})[write.field] = write.value
+    items = tuple(
+        item.model_copy(update={"fields": {**item.fields, **changes[item.number]}})
+        if item.number in changes else item
+        for item in snapshot.items)
+    return snapshot.model_copy(update={"items": items})
+
+
 def push(config: Config, store: Store) -> tuple[int, int]:
     """Drain pending writes against a freshly pulled snapshot."""
     writes = store.pending()
@@ -272,6 +293,5 @@ def push(config: Config, store: Store) -> tuple[int, int]:
         apply(write, remote, config)
     store.save_pending([])
     if applies:
-        # The pushed values are not in the snapshot taken before them.
-        pull(config, store)
+        store.save_state(patched(remote, applies))
     return len(applies), len(lost)
