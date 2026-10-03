@@ -181,3 +181,67 @@ def test_one_bad_option_refuses_the_whole_multi_select_write():
 def test_a_repo_that_names_no_columns_is_not_warned_about_them():
     from boardkit.sync import drift
     assert drift(snapshot(), CONFIG.model_copy(update={"status_order": ()})) == []
+
+
+def test_a_rate_limited_call_is_retried_rather_than_failed(monkeypatch):
+    """The caller can do nothing but wait, and a half-drained queue is worse."""
+    import subprocess
+
+    from boardkit import gh as plumbing
+    attempts = []
+
+    def flaky(args):
+        attempts.append(args)
+        if len(attempts) < 3:
+            return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
+        return subprocess.CompletedProcess(args, 0, "done", "")
+
+    monkeypatch.setattr(plumbing, "once", flaky)
+    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
+    assert plumbing.run(["gh", "project", "view"], retries=3) == "done"
+    assert len(attempts) == 3
+
+
+def test_a_failure_that_is_not_about_rate_is_raised_at_once(monkeypatch):
+    import subprocess
+
+    from boardkit import gh as plumbing
+    calls = []
+
+    def refused(args):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "could not resolve to a Project")
+
+    monkeypatch.setattr(plumbing, "once", refused)
+    with pytest.raises(BoardError, match="could not resolve"):
+        plumbing.run(["gh", "project", "view"])
+    assert len(calls) == 1
+
+
+def test_giving_up_says_what_to_do_and_that_nothing_was_lost(monkeypatch):
+    import subprocess
+
+    from boardkit import gh as plumbing
+    monkeypatch.setattr(plumbing, "once", lambda args: subprocess.CompletedProcess(
+        args, 1, "", "You have exceeded a secondary rate limit"))
+    monkeypatch.setattr(plumbing.time, "sleep", lambda seconds: None)
+    with pytest.raises(plumbing.RateLimited, match="queued changes are kept"):
+        plumbing.run(["gh", "project", "view"], retries=1)
+
+
+def test_waiting_is_not_the_default_so_a_prompt_comes_back(monkeypatch):
+    """A person at a terminal is told to come back; the queue keeps their work."""
+    import subprocess
+
+    from boardkit import gh as plumbing
+    calls = []
+
+    def limited(args):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "API rate limit exceeded")
+
+    monkeypatch.setattr(plumbing, "once", limited)
+    monkeypatch.setattr(plumbing, "RETRIES", 0)
+    with pytest.raises(plumbing.RateLimited, match="--wait"):
+        plumbing.run(["gh", "project", "view"])
+    assert len(calls) == 1

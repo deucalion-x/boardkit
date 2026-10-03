@@ -12,6 +12,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board set <n> <field> <v>  queue a local change
   board rejected [--clear]   local changes that lost to a remote change
   board sync [push|status]   pull, drain the queue, or report
+                             --wait: sit through a rate limit instead of
+                             stopping, for an unattended run
   board auth [--refresh]     what this gh login is allowed to do
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
@@ -30,6 +32,7 @@ import sys
 from . import board as board_module
 from . import admin, auth, issue_mirror, plan_links, setup, skill, sync
 from .config import load
+from . import gh as gh_module
 from .gh import BoardError
 from .store import Store
 
@@ -74,7 +77,10 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "auth":
         return auth.report(config, refresh="--refresh" in args)
     if command == "sync":
-        return run_sync(config, store, args[0] if args else "pull")
+        if "--wait" in args:
+            gh_module.RETRIES = len(gh_module.BACKOFF)
+        verbs = [a for a in args if not a.startswith("-")]
+        return run_sync(config, store, verbs[0] if verbs else "pull")
     if command == "set":
         return queue(store, args)
     if command == "rejected":
