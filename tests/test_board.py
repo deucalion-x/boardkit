@@ -1,6 +1,6 @@
 import pathlib
 
-from boardkit.board import normalize, rank, rollup
+from boardkit.board import Shape, normalize, rank, rollup
 from boardkit.config import Config
 
 # Columns are named here rather than relied on as a default: boardkit ships
@@ -34,12 +34,16 @@ def test_missing_fields_fall_back_per_role():
     assert (item.field("workstream"), item.field("effort")) == ("Unassigned", "-")
 
 
+VIEW = Shape(columns=("Ready", "Inbox", "Done"), names=("workstream", "effort"),
+             grouping="workstream")
+
+
 def test_rank_orders_by_configured_columns_and_parks_the_unknown_last():
-    assert rank("Ready", CONFIG) < rank("Done", CONFIG) < rank("Mystery", CONFIG)
+    assert rank("Ready", VIEW) < rank("Done", VIEW) < rank("Mystery", VIEW)
 
 
 def test_rollup_counts_by_the_grouping_field(capsys):
-    rollup(normalize(ITEMS, {1, 2, 3}, CONFIG), CONFIG)
+    rollup(normalize(ITEMS, {1, 2, 3}, CONFIG), VIEW)
     out = capsys.readouterr().out
     assert "Maps" in out and "Ready=1" in out and "Done=1" in out
     assert "Unassigned  Inbox=1" in out
@@ -85,3 +89,27 @@ def test_a_list_value_is_joined_rather_than_stringified():
 def test_an_unrecognised_item_kind_is_recorded_rather_than_rejected():
     hidden = [{"content": {"number": 1, "type": "Mystery"}}]
     assert normalize(hidden, {1}, LIVE_CONFIG)[0].type == "REDACTED"
+
+
+def test_a_board_that_declares_nothing_is_read_from_its_own_fields():
+    from boardkit.board import shape
+    from boardkit.config import ProjectField
+    bare = Config(root=pathlib.Path("/repo"), owner="octo", repo="octo/widgets")
+    found = (ProjectField(name="status", options=("Inbox", "Todo", "Done")),
+             ProjectField(name="area", options=("sync", "docs")))
+    view = shape(bare, found)
+    assert view.columns == ("Inbox", "Todo", "Done")
+    assert view.names == ("area",) and view.grouping == "area"
+
+
+def test_what_a_repo_does_declare_wins_over_the_board():
+    from boardkit.board import shape
+    from boardkit.config import ProjectField
+    stated = Config(root=pathlib.Path("/repo"), owner="octo", repo="octo/widgets",
+                    status_order=("Todo", "Done"), fields=("effort",))
+    found = (ProjectField(name="status", options=("Inbox", "Todo", "Done")),
+             ProjectField(name="area"))
+    view = shape(stated, found)
+    assert view.columns == ("Todo", "Done")
+    # Declared first, then whatever else the board turned out to have.
+    assert view.names == ("effort", "area")

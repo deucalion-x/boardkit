@@ -19,31 +19,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/boardkit"]
 
-# boardkit tracks its own work on a board boardkit created. There is no
-# `project` number here on purpose: it is resolved from `project_name` and
-# remembered in `.boardkit/state.json`, so nothing hand-maintained holds a
-# value only GitHub can produce. Set `project` only to pin an ambiguous title.
-[tool.boardkit]
-owner = "agerardin"
-owner_type = "user"
-repo = "agerardin/boardkit"
-project_name = "boardkit"
-status_order = ["Todo", "In Progress", "In Review", "Inbox", "Blocked", "Done"]
-group_by = "area"
-skill_name = "boardkit-board"
-
-[tool.boardkit.fields.area]
-data_type = "SINGLE_SELECT"
-options = ["sync", "auth", "admin", "config", "docs", "tests"]
-
-[tool.boardkit.fields.sprint]
-data_type = "ITERATION"
-iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
-
-[tool.boardkit.fields.effort]
-data_type = "SINGLE_SELECT"
-options = ["S", "M", "L"]
-
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

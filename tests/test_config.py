@@ -126,9 +126,11 @@ def test_a_project_number_written_as_an_integer_is_accepted(tmp_path):
     assert load(tmp_path).project == "4"
 
 
-def test_the_default_columns_belong_to_no_particular_project(tmp_path):
+def test_a_repo_that_names_no_columns_takes_the_board_s_own(tmp_path):
+    """Empty means "whatever the board says"; `shape` fills it from the snapshot."""
     write(tmp_path, "pyproject.toml", BARE)
-    assert load(tmp_path).status_order == ("Todo", "In Progress", "Done")
+    config = load(tmp_path)
+    assert config.status_order == () and not config.declares
 
 
 def test_a_dedicated_file_wins_over_a_table_in_pyproject(tmp_path):

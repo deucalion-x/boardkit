@@ -27,51 +27,70 @@ uv add --dev boardkit --editable ../boardkit    # from a checkout
 
 ## Configure
 
-One table at the root of the consuming repository, in `pyproject.toml`:
+Three settings, which `board init` writes for you:
 
-```toml
-[tool.boardkit]
-owner = "agerardin"        # project owner login
-project = "4"              # project number
-repo = "agerardin/places"  # issues repository
-owner_type = "user"        # or "org"; decides the project URL
-status_order = ["Ready", "In progress", "Inbox", "Done"]  # your columns, in order
-fields = ["workstream", "effort"]   # custom Project fields, in print order
-group_by = "workstream"    # which field drives the rollup; defaults to the first
-mirror_path = "docs/places/issue-mirror.md"   # omit to disable `board mirror`
-docs_prefix = "docs/"      # which paths `board links` pins to a sha
-project_name = "Places"
-skill_name = "places-github"
-skill_notes = ".claude/board-notes.md"        # appended to the generated skill
+```bash
+board init
 ```
 
-`fields` has a second form, needed only by `board admin create`, which has to
-know a field's type and its options to create it:
+```toml
+# boardkit.toml
+owner = "agerardin"
+repo = "agerardin/places"
+project_name = "Places 2"
+```
+
+That is the whole configuration for reading a board. Its columns, its fields,
+their options, types and order are discovered on the first sync, because
+GitHub already knows them and a copy here could only drift. Config is for the
+decisions GitHub cannot make: which account, which repository's issues, and
+which project by title.
+
+The number is deliberately absent. It is resolved from the title and
+remembered in the snapshot, which is what lets `board admin apply` run twice
+without making two projects. Set `project = "4"` only to pin an ambiguous
+title.
+
+### Declaring a board
+
+Declare a field when `board admin apply` has to create it, or to fix print
+order. Nothing else needs saying:
 
 ```toml
-[tool.boardkit.fields.workstream]
+[fields.workstream]
 data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
 options = ["Maps", "Planning", "Infra"]
 
-[tool.boardkit.fields.due]
-data_type = "DATE"
-
-[tool.boardkit.fields.sprint]
+[fields.sprint]
 data_type = "ITERATION"
 iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
 ```
 
-All six creatable types work. `gh project field-create` handles only four of
-them, so boardkit sends `createProjectV2Field` itself.
+All six creatable types work. `gh project field-create` handles only four, so
+boardkit sends `createProjectV2Field` itself.
 
-The two forms are exclusive: a flat list is enough to read a board that already
-exists. Defaults are deliberately generic — `status_order` is GitHub's own
-`Todo`/`In Progress`/`Done`, and there is no default `fields` — because a
-default that suits one project works silently and wrongly in every other.
+Declaring a field does not hide the others: every field the board owns is
+still carried, with declared ones printed first.
 
-A repository with no Python packaging can put the same keys at the top level of
-a `boardkit.toml` instead. Either file is found by walking up from the working
-directory, so the commands work from anywhere inside the repo.
+`board schema` prints the full shape as JSON Schema — every setting, its type
+and its default — so an agent can fill it in rather than guess.
+
+### The rest
+
+| Setting | For |
+|---|---|
+| `owner_type` | `"org"` if an organisation owns the project |
+| `status_field` | the column field's name, if the board does not call it Status |
+| `status_order` | to assert an order; empty means the board's own |
+| `group_by` | which field drives the rollup; defaults to the first |
+| `mirror_path` | enables `board mirror` |
+| `docs_prefix` | which paths `board links` pins to a sha |
+| `skill_name`, `skill_notes` | the generated agent skill |
+
+Config is read from `.boardkit.toml`, `boardkit.toml` or a `[tool.boardkit]`
+table in `pyproject.toml`, in that order — a dedicated file wins, because
+writing one is the more explicit statement. Any of them is found by walking up
+from the working directory, so the commands work from anywhere in the repo.
 
 ## Commands
 
@@ -99,6 +118,10 @@ The rest:
 
 | Command | Does |
 |---|---|
+| `board init` | Write the three settings a repo must decide. |
+| `board schema` | The configuration's shape, as JSON Schema. |
+| `board admin apply` / `-n` | Make the board match what this repo declares. |
+| `board admin link` | Attach the project to the repository. |
 | `board auth` / `--refresh` | What this `gh` login is allowed to do. |
 | `board find <terms>` | Full-text search. Hits GitHub: issue bodies are not in the snapshot. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |

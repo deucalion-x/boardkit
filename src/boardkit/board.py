@@ -85,7 +85,8 @@ def as_text(value) -> str:
     return str(value)
 
 
-def normalize(payload: list[dict], still_open: set[int], config: Config) -> list[ProjectItem]:
+def normalize(payload: list[dict], still_open: set[int], config: Config,
+              names: tuple[str, ...] = ()) -> list[ProjectItem]:
     """Project payload to items, dropping anything no longer open.
 
     Pure, so the shape of an item is testable without touching the network.
@@ -97,7 +98,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config) -> list
         if number is None or number not in still_open:
             continue
         fields = {}
-        for field in config.synced_names:
+        for field in (names or config.synced_names):
             default = UNGROUPED if field == config.grouping_field else MISSING
             fields[field] = as_text(entry.get(field, default))
         items.append(ProjectItem(
@@ -111,27 +112,53 @@ def normalize(payload: list[dict], still_open: set[int], config: Config) -> list
     return items
 
 
-def status_of(item: ProjectItem, config: Config) -> str:
-    """The column an item sits in, under whatever that field is called here."""
-    return item.field(config.status_field)
+class Shape(BaseModel):
+    """How to read a board: its columns and the fields worth printing.
+
+    Taken from the snapshot unless config asserts otherwise, so a repo that
+    declares nothing still gets its own columns in its own order rather than
+    a generic default.
+    """
+    model_config = ConfigDict(frozen=True)
+
+    status_field: str = "status"
+    columns: tuple[str, ...] = ()
+    names: tuple[str, ...] = ()
+    grouping: str = "status"
 
 
-def rank(status: str, config: Config) -> int:
-    order = config.status_order
+def shape(config: Config, fields: tuple) -> Shape:
+    status = next((f for f in fields if f.name == config.status_field), None)
+    columns = config.status_order or (status.options if status else ())
+    # Declared fields print first, in the order they are declared; anything
+    # else the board carries follows, so a new field shows up without config
+    # having to hear about it.
+    discovered = [f.name for f in fields if f.name != config.status_field]
+    names = (*config.field_names,
+             *(n for n in discovered if n not in config.field_names))
+    return Shape(status_field=config.status_field,
+                 columns=tuple(columns),
+                 names=names,
+                 grouping=config.group_by or (names[0] if names else config.status_field))
+
+
+def rank(status: str, view: Shape) -> int:
+    order = view.columns
     return order.index(status) if status in order else len(order)
 
 
-def show(items: list[ProjectItem], config: Config) -> None:
+def show(items: list[ProjectItem], view: Shape) -> None:
     if not items:
         print("No matching items.")
         return
-    extras = [f for f in config.field_names if f != config.status_field]
+    extras = [f for f in view.names if f != view.status_field]
     widths = {field: max(len(field), *(len(i.field(field)) for i in items))
               for field in extras}
-    for item in sorted(items, key=lambda i: (rank(status_of(i, config), config), i.number)):
+    for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
+                                             i.number)):
         extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
-        print(f'{status_of(item, config):12} #{item.number:<4} {item.title[:50]:50} '
-              f'{extra}  {item.url}')
+        print(f'{item.field(view.status_field):12} #{item.number:<4} '
+              f'{item.title[:50]:50} {extra}  {item.url}')
 
 
 def children(number: int, config: Config) -> list[int]:
@@ -147,14 +174,13 @@ def search(terms: str, config: Config) -> list[int]:
     return [found_item["number"] for found_item in found]
 
 
-def rollup(items: list[ProjectItem], config: Config) -> None:
-    field = config.grouping_field
+def rollup(items: list[ProjectItem], view: Shape) -> None:
     table: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for item in items:
-        table[item.field(field)][status_of(item, config)] += 1
+        table[item.field(view.grouping)][item.field(view.status_field)] += 1
     width = max((len(name) for name in table), default=0)
     for name, counts in sorted(table.items()):
         summary = "  ".join(f"{status}={counts[status]}"
-                            for status in config.status_order if counts[status])
+                            for status in view.columns if counts[status])
         print(f"{name:{width}}  {summary}")
     print(f"\n{len(items)} items. `board ready` for what is startable.")

@@ -1,0 +1,15 @@
+# boardkit's own board. Three settings are decisions; everything else about
+# the board — its columns, its other fields, their options and order — is
+# discovered on sync, because GitHub already knows it and a second copy here
+# could only drift.
+#
+# A field appears below only because `board admin apply` has to create it.
+owner = "agerardin"
+repo = "agerardin/boardkit"
+project_name = "boardkit"
+
+# An issue often touches more than one part of the code: #8 is config and docs
+# both, which a pick-one field could not say.
+[fields.area]
+data_type = "MULTI_SELECT"
+options = ["sync", "auth", "admin", "config", "docs", "tests", "cli"]

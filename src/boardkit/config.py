@@ -92,7 +92,9 @@ class Config(BaseModel):
     # that queries a board calls `require("project")` instead.
     project: str = ""
     owner_type: Literal["user", "org"] = "user"
-    status_order: tuple[str, ...] = DEFAULT_STATUS_ORDER
+    # Empty means "whatever the board says", in the board's own order. A repo
+    # only names its columns to assert an order, or to create them.
+    status_order: tuple[str, ...] = ()
     # Which field holds the columns. GitHub has no Status concept: it is a
     # single select the default template happens to name "Status", so a project
     # that calls it "Stage" only has to say so here.
@@ -122,8 +124,15 @@ class Config(BaseModel):
         return tuple(field.name for field in self.fields)
 
     @property
+    def declares(self) -> bool:
+        """Whether this repo states its board's shape, or lets sync find it."""
+        return bool(self.fields)
+
+    @property
     def synced_names(self) -> tuple[str, ...]:
-        """Every field a snapshot carries: the status field, then the rest."""
+        """The fields a snapshot carries, or none to mean "discover them"."""
+        if not self.declares:
+            return ()
         return (self.status_field, *(n for n in self.field_names if n != self.status_field))
 
     def field(self, name: str) -> ProjectField | None:

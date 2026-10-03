@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from .board import normalize, open_numbers
 from .config import Config, ProjectField
-from .gh import BoardError, gh, gh_json
+from .gh import BoardError, gh, gh_json, run_json
 from .store import Snapshot, Store, Write, now
 
 # `item-list` names a field by camelCasing it, while `field-list` reports the
@@ -22,19 +22,34 @@ def key(name: str) -> str:
     return "".join(character for character in name if character.isalnum()).lower()
 
 
+# The fields every project has, projected from the issue and not worth
+# carrying: a board that declares nothing should still not end up with eleven
+# columns of Created / Updated / Reviewers.
+BUILT_IN = {"title", "assignees", "labels", "linkedpullrequests", "milestone",
+            "repository", "reviewers", "parentissue", "subissuesprogress",
+            "created", "updated", "closed"}
+
+
 def parse_fields(payload: list[dict], config: Config) -> tuple[ProjectField, ...]:
-    """Field configuration, keyed by the name `item-list` will use for it."""
+    """Field configuration, keyed by the name `item-list` will use for it.
+
+    Every field the board owns is carried, whether or not config mentions it:
+    declaring one field is a statement about `apply` and about print order, not
+    an instruction to forget the rest. Only GitHub's own built-in projections
+    are dropped, since a board would otherwise arrive with eleven columns of
+    Created / Updated / Reviewers.
+    """
     declared = {key(name): name for name in config.synced_names}
     fields = []
     for entry in payload:
         name = entry.get("name", "")
-        if key(name) not in declared:
+        if key(name) in BUILT_IN and key(name) != key(config.status_field):
             continue
         options = tuple(option.get("name", "") for option in entry.get("options", []))
         fields.append(ProjectField(
             # Stored under the name config uses, so a lookup from a snapshot
             # and a lookup from config find the same field.
-            name=declared[key(name)],
+            name=declared.get(key(name), key(name)),
             data_type=data_type_of(entry),
             options=options,
             id=entry.get("id", ""),
@@ -51,6 +66,7 @@ def data_type_of(entry: dict) -> str:
     kind = entry.get("type", "")
     return {
         "ProjectV2SingleSelectField": "SINGLE_SELECT",
+        "ProjectV2MultiSelectField": "MULTI_SELECT",
         "ProjectV2IterationField": "ITERATION",
         "ProjectV2Field": "TEXT",
     }.get(kind, "TEXT")
@@ -69,7 +85,7 @@ def find_project(payload: list[dict], config: Config) -> str:
         titles = ", ".join(sorted(entry.get("title", "") for entry in payload)) or "none"
         raise BoardError(
             f"{config.owner} has no project titled {config.name!r} (has: {titles}). "
-            f"Create it with `board admin create`, or set `project` in "
+            f"Create it with `board admin apply`, or set `project` in "
             f"[tool.boardkit] to pin one by number.")
     if len(matches) > 1:
         raise BoardError(
@@ -92,19 +108,24 @@ def number(config: Config, store: Store) -> str:
 
 def pull(config: Config, store: Store) -> Snapshot:
     """Replace the snapshot with what GitHub currently holds."""
-    chosen = number(config, store)
-    project = gh_json("project", "view", chosen, "--owner", config.owner,
+    target = number(config, store)
+    project = gh_json("project", "view", target, "--owner", config.owner,
                       "--format", "json")
-    fields = gh_json("project", "field-list", chosen, "--owner", config.owner,
+    listed = gh_json("project", "field-list", target, "--owner", config.owner,
                      "--limit", "50", "--format", "json")
-    items = gh_json("project", "item-list", chosen, "--owner", config.owner,
+    items = gh_json("project", "item-list", target, "--owner", config.owner,
                     "--limit", "200", "--format", "json")
+    # Fields are parsed first: when config declares none, they are what says
+    # which keys an item carries.
+    fields = parse_fields(listed.get("fields", []), config)
+    names = config.synced_names or tuple(field.name for field in fields)
     snapshot = Snapshot(
         project_id=project.get("id", ""),
-        project_number=chosen,
+        project_number=target,
         synced_at=now(),
-        fields=parse_fields(fields.get("fields", []), config),
-        items=tuple(normalize(items.get("items", []), open_numbers(config), config)),
+        fields=fields,
+        items=tuple(normalize(items.get("items", []), open_numbers(config),
+                              config, names)),
     )
     store.save_state(snapshot)
     store.ignore_file()
@@ -119,6 +140,10 @@ def drift(snapshot: Snapshot, config: Config) -> list[str]:
     A misspelled column is silent otherwise: items in it sort last and vanish
     from the rollup, which reads as an empty board rather than a typo.
     """
+    # Nothing to disagree with when the repo asserts no order: it is taking
+    # the board's columns as given, which is the default.
+    if not config.status_order:
+        return []
     status = snapshot.field(config.status_field)
     if status is None or not status.options:
         return []
@@ -168,6 +193,50 @@ def edit_args(write: Write, snapshot: Snapshot, config: Config) -> list[str]:
     raise BoardError(f"boardkit cannot write a {field.data_type} field yet")
 
 
+def chosen(write: Write, field: ProjectField) -> list[str]:
+    """Option ids for a multi-select write.
+
+    The value is written as one string — `board set 8 area "config, docs"` —
+    because a queued change is one line in a file and a comma reads better
+    there than a nested list.
+    """
+    names = [part.strip() for part in write.value.split(",") if part.strip()]
+    ids = []
+    for name in names:
+        option = field.option_ids.get(name)
+        if not option:
+            allowed = ", ".join(sorted(field.option_ids)) or "none"
+            raise BoardError(
+                f"`{name}` is not an option of `{write.field}` (has: {allowed})")
+        ids.append(option)
+    return ids
+
+
+def multi_select_query(write: Write, snapshot: Snapshot) -> str:
+    """`gh project item-edit` has no multi-select flag, so this one goes direct."""
+    item = snapshot.item(write.number)
+    field = snapshot.field(write.field)
+    if item is None or not item.id:
+        raise BoardError(f"#{write.number} is not in the snapshot; pull first")
+    if field is None or not field.id:
+        raise BoardError(f"field `{write.field}` has no id in the snapshot; pull first")
+    ids = ", ".join(f'"{option}"' for option in chosen(write, field))
+    return ("mutation { updateProjectV2ItemFieldValue(input: {"
+            f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
+            f' fieldId: "{field.id}", value: {{ multiSelectOptionIds: [{ids}] }}'
+            " }) { projectV2Item { id } } }")
+
+
+def apply(write: Write, snapshot: Snapshot, config: Config) -> None:
+    """Send one write, by whichever route its field type needs."""
+    field = snapshot.field(write.field)
+    if field is not None and field.data_type == "MULTI_SELECT":
+        run_json(["gh", "api", "graphql", "-f",
+                  f"query={multi_select_query(write, snapshot)}"])
+        return
+    gh(*edit_args(write, snapshot, config))
+
+
 def plan(writes: list[Write], remote: Snapshot) -> tuple[list[Write], list[tuple[Write, str]]]:
     """Split pending writes into those that still apply and those that lost.
 
@@ -200,7 +269,7 @@ def push(config: Config, store: Store) -> tuple[int, int]:
     for write, current in lost:
         store.reject(write, remote=current)
     for write in applies:
-        gh(*edit_args(write, remote, config))
+        apply(write, remote, config)
     store.save_pending([])
     if applies:
         # The pushed values are not in the snapshot taken before them.

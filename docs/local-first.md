@@ -114,7 +114,7 @@ code assuming it, so a project whose column field is called "Stage" works.
 values are project-owned and writable — `TEXT`, `NUMBER`, `DATE`,
 `SINGLE_SELECT`, `MULTI_SELECT`, `ITERATION` — and the rest are projections of
 the issue, read-only. `gh project field-create` accepts only four of the six
-(`TEXT`, `SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin create` sends
+(`TEXT`, `SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin apply` sends
 `createProjectV2Field` itself and makes all six.
 
 ## Permission tiers
@@ -127,7 +127,7 @@ broken board:
 | local | nothing | reads of `state`, appends to `pending`, `install-skill`, `--help` |
 | read | `repo`, `read:project` | sync pull |
 | write | `repo`, `project` | sync push |
-| admin | `project` at the owner | `admin create`, `field-create` |
+| admin | `project` at the owner | `admin apply`, `field-create` |
 
 Scopes come from `gh auth status`, which is local and needs no API call.
 Visibility — can this account see the repo and the project — needs a probe, so

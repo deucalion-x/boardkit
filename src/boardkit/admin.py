@@ -1,9 +1,13 @@
 """Create the board a repository is configured for.
 
-Separated from every other verb because it is the only one that makes things
-rather than reading or updating them, and because a half-applied run leaves a
-project with some of its fields — which nothing here cleans up. So the whole
+Separated from every other verb because it is the only one that changes the
+board's shape rather than its contents, and because a half-applied run leaves
+a project with some of its fields — which nothing here cleans up. So the whole
 plan is checked against what already exists before the first call.
+
+`apply` converges: run it on nothing and it builds the board, run it again and
+it adds what config has gained since. It never deletes, because deleting a
+field or an option discards the values every item holds in it.
 
 Fields are created through the API rather than `gh project field-create`,
 which handles only four of the six types GitHub can actually create. Iteration
@@ -196,8 +200,13 @@ def apply_options(config: Config, number: str, field: ProjectField,
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
 
-def create(config: Config, dry: bool = False) -> int:
-    """Create the project if it has no number, then any field it is missing."""
+def apply(config: Config, dry: bool = False) -> int:
+    """Bring the board into line with what this repo declares.
+
+    Named for what it does rather than for the first time it runs: it creates
+    the project when there is none, and on every run after that it adds the
+    fields and options that are missing. It never deletes.
+    """
     auth.require(config, "admin")
     number = locate(config)
     found = existing(config, number)

@@ -13,7 +13,9 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board rejected [--clear]   local changes that lost to a remote change
   board sync [push|status]   pull, drain the queue, or report
   board auth [--refresh]     what this gh login is allowed to do
-  board admin create [-n]    create the project and its missing fields
+  board init [-n] [title]    write the three settings a repo must decide
+  board schema               the configuration's shape, as JSON schema
+  board admin apply [-n]     make the board match what this repo declares
   board admin link           attach the project to the repository
 
   board mirror write|check   the issue-text mirror in git
@@ -26,7 +28,7 @@ import json
 import sys
 
 from . import board as board_module
-from . import admin, auth, issue_mirror, plan_links, skill, sync
+from . import admin, auth, issue_mirror, plan_links, setup, skill, sync
 from .config import load
 from .gh import BoardError
 from .store import Store
@@ -50,6 +52,12 @@ def dispatch(command: str, args: list[str]) -> int:
     if command in {"-h", "--help", "help"}:
         return usage(0)
 
+    # These two run before configuration exists, which is their whole point.
+    if command == "init":
+        return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args)
+    if command == "schema":
+        return setup.schema()
+
     config = load()
     store = Store(config)
 
@@ -57,9 +65,9 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "install-skill":
         return skill.install(config, check="--check" in args)
     if command == "admin":
-        verb = args[0] if args else "create"
-        if verb == "create":
-            return admin.create(config, dry="-n" in args)
+        verb = args[0] if args else "apply"
+        if verb == "apply":
+            return admin.apply(config, dry="-n" in args)
         if verb == "link":
             return admin.link(config)
         return usage()
@@ -96,29 +104,32 @@ def dispatch(command: str, args: list[str]) -> int:
         return 1
     items = list(snapshot.items)
     index = {item.number: item for item in items}
+    # How to read this board: config where it asserts, the snapshot otherwise.
+    view = board_module.shape(config, snapshot.fields)
 
     if command == "rollup":
-        board_module.rollup(items, config)
+        board_module.rollup(items, view)
         report_queue(store)
     elif command == "ready":
-        startable = config.status_order[0] if config.status_order else "Ready"
+        startable = view.columns[0] if view.columns else "Todo"
         board_module.show([i for i in items
-                           if board_module.status_of(i, config) == startable], config)
+                           if i.field(view.status_field) == startable], view)
     elif command in {"group", "ws"}:
-        field, name = config.grouping_field, " ".join(args).lower()
-        board_module.show([i for i in items if name in i.field(field).lower()], config)
+        name = " ".join(args).lower()
+        board_module.show([i for i in items
+                           if name in i.field(view.grouping).lower()], view)
     elif command == "item":
         number = int(args[0].lstrip("#"))
-        board_module.show([index[number]] if number in index else [], config)
+        board_module.show([index[number]] if number in index else [], view)
         # Parent links are not in the snapshot, so children cost a call.
         kids = [index[n] for n in board_module.children(number, config) if n in index]
         if kids:
             print("  children:")
-            board_module.show(kids, config)
+            board_module.show(kids, view)
     elif command == "find":
         # Issue bodies are not in the snapshot; this is real full-text search.
         found = board_module.search(" ".join(args), config)
-        board_module.show([index[n] for n in found if n in index], config)
+        board_module.show([index[n] for n in found if n in index], view)
     elif command == "json":
         json.dump([item.flat() for item in items], sys.stdout, indent=2)
         print()

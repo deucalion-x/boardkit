@@ -36,9 +36,11 @@ def test_field_names_match_across_the_two_commands_that_spell_them_differently()
     assert key("Target date") == key("targetDate") == "targetdate"
 
 
-def test_only_declared_fields_are_kept_and_under_the_name_config_uses():
+def test_every_field_is_kept_whether_or_not_config_mentions_it():
+    """Declaring a field orders it; it does not hide the others."""
     fields = parse_fields(FIELD_PAYLOAD, CONFIG)
-    assert [field.name for field in fields] == ["status", "workstream", "due"]
+    assert [field.name for field in fields] == ["status", "workstream", "due",
+                                                "undeclared"]
     assert fields[0].option_ids == {"Ready": "O_R", "In progress": "O_P"}
     assert fields[2].data_type == "DATE"
 
@@ -146,3 +148,36 @@ def test_matching_columns_warn_about_nothing():
     aligned = snapshot()
     assert drift(aligned, config.model_copy(
         update={"status_order": tuple(aligned.field("status").options)})) == []
+
+
+MULTI = Snapshot(
+    project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+    fields=(ProjectField(name="area", id="F_A", data_type="MULTI_SELECT",
+                         options=("config", "docs", "sync"),
+                         option_ids={"config": "o1", "docs": "o2", "sync": "o3"}),),
+    items=(ProjectItem(number=8, id="I_8", fields={"area": "config"}),))
+
+
+def test_a_multi_select_write_resolves_every_option_it_names():
+    from boardkit.sync import chosen
+    write = Write(number=8, field="area", value="config, docs")
+    assert chosen(write, MULTI.field("area")) == ["o1", "o2"]
+
+
+def test_a_multi_select_write_goes_through_its_own_mutation():
+    from boardkit.sync import multi_select_query
+    query = multi_select_query(Write(number=8, field="area", value="config, docs"), MULTI)
+    assert 'multiSelectOptionIds: ["o1", "o2"]' in query
+    assert 'itemId: "I_8"' in query and 'fieldId: "F_A"' in query
+
+
+def test_one_bad_option_refuses_the_whole_multi_select_write():
+    from boardkit.sync import chosen
+    with pytest.raises(BoardError, match="not an option"):
+        chosen(Write(number=8, field="area", value="config, nonsense"),
+               MULTI.field("area"))
+
+
+def test_a_repo_that_names_no_columns_is_not_warned_about_them():
+    from boardkit.sync import drift
+    assert drift(snapshot(), CONFIG.model_copy(update={"status_order": ()})) == []
