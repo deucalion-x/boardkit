@@ -49,20 +49,24 @@ having one. So it is run by hand, and the result goes in the table below.
 
 | Version | Run | Covered |
 |---|---|---|
-| unreleased | 2026-10-03, `--no-issue`, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on a draft; five cleared; an iteration write refused. **Not run:** the issue path (`board add` of a real issue). |
+| unreleased | 2026-10-03, full, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on both a draft and a real issue; five cleared; every value re-written to confirm an already-true write settles; an iteration write refused; the issue deleted. |
 
 Add a row per release. A release whose row says the run failed, or that it was
 skipped, is a release whose mutations were never confirmed against GitHub —
 which is worth stating rather than leaving blank.
 
-The first run found three things the mocked suite could not:
+The first run found three things the mocked suite could not. The run that
+confirmed their fixes is the row above — it re-writes every value a second
+time, which is the assertion that an already-true write settles rather than
+sitting in the queue forever.
 
 - `align` keeps the options GitHub seeds a new project with, so the declared
   columns are a prefix of what the board carries rather than the whole list.
   Intended, and now asserted.
-- A NUMBER comes back as a float: `3` written reads as `3.0`. So a listing
-  shows `3.0` for a point estimate, and re-setting the same number is sent
-  again rather than recognised as already true.
+- A NUMBER comes back as a float: `3` written reads as `3.0`. Not only ugly in
+  a column — a write is compared to the snapshot as text, so `size=3` could
+  never be seen as already true and was re-sent on every push. Fixed in
+  `board.as_text`, which drops the `.0` from a whole number.
 - A write that was already true remotely never left the queue. It is in
   neither the applied nor the rejected list, and the queue was cleared by
   subtracting only those two — so it was retried on every push and counted by

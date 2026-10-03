@@ -97,12 +97,13 @@ ROUND_TRIP = {
     "area": ("docs", "docs"),
     "tags": ("red, blue", "red, blue"),
     "note": ('a quote " and a backslash \\', 'a quote " and a backslash \\'),
-    # GitHub stores every number as a float and hands it back as one, so `3`
-    # written reads as `3.0` — a listing shows `3.0` for a point estimate, and
-    # `sync.plan` never sees a re-set of the same value as already true. Found
-    # by this run, on the first day there was anything to find it with; the
-    # expectation here is the truth rather than the intent.
-    "size": ("3", "3.0"),
+    # GitHub stores every number as a float and hands `3` back as `3.0`. Found
+    # by this run on the first day there was anything to find it with, and it
+    # was not only cosmetic: a write is compared to the snapshot as text, so
+    # `size=3` could never be seen as already true and was re-sent on every
+    # push. `board.as_text` now drops the `.0`, which is what this asserts —
+    # written as a whole number, read back as one.
+    "size": ("3", "3"),
     "due": ("2026-01-15", "2026-01-15"),
 }
 
