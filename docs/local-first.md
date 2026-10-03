@@ -4,7 +4,8 @@
 
 Agents do project and task management against a local store. Reads answer from
 that store — all of them but one, named below. Writes enter a durable queue and
-boardkit immediately tries to push them. GitHub remains the real store; the local copy is a working copy.
+boardkit immediately tries to push them. GitHub remains the real store; the
+local copy is a working copy.
 
 ## Why reads are local
 
@@ -33,20 +34,10 @@ until an agent reads it.
 
 ## Who reads what
 
-| Actor | Reads | Writes |
-|---|---|---|
-| An agent answering a question | `state` (plus one remote call for `board item`'s child list) | — |
-| A change command | `state`, `pending`, remote target | `pending`, then `state` or `rejected` |
-| `board sync` | remote project | `state` |
-| `board sync push` | `state`, `pending`, remote targets | all three |
-
-Read commands never call `gh`, with one exception: a board does not record
-which issue is a sub-issue of which, so the child list in `board item` has to
-ask. It is skipped with a note when GitHub cannot be reached, after the rest of
-the item has already answered from the snapshot — the read still works offline,
-it just answers less.
-
-Change and sync commands use `gh` behind the boardkit interface.
+Reads answer from `state`. Changes append to `pending` and then land in
+`state` or `rejected`. The exception is the child list in `board item`, which
+has to ask GitHub because a board does not record which issue is a sub-issue
+of which; it is skipped with a note when GitHub cannot be reached.
 
 ## Conflict rule
 
@@ -82,18 +73,10 @@ after an offline or rate-limited run. There is no background daemon.
 
 ## Sync loop
 
-1. Read the durable queue.
-2. Fetch current values only for the items named by queued writes.
-3. Compare each remote field with the value the write was decided against.
-4. Move conflicts to `rejected` and batch the safe mutations into one request.
-5. Remove every write that is finished with — the ones GitHub reports as
-   successful, the ones that lost, and the ones the board already agreed with,
-   which send nothing and so appear in neither list. Then patch `state` with
-   the values that landed.
-
-The snapshot carries project, item, field and option ids because GitHub's
-mutations require them. A full `board sync` refreshes the complete snapshot;
-a push fetches only its targets.
+`sync.push` is the loop, and its docstrings carry the steps. The rule worth
+stating away from the code is that a write leaves the queue only when it is
+finished with — pushed, rejected, or already true on the board. A write that
+is in none of those three stays, which is the invariant a bug broke once.
 
 ## Transport
 
@@ -117,29 +100,19 @@ ProjectV2Item        -> ProjectItem    id, type, content, field values
 conventionally named "Status". Config names it (`status_field`) rather than the
 code assuming it, so a project whose column field is called "Stage" works.
 
-`data_type` uses GitHub's `ProjectV2FieldType` spelling. Six of its twenty-one
-values are project-owned — `TEXT`, `NUMBER`, `DATE`, `SINGLE_SELECT`,
-`MULTI_SELECT`, `ITERATION` — and the rest are projections of the issue,
-read-only. `gh project field-create` accepts only four of the six (`TEXT`,
-`SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin apply` sends
-`createProjectV2Field` itself and makes all six.
-
-Creating is not setting: `board set` refuses an `ITERATION` field, so five of
-the six can be written. Declaring one therefore gets a column nothing can
-fill. Deferred rather than hidden — see
-[#20](https://github.com/agerardin/boardkit/issues/20).
+`data_type` uses GitHub's `ProjectV2FieldType` spelling. Which types this
+repo can create and set is `CREATABLE` in `config.py` and the refusals in
+`sync.value_literal` — not repeated here, because that is exactly the kind of
+list that goes stale. `board schema` prints the configuration's shape.
 
 ## Permission tiers
 
 Each tier is gated before it acts, because a half-applied admin step leaves a
 broken board:
 
-| Tier | Needs | Commands |
-|---|---|---|
-| local | nothing | reads of `state`, appends to `pending`, `install-skill`, `--help` |
-| read | `repo`, `read:project` | sync pull |
-| write | `repo`, `project` | sync push |
-| admin | `project` at the owner | `admin apply`, `field-create` |
+`board auth` prints the four tiers, what each needs, and which this login
+has. Each is gated before it acts, because a half-applied admin step leaves a
+broken board.
 
 Scopes come from `gh auth status`, which is local and needs no API call.
 Visibility — can this account see the repo and the project — needs a probe, so
