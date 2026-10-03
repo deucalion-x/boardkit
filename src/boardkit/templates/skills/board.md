@@ -24,7 +24,8 @@ your reasoning.
 | | Startable work is the `Todo` column with nothing in `blocked`. |
 | `board item <ref>` | One item: its fields, labels, full text, and children. |
 | `board find <terms>` | Titles, bodies and labels containing every word. |
-| `board json` | Every item as one row, for jq or python. |
+| `board json` | Every item as one row, for jq or python. An unset field is `""`. |
+| `board views` | The saved tabs the board has. |
 
 The snapshot carries each item's body, so `board item` shows the acceptance
 criteria without a call. Do not fetch an issue to read it.
@@ -35,7 +36,7 @@ rather than asking for a new verb.
 ## Naming an item
 
 An issue is its number: `board item 18`. A draft card has no number and is
-named by the handle the board prints, beginning with `~`: `board item ~a1b2c3`.
+named by the handle the board prints, beginning with `~`, which `board add` prints: `board item ~g-ST5Q`.
 Either works anywhere a reference is taken.
 
 ## Changing the board

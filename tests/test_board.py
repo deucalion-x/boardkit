@@ -191,3 +191,25 @@ def test_every_word_has_to_appear_somewhere():
 def test_searching_for_nothing_finds_nothing():
     from boardkit.board import matching
     assert matching(SEARCHABLE, "   ") == []
+
+
+def test_an_empty_listing_says_what_the_board_can_hold():
+    """Otherwise the first card has to be filed against guessed names: the
+    listing is the only place the board's shape appears."""
+    import io, contextlib
+    from boardkit.board import show
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        show([], Shape(columns=("Inbox", "Todo"), names=("area", "blocked")))
+    printed = out.getvalue()
+    assert "columns: Inbox, Todo" in printed and "fields:  area, blocked" in printed
+
+
+def test_json_reports_an_unset_field_as_empty_rather_than_a_dash():
+    """`-` is a listing's way of filling a column, not a value: a jq pipeline
+    had to know the convention, and that it applied to only some rows."""
+    item = ProjectItem(number=1, title="A thing",
+                       fields={"status": "Todo", "blocked": "-"})
+    assert item.flat()["blocked"] == ""
+    # The listing still shows the dash.
+    assert item.field("blocked") == "-"

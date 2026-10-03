@@ -6,6 +6,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board item <n>             one item with its text and children
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
+  board views                the saved tabs the board has
 
   board add <title> [f=v]    create an issue and put it on the board
                              --body <text> for its text
@@ -37,7 +38,7 @@ from .config import load
 from .gh import BoardError
 from .store import Store
 
-BOARD_COMMANDS = {"list", "item", "find", "json"}
+BOARD_COMMANDS = {"list", "item", "find", "json", "views"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
@@ -122,7 +123,12 @@ def dispatch(command: str, args: list[str]) -> int:
     index = {item.ref: item for item in items}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
-    if command == "list":
+    if command == "views":
+        for name in snapshot.views:
+            print(name)
+        if not snapshot.views:
+            print("No views; `board sync` has not seen any.")
+    elif command == "list":
         board_module.show(items, view)
         report_queue(store)
     elif command == "item":
@@ -136,6 +142,9 @@ def dispatch(command: str, args: list[str]) -> int:
             said = "  ".join(part for part in about if part)
             if said:
                 print(f"  {said}")
+        if found is not None and not found.body:
+            # Silence read as "the skill lied about showing the full text".
+            print("  (no description)")
         if found is not None and found.body:
             print()
             print(found.body.rstrip())

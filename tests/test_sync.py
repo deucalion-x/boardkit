@@ -441,3 +441,37 @@ def test_a_field_the_board_has_and_config_does_not_is_not_drift():
     config = Config(root=pathlib.Path("."), owner="o", repo="o/p")
     board = Snapshot(fields=(ProjectField(name="sprint"),))
     assert field_drift(board, config) == []
+
+
+def test_a_view_deleted_in_the_browser_is_reported():
+    """`admin apply` would put it straight back, so the disagreement is worth
+    a line before that happens."""
+    from boardkit.sync import view_drift
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                    views=({"name": "Open work"}, {"name": "Everything"}))
+    board = Snapshot(views=("Everything",))
+    assert "'Open work'" in " ".join(view_drift(board, config))
+
+
+def test_no_views_in_the_snapshot_says_nothing():
+    """A snapshot from before views were carried is silent, not wrong."""
+    from boardkit.sync import view_drift
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                    views=({"name": "Open work"},))
+    assert view_drift(Snapshot(), config) == []
+
+
+def test_a_pull_carries_a_field_config_never_declared():
+    """Declaring one field narrowed the snapshot to it, so any other field's
+    value was dropped on every pull while the board still held it."""
+    from boardkit.board import normalize
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                    fields=(ProjectField(name="area"),))
+    fields = (ProjectField(name="status"), ProjectField(name="area"),
+              ProjectField(name="blocked", data_type="TEXT"))
+    names = ("status", "area", "blocked")
+    row = {"id": "I_1", "status": "Todo", "area": "Core",
+           "blocked": "waiting on a decision",
+           "content": {"number": 4, "title": "A thing", "type": "ISSUE"}}
+    item = normalize([row], {4}, config, names)[0]
+    assert item.field("blocked") == "waiting on a decision"

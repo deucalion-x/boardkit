@@ -34,7 +34,9 @@ def seeded(repo):
         items=(ProjectItem(number=7, id="I_7", title="Corridor",
                            fields={"status": "Todo", "workstream": "Maps"}),
                ProjectItem(number=8, id="I_8", title="Later",
-                           fields={"status": "Done", "workstream": "Maps"}))))
+                           fields={"status": "Done", "workstream": "Maps"}),
+               ProjectItem(id="I_D1", title="A jotted thought", type="DRAFT_ISSUE",
+                           fields={"status": "Inbox", "workstream": "Maps"}))))
     return store
 
 
@@ -117,7 +119,7 @@ def test_the_rollup_mentions_queued_work_so_it_is_not_forgotten(seeded, capsys):
 
 def test_sync_status_needs_no_network(seeded, capsys):
     assert cli.main(["sync", "status"]) == 0
-    assert "2 items" in capsys.readouterr().out
+    assert "3 items" in capsys.readouterr().out
 
 
 def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
@@ -176,3 +178,18 @@ def test_an_existing_board_gets_the_columns_commented_out(tmp_path):
     settings = {"owner": "octo", "repo": "octo/places", "project_name": "Places"}
     (tmp_path / "boardkit.toml").write_text(rendered(settings, exists=True), encoding="utf-8")
     assert load(tmp_path).status_order == ()
+
+
+def test_views_lists_the_tabs_the_board_has(seeded, capsys):
+    """Declared in config and invisible from the CLI until now."""
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={"views": ("Open work", "Everything")}))
+    assert cli.main(["views"]) == 0
+    assert capsys.readouterr().out.split() == ["Open", "work", "Everything"]
+
+
+def test_an_item_with_no_description_says_so(seeded, capsys):
+    """Silence read as the skill having lied about showing the full text.
+    A draft, because looking up an issue's children needs the network."""
+    assert cli.main(["item", "~I_D1"]) == 0
+    assert "(no description)" in capsys.readouterr().out

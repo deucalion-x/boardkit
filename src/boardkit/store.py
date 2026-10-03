@@ -73,6 +73,9 @@ class Snapshot(BaseModel):
     project_number: str = ""
     synced_at: str = ""
     fields: tuple[ProjectField, ...] = ()
+    # Saved tab names, so a tab deleted in the browser is noticed. Only the
+    # names: what a tab shows is a UI setting boardkit does not read back.
+    views: tuple[str, ...] = ()
     items: tuple[ProjectItem, ...] = ()
 
     def item(self, ref: str | int) -> ProjectItem | None:

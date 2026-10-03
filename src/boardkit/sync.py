@@ -145,6 +145,9 @@ def fetch_board(config: Config, number: str) -> dict:
         "fragment fieldName on ProjectV2FieldCommon { name } "
         f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
         "id "
+        # Names only: enough to tell a declared tab that is gone from one
+        # that is there, which is all `apply` would act on.
+        f"views(first: {config.page_size}) {{ nodes {{ name }} }} "
         f"{fields_block(config, None)}")
     payload = run_json(["gh", "api", "graphql", "-f",
                         f"query={head}{items_block(config, None)}}} }} }}"])
@@ -175,7 +178,10 @@ def fetch_board(config: Config, number: str) -> dict:
         items += [flatten(node) for node in block["nodes"] if node]
         page = block["pageInfo"]
 
-    return {"id": project.get("id", ""), "fields": fields, "items": items}
+    views = [node.get("name", "") for node in
+             (project.get("views") or {}).get("nodes", []) if node]
+    return {"id": project.get("id", ""), "fields": fields, "items": items,
+            "views": views}
 
 
 def truncated(rows: list[dict]) -> list[str]:
@@ -301,7 +307,14 @@ def pull(config: Config, store: Store) -> Snapshot:
     # Fields are parsed first: when config declares none, they are what says
     # which keys an item carries.
     fields = parse_fields(board["fields"], config)
-    names = config.synced_names or tuple(field.name for field in fields)
+    # Every field the board has, declared or not. Narrowing to the declared
+    # ones dropped the value of any other on every pull — `blocked` set and
+    # then silently emptied by the next sync, with the board still holding it.
+    # Declared names come first, because that is the print order config asks
+    # for; the rest follow.
+    declared = [name for name in config.synced_names
+                if any(field.name == name for field in fields)]
+    names = (*declared, *(field.name for field in fields if field.name not in declared))
     # The state arrives with each item, so a closed one is dropped without the
     # separate `gh issue list` call this used to need.
     still_open = {row["content"]["number"] for row in rows
@@ -311,6 +324,7 @@ def pull(config: Config, store: Store) -> Snapshot:
         project_number=target,
         synced_at=now(),
         fields=fields,
+        views=tuple(board.get("views", ())),
         items=tuple(normalize(rows, still_open, config, names)),
     )
     store.save_state(snapshot)
@@ -352,7 +366,24 @@ def drift(snapshot: Snapshot, config: Config) -> list[str]:
             f"missing from status_order; items there sort last and are left out "
             f"of the rollup")
     warnings.extend(field_drift(snapshot, config))
+    warnings.extend(view_drift(snapshot, config))
     return warnings
+
+
+def view_drift(snapshot: Snapshot, config: Config) -> list[str]:
+    """Saved tabs config declares that the board no longer has.
+
+    A tab is deleted in the browser by someone who decided they did not want
+    it; `admin apply` would put it straight back, so the disagreement is
+    worth a line before that happens.
+    """
+    if not snapshot.views:
+        return []
+    gone = [view.name for view in config.views if view.name not in snapshot.views]
+    if not gone:
+        return []
+    return [f"config declares view(s) {', '.join(repr(n) for n in gone)} the board "
+            f"does not have; `board admin apply` would recreate them"]
 
 
 def field_drift(snapshot: Snapshot, config: Config) -> list[str]:

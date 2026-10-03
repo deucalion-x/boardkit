@@ -91,8 +91,14 @@ class ProjectItem(BaseModel):
         has always printed, and what a jq pipeline is written against."""
         # The body is deliberately absent: `board json` feeds jq pipelines,
         # and a page of prose per item buries the rows. `board item` shows it.
+        # `-` is how an unset field is printed in a listing, where a column
+        # has to hold something; it is not a value. A pipeline comparing
+        # against "" would otherwise have to know that convention, and know
+        # it only applies to some rows.
+        values = {name: ("" if value == MISSING else value)
+                  for name, value in self.fields.items()}
         row = {"ref": self.ref, "number": self.number, "title": self.title,
-               "url": self.url, **self.fields}
+               "url": self.url, **values}
         if self.labels:
             row["labels"] = ", ".join(self.labels)
         if self.assignees:
@@ -201,12 +207,24 @@ def rank(status: str, view: Shape) -> int:
 
 def show(items: list[ProjectItem], view: Shape) -> None:
     if not items:
+        # The listing is the only place the board's shape appears, so an empty
+        # one used to say nothing at all — leaving a first card to be filed
+        # against guessed column and field names.
         print("No matching items.")
+        if view.columns:
+            print(f"  columns: {', '.join(view.columns)}")
+        if view.names:
+            print(f"  fields:  {', '.join(view.names)}")
         return
     extras = [f for f in view.names if f != view.status_field]
     widths = {field: max(len(field), *(len(i.field(field)) for i in items))
               for field in extras}
     names = max((len(item.ref) for item in items), default=4)
+    # Named, because the extra columns are a board's own fields: without a
+    # header the third column of `Core  -` is anybody's guess.
+    if extras:
+        heads = "  ".join(f"{field:{widths[field]}}" for field in extras)
+        print(f'{view.status_field:12} {"ref":<{names + 1}} {"title":50} {heads}')
     for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
                                              i.number, i.ref)):
         extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
@@ -248,12 +266,24 @@ def rank(status: str, view: Shape) -> int:
 
 def show(items: list[ProjectItem], view: Shape) -> None:
     if not items:
+        # The listing is the only place the board's shape appears, so an empty
+        # one used to say nothing at all — leaving a first card to be filed
+        # against guessed column and field names.
         print("No matching items.")
+        if view.columns:
+            print(f"  columns: {', '.join(view.columns)}")
+        if view.names:
+            print(f"  fields:  {', '.join(view.names)}")
         return
     extras = [f for f in view.names if f != view.status_field]
     widths = {field: max(len(field), *(len(i.field(field)) for i in items))
               for field in extras}
     names = max((len(item.ref) for item in items), default=4)
+    # Named, because the extra columns are a board's own fields: without a
+    # header the third column of `Core  -` is anybody's guess.
+    if extras:
+        heads = "  ".join(f"{field:{widths[field]}}" for field in extras)
+        print(f'{view.status_field:12} {"ref":<{names + 1}} {"title":50} {heads}')
     for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
                                              i.number, i.ref)):
         extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)

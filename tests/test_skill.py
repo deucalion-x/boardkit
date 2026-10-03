@@ -42,7 +42,7 @@ def test_the_skill_covers_changing_work_and_the_admin_one_the_board():
 
 
 def test_the_skill_explains_how_a_draft_is_named():
-    assert "~a1b2c3" in render("board")
+    assert "~g-ST5Q" in render("board")
 
 
 def test_install_writes_both_and_check_reports_drift(tmp_path):

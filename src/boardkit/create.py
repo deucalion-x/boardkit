@@ -32,8 +32,13 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     number = store.state().project_number or config.require("project")
     made = gh_json("project", "item-create", number, "--owner", config.owner,
                    "--title", title, "--body", body or "", "--format", "json")
-    print(f"Created draft {title!r}")
-    note("created_draft", title=title, item=made.get("id"))
+    from .board import ProjectItem
+
+    handle = ProjectItem(id=made.get("id", ""), title=title).ref
+    # Printed, because it is how the card is addressed and nothing else knows
+    # it: a draft has no number, and finding it meant listing the board again.
+    print(f"Created draft {handle} {title!r}")
+    note("created_draft", title=title, ref=handle, item=made.get("id"))
 
     from . import sync
     if values:
