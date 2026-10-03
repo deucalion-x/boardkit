@@ -35,11 +35,34 @@ def root() -> pathlib.Path:
     return pathlib.Path(git("rev-parse", "--show-toplevel"))
 
 
+# Commented out, because a repo whose board already exists needs none of it:
+# its columns and fields are discovered on the first sync. It is written all
+# the same, so that making a board from scratch does not mean finding the
+# shape of these tables in the documentation first.
+EXAMPLE = """
+# To create the board rather than reach one that exists, uncomment and edit,
+# then run `board admin apply`. Everything under [admin] is read by that verb
+# alone; a board that already exists needs none of it.
+# [admin]
+# status_order = ["Inbox", "Todo", "In progress", "Done"]
+#
+# [admin.fields.area]
+# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+# options = ["Maps", "Planning", "Infra"]
+#
+# [[admin.views]]
+# name = "Open work"
+# layout = "BOARD"
+# fields = ["status", "area"]
+# filter = "-status:Done"
+"""
+
+
 def rendered(settings: dict) -> str:
     lines = [TABLE]
     for key, value in settings.items():
         lines.append(f'{key} = "{value}"')
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n" + EXAMPLE
 
 
 def target(where: pathlib.Path) -> pathlib.Path:

@@ -123,3 +123,14 @@ def test_the_rollup_mentions_queued_work_so_it_is_not_forgotten(seeded, capsys):
 def test_sync_status_needs_no_network(seeded, capsys):
     assert cli.main(["sync", "status"]) == 0
     assert "2 items" in capsys.readouterr().out
+
+
+def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
+    """A new repo should not have to find the shape of these tables in the
+    docs; it should not have to use them either, hence commented."""
+    from boardkit.setup import rendered
+    text = rendered({"owner": "octo", "repo": "octo/places"})
+    assert "# [admin]" in text and "# [admin.fields.area]" in text
+    import tomllib
+    assert tomllib.loads(text.replace("[tool.boardkit]\n", "")) == {
+        "owner": "octo", "repo": "octo/places"}
