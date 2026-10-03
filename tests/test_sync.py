@@ -467,8 +467,6 @@ def test_a_pull_carries_a_field_config_never_declared():
     from boardkit.board import normalize
     config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
                     fields=(ProjectField(name="area"),))
-    fields = (ProjectField(name="status"), ProjectField(name="area"),
-              ProjectField(name="blocked", data_type="TEXT"))
     names = ("status", "area", "blocked")
     row = {"id": "I_1", "status": "Todo", "area": "Core",
            "blocked": "waiting on a decision",

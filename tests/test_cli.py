@@ -57,7 +57,7 @@ def test_help_exits_clean(repo):
 
 def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    assert cli.main(["ready"]) == 1
+    assert cli.main(["list"]) == 1
     assert "no boardkit configuration" in capsys.readouterr().err
 
 
@@ -143,7 +143,8 @@ def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
         "project_name": "Places"})
     monkeypatch.setattr(setup, "board_exists", lambda settings: False)
     monkeypatch.setattr(setup, "root", lambda: tmp_path)
-    import boardkit.admin, boardkit.sync
+    import boardkit.admin
+    import boardkit.sync
     monkeypatch.setattr(boardkit.admin, "apply", lambda config, dry=False: done.append("apply"))
     monkeypatch.setattr(boardkit.sync, "pull", lambda config, store: done.append("pull"))
     (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")

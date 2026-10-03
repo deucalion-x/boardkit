@@ -42,7 +42,9 @@ OFFLINE = re.compile(
 
 
 def once(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(args, capture_output=True, text=True)
+    # `check=False` throughout: a non-zero exit from `gh` is a result to
+    # read, not a crash. The callers turn it into a message.
+    return subprocess.run(args, capture_output=True, text=True, check=False)
 
 
 REMAINING = re.compile(r"^x-ratelimit-remaining:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
@@ -139,10 +141,11 @@ def probe(args: list[str]) -> tuple[bool, str]:
     """
     if shutil.which(args[0]) is None:
         return False, f"{args[0]} is not installed or not on PATH"
-    result = subprocess.run(args, capture_output=True, text=True)
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
     return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
 
 
 def git_ok(*args: str) -> bool:
     """True when the command exits zero. For probes, where failure is an answer."""
-    return subprocess.run(["git", *args], capture_output=True).returncode == 0
+    return subprocess.run(["git", *args], capture_output=True,
+                          check=False).returncode == 0

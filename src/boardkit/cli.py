@@ -31,9 +31,8 @@ from __future__ import annotations
 import json
 import sys
 
+from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync, trail
 from . import board as board_module
-from . import trail
-from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync
 from .config import load
 from .gh import BoardError
 from .store import Store
@@ -207,8 +206,13 @@ def queue(config, store: Store, args: list[str]) -> int:
         print(f"Queued #{ref} {field} = {value} (was {was}).")
         return report_queue(store)
 
-    pushed, lost, why = sync.push_now(config, store)
+    _pushed, lost, why = sync.push_now(config, store)
     if why:
+        # Nothing retries this on its own, on purpose. The path opens only when
+        # GitHub is unreachable, the change is already safe in the queue, and
+        # every listing repeats the count — so the cost of a timer or a hook
+        # that outlives the command buys very little. Telling the user plainly
+        # is the end state, not a placeholder for automation.
         print(f"#{ref} {field} = {value} (was {was}) — kept, {why}. "
               f"`board sync push` when that clears.")
         return 0

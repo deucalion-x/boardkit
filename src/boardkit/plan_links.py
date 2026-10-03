@@ -58,7 +58,9 @@ def rewrite(config: Config, dry: bool) -> int:
             path, anchor = match.group(1), match.group(2) or ""
             sha = sha_for(path, config)
             if sha is None:
-                misses.append(path)
+                # Late binding is safe: `replace` is consumed by the
+                # `sub` below, inside this same iteration.
+                misses.append(path)  # noqa: B023
                 return match.group(0)
             return f"[`{path}{anchor}`]({blob}/{sha}/{path}{anchor})"
 

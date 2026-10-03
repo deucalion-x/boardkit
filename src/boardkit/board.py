@@ -5,7 +5,6 @@ pipe `board json` into jq or python rather than growing a verb.
 """
 from __future__ import annotations
 
-import re
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -20,7 +19,7 @@ ItemType = Literal["ISSUE", "PULL_REQUEST", "DRAFT_ISSUE", "REDACTED"]
 
 
 class ProjectItem(BaseModel):
-    """One `gh project item-list` entry under GitHub's names for it.
+    """One project item under GitHub's names for it.
 
         ProjectV2Item.id        -> id        (needed to write a value)
         ProjectV2Item.type      -> type
@@ -57,18 +56,15 @@ class ProjectItem(BaseModel):
     @field_validator("type", mode="before")
     @classmethod
     def _as_enum(cls, value):
-        """GraphQL says `DRAFT_ISSUE`; `gh` said `DraftIssue`. Take either.
+        """The kind arrives as the GraphQL enum, or not at all.
 
-        An already-spelled enum value passes through untouched — splitting it
-        on capitals would turn DRAFT_ISSUE into D_R_A_F_T___I_S_S_U_E and land
-        it in REDACTED, which is how a draft came to read as a hidden item.
+        An unknown spelling is recorded as REDACTED rather than refused: a
+        kind nobody can read is still an item on the board, and dropping it
+        would make the board quietly smaller than it is.
         """
         if not isinstance(value, str):
             return value
-        if value in get_args(ItemType):
-            return value
-        spelled = re.sub(r"(?<!^)(?=[A-Z])", "_", value).upper()
-        return spelled if spelled in get_args(ItemType) else "REDACTED"
+        return value if value in get_args(ItemType) else "REDACTED"
 
     @property
     def ref(self) -> str:
@@ -117,12 +113,10 @@ def named(connection, key: str) -> tuple[str, ...]:
 def as_text(value) -> str:
     """One field value as a string.
 
-    Most values arrive as strings already, but an iteration reports an object
-    (`title`, `startDate`, `duration`, `iterationId`) and a multi-select a
-    list. Stringifying those raw would print a dict into a table column.
+    Most values arrive as strings already — `value_of` has already taken the
+    one scalar out of each typed shape — but a multi-select arrives as a list
+    of names. Joining it here keeps a table column from holding a repr.
     """
-    if isinstance(value, dict):
-        return str(value.get("title") or value.get("name") or MISSING)
     if isinstance(value, list):
         return ", ".join(as_text(item) for item in value) or MISSING
     return str(value)

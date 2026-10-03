@@ -203,7 +203,7 @@ def test_an_error_names_the_file_that_was_actually_read(tmp_path):
     """Three files can hold this configuration; naming the wrong one sends
     someone to edit a file nothing reads."""
     write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\nnonsense = 1\n')
-    with pytest.raises(BoardError, match="boardkit.toml") as caught:
+    with pytest.raises(BoardError, match=r"boardkit\.toml") as caught:
         load(tmp_path)
     assert "pyproject.toml" not in str(caught.value)
 
@@ -211,7 +211,7 @@ def test_an_error_names_the_file_that_was_actually_read(tmp_path):
 def test_require_points_at_that_same_file(tmp_path):
     write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
     config = load(tmp_path)
-    with pytest.raises(BoardError, match="boardkit.toml"):
+    with pytest.raises(BoardError, match=r"boardkit\.toml"):
         config.require("project")
 
 

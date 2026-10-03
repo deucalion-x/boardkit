@@ -5,7 +5,8 @@ from boardkit.skill import SKILLS, install, render
 
 
 def config(tmp_path: pathlib.Path, **overrides) -> Config:
-    base = dict(root=tmp_path, owner="octo", project="4", repo="octo/places")
+    base = {"root": tmp_path, "owner": "octo", "project": "4",
+            "repo": "octo/places"}
     return Config(**(base | overrides))
 
 
