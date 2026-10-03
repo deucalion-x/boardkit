@@ -82,8 +82,11 @@ what says in the file itself that they exist to build a board rather than to
 reach one. They also work at the top level, and mean the same thing either
 way; declaring one in both places is refused rather than silently resolved.
 
-All six creatable types work. `gh project field-create` handles only four, so
-boardkit sends `createProjectV2Field` itself.
+All six types can be created — `gh project field-create` handles only four, so
+boardkit sends `createProjectV2Field` itself. Five of them can then be set:
+`board set` refuses an `ITERATION` field, so declaring one gets you a column
+nothing can fill. Tracked as
+[#20](https://github.com/agerardin/boardkit/issues/20).
 
 Declaring a field does not hide the others: every field the board owns is
 still carried, with declared ones printed first.
