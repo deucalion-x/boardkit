@@ -1,12 +1,22 @@
-# Which board this is. Its columns and fields are discovered on sync.
-# The starter config every other repo gets is src/boardkit/templates/boardkit.toml.
+# Which board this is.
 owner = "agerardin"
 repo = "agerardin/boardkit"
 project_name = "boardkit"
 
+# The board itself: what `board admin apply` creates, and the print order of
+# what it finds. A board that already exists needs none of it — its shape is
+# discovered on sync — but it costs nothing to state and is what a new one is
+# built from.
 [board]
-# The tabs this board should have. `admin apply` creates a missing one and
-# never deletes any.
+# The columns, in order. Each is created carrying what it means, which GitHub
+# shows on the board itself. A `blocked` text field is created alongside them:
+# being blocked is not a stage, so it is a field holding what is in the way.
+# This board was made in the browser, so its columns carry GitHub's spelling.
+# `Blocked` is still one of them; it is a field now, so the column is empty
+# and waiting to be deleted in the browser.
+status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
+
+# Saved tabs. `admin apply` creates a missing one and never deletes any.
 [[board.views]]
 name = "Open work"
 layout = "BOARD"
@@ -17,3 +27,8 @@ filter = "-status:Done"
 name = "Everything"
 layout = "TABLE"
 fields = ["status", "area", "effort", "sprint"]
+
+# Any other field. One table per field, named as you will type it.
+# [board.fields.area]
+# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+# options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]

@@ -1,0 +1,33 @@
+# Which board this is.
+owner = "$owner"
+repo = "$repo"
+project_name = "$project_name"
+
+# The board itself: what `board admin apply` creates, and the print order of
+# what it finds. A board that already exists needs none of it — its shape is
+# discovered on sync — but it costs nothing to state and is what a new one is
+# built from.
+[board]
+# The columns, in order. Each is created carrying what it means, which GitHub
+# shows on the board itself. A `blocked` text field is created alongside them:
+# being blocked is not a stage, so it is a field holding what is in the way.
+status_order = ["Inbox", "Todo", "In progress", "In review", "Done"]
+
+# Saved tabs. `admin apply` creates a missing one and never deletes any. They
+# show `status` alone, because it is the one field every board has; add your
+# own to a view once the field exists.
+[[board.views]]
+name = "Open work"
+layout = "BOARD"
+fields = ["status"]
+filter = "-status:Done"
+
+[[board.views]]
+name = "Everything"
+layout = "TABLE"
+fields = ["status"]
+
+# Any other field. One table per field, named as you will type it.
+# [board.fields.area]
+# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+# options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]

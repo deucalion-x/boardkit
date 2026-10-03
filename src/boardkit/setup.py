@@ -35,7 +35,7 @@ def root() -> pathlib.Path:
     return pathlib.Path(git("rev-parse", "--show-toplevel"))
 
 
-TEMPLATE = pathlib.Path(__file__).with_name("templates") / "boardkit.toml"
+TEMPLATE = pathlib.Path(__file__).with_name("templates") / "board-template.toml"
 
 
 def board_exists(settings: dict) -> bool:

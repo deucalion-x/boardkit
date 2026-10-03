@@ -127,10 +127,11 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     docs; it should not have to use them either, hence commented."""
     from boardkit.setup import rendered
     text = rendered({"owner": "octo", "repo": "octo/places", "project_name": "P"})
-    assert "# [board.fields.area]" in text and "# [[board.views]]" in text
+    assert "# [board.fields.area]" in text
     import tomllib
-    assert tomllib.loads(text) == {
-        "owner": "octo", "repo": "octo/places", "project_name": "P", "board": {}}
+    board = tomllib.loads(text)["board"]
+    assert board["status_order"][:2] == ["Inbox", "Todo"]
+    assert [v["name"] for v in board["views"]] == ["Open work", "Everything"]
 
 
 def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
@@ -168,16 +169,19 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     (packaged / "pyproject.toml").write_text(
         rendered(settings, nested=True), encoding="utf-8")
     assert load(packaged).repo == "octo/places"
-    # The columns are not restated here: the model holds them.
-    assert load(packaged).status_order == ()
+    assert load(packaged).status_order == (
+        "Inbox", "Todo", "In progress", "In review", "Done")
+    assert [v.name for v in load(packaged).views] == ["Open work", "Everything"]
 
 
-def test_an_existing_board_gets_the_columns_commented_out(tmp_path):
+def test_the_starter_states_the_board_it_would_build(tmp_path):
+    """Stated rather than commented: a board that exists ignores it, and a new
+    one is built from it."""
     from boardkit.config import load
     from boardkit.setup import rendered
     settings = {"owner": "octo", "repo": "octo/places", "project_name": "Places"}
-    (tmp_path / "boardkit.toml").write_text(rendered(settings, exists=True), encoding="utf-8")
-    assert load(tmp_path).status_order == ()
+    (tmp_path / "boardkit.toml").write_text(rendered(settings), encoding="utf-8")
+    assert load(tmp_path).status_order[0] == "Inbox"
 
 
 def test_views_lists_the_tabs_the_board_has(seeded, capsys):

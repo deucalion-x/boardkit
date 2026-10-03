@@ -363,8 +363,7 @@ def drift(snapshot: Snapshot, config: Config) -> list[str]:
     if unconfigured:
         warnings.append(
             f"the board has column(s) {', '.join(repr(n) for n in unconfigured)} "
-            f"missing from status_order; items there sort last and are left out "
-            f"of the rollup")
+            f"missing from status_order; items there sort last")
     warnings.extend(field_drift(snapshot, config))
     warnings.extend(view_drift(snapshot, config))
     return warnings
