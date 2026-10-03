@@ -80,12 +80,31 @@ def test_json_stays_flat_for_a_jq_pipeline(seeded, capsys):
     assert rows[0]["number"] == 7 and rows[0]["status"] == "Ready"
 
 
-def test_setting_a_field_queues_it_rather_than_pushing(seeded, capsys):
-    assert cli.main(["set", "7", "status", "In progress"]) == 0
+def test_later_queues_without_reaching_for_the_network(seeded, capsys):
+    assert cli.main(["set", "7", "status", "In progress", "--later"]) == 0
     assert "Queued" in capsys.readouterr().out
     pending = seeded.pending()
     assert (pending[0].field, pending[0].value, pending[0].was) == (
         "status", "In progress", "Ready")
+
+
+def test_a_change_is_pushed_when_it_is_made(seeded, monkeypatch, capsys):
+    """The queue is durability, not a schedule: a change goes now."""
+    from boardkit import sync
+    sent = []
+    monkeypatch.setattr(sync, "push_now",
+                        lambda config, store: (sent.append(1), (1, 0, ""))[1])
+    assert cli.main(["set", "7", "status", "In progress"]) == 0
+    assert sent == [1]
+
+
+def test_a_change_that_cannot_be_sent_is_kept_and_says_why(seeded, monkeypatch, capsys):
+    from boardkit import sync
+    monkeypatch.setattr(sync, "push_now", lambda config, store: (0, 0, "offline"))
+    assert cli.main(["set", "7", "status", "In progress"]) == 0
+    out = capsys.readouterr().out
+    assert "offline" in out and "board sync push" in out
+    assert len(seeded.pending()) == 1
 
 
 def test_setting_an_item_that_is_not_on_the_board_is_refused(seeded, capsys):
@@ -94,7 +113,7 @@ def test_setting_an_item_that_is_not_on_the_board_is_refused(seeded, capsys):
 
 
 def test_the_rollup_mentions_queued_work_so_it_is_not_forgotten(seeded, capsys):
-    cli.main(["set", "7", "status", "In progress"])
+    cli.main(["set", "7", "status", "In progress", "--later"])
     capsys.readouterr()
     cli.main(["rollup"])
     assert "1 change(s) queued" in capsys.readouterr().out

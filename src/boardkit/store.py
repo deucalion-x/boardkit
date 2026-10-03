@@ -194,15 +194,26 @@ class Store:
         self._write(PENDING, [write.model_dump(mode="json") for write in writes])
 
     def queue(self, number: int, field: str, value: str) -> Write:
-        """Record a local change. The snapshot supplies `was`, so a later push
-        can tell whether the ground moved underneath it."""
+        """Record a local change, replacing any still-pending write to the
+        same field.
+
+        Setting a field twice before anything is pushed means one change, not
+        two: the second is what the agent decided, and pushing both would send
+        a value nobody wants followed by the one they do. The earlier write's
+        `was` is kept, because that is still the value GitHub last showed us
+        and so the one a conflict must be judged against.
+        """
         item = self.state().item(number)
-        write = Write(number=number, field=field, value=value,
-                      was=item.field(field) if item else "")
         with self.held():
-            self.save_pending([*self.pending(), write])
+            standing = self.pending()
+            earlier = next((w for w in standing
+                            if w.number == number and w.field == field), None)
+            write = Write(number=number, field=field, value=value,
+                          was=earlier.was if earlier else
+                          (item.field(field) if item else ""))
+            self.save_pending([*(w for w in standing if w is not earlier), write])
         note("queued", id=write.id, number=number, field=field,
-                value=value, was=write.was)
+             value=value, was=write.was, replaced=earlier.id if earlier else None)
         return write
 
     # rejected ------------------------------------------------------------

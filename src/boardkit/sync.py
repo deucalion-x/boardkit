@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from .board import MISSING, normalize
 from .config import Config, ProjectField
-from .gh import BoardError, gh, gh_json, run_json
+from .gh import BoardError, RateLimited, Unreachable, gh, gh_json, run_json
 from .trail import note
 from .store import Snapshot, Store, Write, now
 
@@ -494,6 +494,25 @@ def refreshed(config: Config, store: Store, writes: list[Write]) -> Snapshot:
         items.append(item.model_copy(update={"fields": current.fields})
                      if current else item)
     return snapshot.model_copy(update={"items": tuple(items)})
+
+
+def push_now(config: Config, store: Store) -> tuple[int, int, str]:
+    """Push the queue straight away, and say why if it could not.
+
+    A change is meant to reach GitHub when it is made. It still goes through
+    the queue first, so an attempt that fails leaves the work recorded rather
+    than lost — the queue is the durability, not the schedule.
+
+    Being unable to push is ordinary, not an error: offline, rate limited, or
+    out of budget are all "later", and `board sync push` is what later means.
+    """
+    try:
+        pushed, lost = push(config, store)
+    except Unreachable:
+        return 0, 0, "offline"
+    except RateLimited:
+        return 0, 0, "rate limited"
+    return pushed, lost, ""
 
 
 def push(config: Config, store: Store) -> tuple[int, int]:

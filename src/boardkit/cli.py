@@ -9,7 +9,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board find <terms>         full-text search on GitHub, joined to the board
   board json                 normalized items on stdout, for jq or python
 
-  board set <n> <field> <v>  queue a local change
+  board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
+                             --later: queue without trying
   board rejected [--clear]   local changes that lost to a remote change
   board log [n]              what boardkit did, for audit and debugging
   board sync [push|status]   pull, drain the queue, or report
@@ -78,7 +79,7 @@ def dispatch(command: str, args: list[str]) -> int:
         verbs = [a for a in args if not a.startswith("-")]
         return run_sync(config, store, verbs[0] if verbs else "pull")
     if command == "set":
-        return queue(store, args)
+        return queue(config, store, args)
     if command == "log":
         return history(store, int(args[0]) if args and args[0].isdigit() else 30)
     if command == "rejected":
@@ -173,10 +174,11 @@ def run_sync(config, store: Store, verb: str) -> int:
     return usage()
 
 
-def queue(store: Store, args: list[str]) -> int:
-    if len(args) < 3 or not args[0].lstrip("#").isdigit():
+def queue(config, store: Store, args: list[str]) -> int:
+    if len([a for a in args if a != "--later"]) < 3 or not args[0].lstrip("#").isdigit():
         return usage()
-    number, field, value = int(args[0].lstrip("#")), args[1], " ".join(args[2:])
+    words = [a for a in args if a != "--later"]
+    number, field, value = int(words[0].lstrip("#")), words[1], " ".join(words[2:])
     snapshot = store.state()
     if snapshot.empty:
         print(STALE)
@@ -185,8 +187,19 @@ def queue(store: Store, args: list[str]) -> int:
         print(f"#{number} is not on the board")
         return 1
     write = store.queue(number, field, value)
-    print(f"Queued #{number} {field} = {value} (was {write.was or 'unset'}). "
-          f"`board sync push` to apply.")
+    was = write.was or "unset"
+    if "--later" in args:
+        print(f"Queued #{number} {field} = {value} (was {was}).")
+        return report_queue(store)
+
+    pushed, lost, why = sync.push_now(config, store)
+    if why:
+        print(f"#{number} {field} = {value} (was {was}) — kept, {why}. "
+              f"`board sync push` when that clears.")
+        return 0
+    if lost:
+        return rejected(store, clear=False)
+    print(f"#{number} {field} = {value} (was {was})")
     return 0
 
 

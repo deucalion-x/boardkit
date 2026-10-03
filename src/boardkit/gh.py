@@ -30,6 +30,17 @@ class RateLimited(BoardError):
     """Refused for rate, not for permission. Waiting is the fix."""
 
 
+class Unreachable(BoardError):
+    """GitHub could not be reached. Waiting is the fix, and it may be a while."""
+
+
+# What `gh` says when the network is the problem rather than the request.
+OFFLINE = re.compile(
+    r"no such host|could not resolve|connection refused|network is unreachable|"
+    r"connection reset|timeout|timed out|dial tcp|TLS handshake|EOF",
+    re.IGNORECASE)
+
+
 def once(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True)
 
@@ -87,6 +98,9 @@ def run(args: list[str]) -> str:
     if result.returncode == 0:
         return result.stdout
     detail = (result.stderr or result.stdout).strip()
+    if OFFLINE.search(detail):
+        note("unreachable", command=" ".join(args[:3]), said=detail[:200])
+        raise Unreachable(f"GitHub could not be reached: {detail}")
     if not LIMITED.search(detail):
         note("failed", command=" ".join(args[:3]), said=detail[:400])
         raise BoardError(f"{' '.join(args)} failed: {detail}")
