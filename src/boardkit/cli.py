@@ -6,7 +6,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board ready                startable items only
   board group <name>         one group, by status            (alias: ws)
   board item <n>             one item with its text and children
-  board find <terms>         full-text search on GitHub, joined to the board
+  board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
 
   board add <title> [f=v]    create an issue and put it on the board
@@ -155,9 +155,10 @@ def dispatch(command: str, args: list[str]) -> int:
             print("  children:")
             board_module.show(kids, view)
     elif command == "find":
-        # Issue bodies are not in the snapshot; this is real full-text search.
-        found = board_module.search(" ".join(args), config)
-        board_module.show([index[str(n)] for n in found if str(n) in index], view)
+        # The snapshot carries titles, bodies and labels, so this costs
+        # nothing. `gh issue list --search` is still what answers a question
+        # about closed work or history.
+        board_module.show(board_module.matching(items, " ".join(args)), view)
     elif command == "json":
         json.dump([item.flat() for item in items], sys.stdout, indent=2)
         print()

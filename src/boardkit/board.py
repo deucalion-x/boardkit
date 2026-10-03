@@ -226,10 +226,23 @@ def children(number: int, config: Config) -> list[int]:
     return [found_item["number"] for found_item in found]
 
 
-def search(terms: str, config: Config) -> list[int]:
-    found = gh_json("issue", "list", "--repo", config.repo, "--search", terms,
-                    "--json", "number", "--limit", "30")
-    return [found_item["number"] for found_item in found]
+def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
+    """Items whose title or body contains every word given.
+
+    Local, because the snapshot carries the text now. It is a substring match
+    and not GitHub's search syntax — `gh issue list --search` is still what
+    answers a question about closed work or history, which the snapshot does
+    not hold.
+    """
+    words = [word.lower() for word in terms.split() if word]
+    if not words:
+        return []
+    found = []
+    for item in items:
+        haystack = f"{item.title}\n{item.body}\n{' '.join(item.labels)}".lower()
+        if all(word in haystack for word in words):
+            found.append(item)
+    return found
 
 
 def rollup(items: list[ProjectItem], view: Shape) -> None:

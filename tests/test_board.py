@@ -1,6 +1,6 @@
 import pathlib
 
-from boardkit.board import Shape, normalize, rank, rollup
+from boardkit.board import ProjectItem, Shape, normalize, rank, rollup
 from boardkit.config import Config
 
 # Columns are named here rather than relied on as a default: boardkit ships
@@ -174,3 +174,28 @@ def test_the_kind_is_taken_in_either_spelling():
     assert ProjectItem(number=1, type="DraftIssue").type == "DRAFT_ISSUE"
     assert ProjectItem(number=1, type="Issue").type == "ISSUE"
     assert ProjectItem(number=1, type="Mystery").type == "REDACTED"
+
+
+SEARCHABLE = [
+    ProjectItem(number=1, title="Short place names", body="drop the country",
+                labels=("feature",)),
+    ProjectItem(number=2, title="Prune the suite", body="delete what no longer earns"),
+]
+
+
+def test_search_reads_title_body_and_labels_from_the_snapshot():
+    from boardkit.board import matching
+    assert [i.number for i in matching(SEARCHABLE, "country")] == [1]
+    assert [i.number for i in matching(SEARCHABLE, "feature")] == [1]
+    assert [i.number for i in matching(SEARCHABLE, "prune")] == [2]
+
+
+def test_every_word_has_to_appear_somewhere():
+    from boardkit.board import matching
+    assert [i.number for i in matching(SEARCHABLE, "place country")] == [1]
+    assert matching(SEARCHABLE, "place suite") == []
+
+
+def test_searching_for_nothing_finds_nothing():
+    from boardkit.board import matching
+    assert matching(SEARCHABLE, "   ") == []
