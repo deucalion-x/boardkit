@@ -422,3 +422,22 @@ def test_a_draft_survives_the_pull_that_used_to_drop_it():
     assert row["content"]["type"] == "DRAFT_ISSUE"
     kept = normalize([row], set(), CONFIG)
     assert len(kept) == 1 and kept[0].ref.startswith("~")
+
+
+def test_a_field_config_declares_and_the_board_lacks_is_reported():
+    """Boards are edited in the browser; config quietly becoming fiction is
+    what `admin apply` would then act on."""
+    from boardkit.sync import field_drift
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                    fields=(ProjectField(name="area", options=("Core", "Docs")),
+                            ProjectField(name="effort")))
+    board = Snapshot(fields=(ProjectField(name="area", options=("Core",)),))
+    said = " ".join(field_drift(board, config))
+    assert "'Docs'" in said and "'effort' field" in said
+
+
+def test_a_field_the_board_has_and_config_does_not_is_not_drift():
+    from boardkit.sync import field_drift
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p")
+    board = Snapshot(fields=(ProjectField(name="sprint"),))
+    assert field_drift(board, config) == []

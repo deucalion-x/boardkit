@@ -324,10 +324,12 @@ def pull(config: Config, store: Store) -> Snapshot:
 
 
 def drift(snapshot: Snapshot, config: Config) -> list[str]:
-    """Columns configured here that the board does not actually have.
+    """Where this repo's config and the board have come apart.
 
-    A misspelled column is silent otherwise: items in it sort last and vanish
-    from the rollup, which reads as an empty board rather than a typo.
+    Boards are edited in the browser, so the two drift by ordinary use rather
+    than by mistake. The board wins — every read takes its shape from the
+    snapshot — but config is what `admin apply` would build, so a config that
+    has become fiction is worth saying out loud once a sync has the facts.
     """
     # Nothing to disagree with when the repo asserts no order: it is taking
     # the board's columns as given, which is the default.
@@ -349,7 +351,31 @@ def drift(snapshot: Snapshot, config: Config) -> list[str]:
             f"the board has column(s) {', '.join(repr(n) for n in unconfigured)} "
             f"missing from status_order; items there sort last and are left out "
             f"of the rollup")
+    warnings.extend(field_drift(snapshot, config))
     return warnings
+
+
+def field_drift(snapshot: Snapshot, config: Config) -> list[str]:
+    """Fields and options config declares that the board does not have.
+
+    Only that direction: a field the board has and config does not is the
+    normal case — config declares what to create, not an inventory.
+    """
+    said = []
+    on_board = {field.name: field for field in snapshot.fields}
+    for field in config.fields:
+        if field.name == config.status_field:
+            continue
+        present = on_board.get(field.name)
+        if present is None:
+            said.append(f"config declares a {field.name!r} field the board does "
+                        f"not have; `board admin apply` would create it")
+            continue
+        missing = [name for name in field.options if name not in present.options]
+        if missing:
+            said.append(f"{field.name} is missing option(s) "
+                        f"{', '.join(repr(n) for n in missing)} that config declares")
+    return said
 
 
 def edit_args(write: Write, snapshot: Snapshot, config: Config) -> list[str]:
