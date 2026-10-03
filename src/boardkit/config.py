@@ -27,10 +27,21 @@ CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
 DEFAULT_STATUS_ORDER = ("Todo", "In Progress", "Done")
 
 # GitHub's ProjectV2FieldType, limited to the values a project owns rather than
-# projects from the issue. Of these, `gh project field-create` can create only
-# TEXT, SINGLE_SELECT, DATE and NUMBER.
+# projects from the issue. All six are creatable through the API; the four that
+# `gh project field-create` handles are a limit of that wrapper, not of GitHub,
+# so boardkit sends the mutation itself.
 DataType = Literal["TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "ITERATION"]
-CREATABLE = ("TEXT", "SINGLE_SELECT", "DATE", "NUMBER")
+CREATABLE = ("TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "ITERATION")
+
+
+class Iteration(BaseModel):
+    """How an iteration field is laid out: when it starts, how long each
+    iteration runs, and how many to create up front."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    start_date: str = ""
+    duration: int = 14
+    iterations: int = 6
 
 
 class ProjectField(BaseModel):
@@ -49,6 +60,8 @@ class ProjectField(BaseModel):
     title: str = ""
     data_type: DataType = "SINGLE_SELECT"
     options: tuple[str, ...] = ()
+    # Only read for an ITERATION field.
+    iteration: Iteration = Iteration()
     id: str = ""
     # Option name -> option id, filled by a sync. Empty until then.
     option_ids: dict[str, str] = {}

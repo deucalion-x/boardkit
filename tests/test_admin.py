@@ -33,11 +33,11 @@ def test_everything_is_missing_when_the_project_is_new():
     assert [f.name for f in plan(CONFIG, ())] == ["status", "workstream", "effort"]
 
 
-def test_a_type_gh_cannot_create_is_refused_before_anything_is_made():
+def test_an_iteration_field_is_planned_like_any_other():
+    """`gh project field-create` cannot make one; the API can, so boardkit does."""
     config = CONFIG.model_copy(update={
         "fields": (ProjectField(name="sprint", data_type="ITERATION"),)})
-    with pytest.raises(BoardError, match="field-create"):
-        plan(config, ())
+    assert [f.name for f in plan(config, ())] == ["status", "sprint"]
 
 
 def test_a_second_create_finds_the_first_rather_than_making_another(monkeypatch):
@@ -97,3 +97,42 @@ def test_every_option_carries_the_colour_the_mutation_demands():
                      {"name": "Inbox", "color": "GRAY", "description": ""}])
     assert text == ('{id: "o1", name: "Todo", color: GREEN, description: "not started"}, '
                     '{name: "Inbox", color: GRAY, description: ""}')
+
+
+def test_an_iteration_field_carries_its_configuration_into_the_mutation():
+    from boardkit.admin import creation_query
+    from boardkit.config import Iteration
+    field = ProjectField(name="sprint", data_type="ITERATION",
+                         iteration=Iteration(start_date="2026-10-05", duration=7,
+                                             iterations=4))
+    query = creation_query("PVT_1", field)
+    assert "dataType: ITERATION" in query
+    assert 'iterationConfiguration: {startDate: "2026-10-05", duration: 7' in query
+    assert query.count('title: "Sprint ') == 4
+
+
+def test_a_multi_select_sends_its_own_option_key():
+    from boardkit.admin import creation_query
+    field = ProjectField(name="area", data_type="MULTI_SELECT",
+                         options=("sync", "cli"))
+    query = creation_query("PVT_1", field)
+    assert "multiSelectOptions: [" in query and "singleSelectOptions" not in query
+    assert 'name: "sync", color: GRAY, description: ""' in query
+
+
+def test_a_select_with_no_options_is_refused_before_the_call():
+    from boardkit.admin import creation_query
+    with pytest.raises(BoardError, match="no options"):
+        creation_query("PVT_1", ProjectField(name="area", data_type="MULTI_SELECT"))
+
+
+def test_a_count_of_iterations_becomes_consecutive_dated_periods():
+    from boardkit.admin import iterations_for
+    from boardkit.config import Iteration
+    field = ProjectField(name="sprint", data_type="ITERATION",
+                         iteration=Iteration(start_date="2026-10-05", duration=7,
+                                             iterations=3))
+    text = iterations_for(field)
+    assert 'startDate: "2026-10-05", duration: 7, title: "Sprint 1"' in text
+    assert 'startDate: "2026-10-12", duration: 7, title: "Sprint 2"' in text
+    assert 'startDate: "2026-10-19", duration: 7, title: "Sprint 3"' in text

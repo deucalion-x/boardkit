@@ -36,6 +36,10 @@ skill_name = "boardkit-board"
 data_type = "SINGLE_SELECT"
 options = ["sync", "auth", "admin", "config", "docs", "tests"]
 
+[tool.boardkit.fields.sprint]
+data_type = "ITERATION"
+iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
+
 [tool.boardkit.fields.effort]
 data_type = "SINGLE_SELECT"
 options = ["S", "M", "L"]

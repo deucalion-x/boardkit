@@ -5,11 +5,13 @@ rather than reading or updating them, and because a half-applied run leaves a
 project with some of its fields — which nothing here cleans up. So the whole
 plan is checked against what already exists before the first call.
 
-`gh project field-create` accepts four of GitHub's data types: TEXT,
-SINGLE_SELECT, DATE and NUMBER. An iteration or multi-select field has to be
-added in the web UI.
+Fields are created through the API rather than `gh project field-create`,
+which handles only four of the six types GitHub can actually create. Iteration
+and multi-select fields work here because the limit was the wrapper's.
 """
 from __future__ import annotations
+
+import datetime
 
 from . import auth
 from .config import CREATABLE, Config, ProjectField
@@ -63,12 +65,14 @@ def plan(config: Config, present: tuple[ProjectField, ...]) -> list[ProjectField
     """What is still missing. Existing fields are left alone, never edited."""
     have = {field.name for field in present}
     missing = [field for field in wanted(config) if field.name not in have]
+    # Every data type config can name is creatable today, so this guard is
+    # quiet. It stays because the list is GitHub's to change, and a type that
+    # cannot be made should be refused before the project is touched.
     unsupported = [f.name for f in missing if not f.creatable]
     if unsupported:
         raise BoardError(
-            f"cannot create {', '.join(unsupported)}: `gh project field-create` "
-            f"handles only {', '.join(CREATABLE)}. Add them in the web UI, then "
-            f"re-run.")
+            f"cannot create {', '.join(unsupported)}: boardkit makes only "
+            f"{', '.join(CREATABLE)} fields. Add them in the web UI, then re-run.")
     return missing
 
 
@@ -92,6 +96,55 @@ def align(wanted: ProjectField, present: ProjectField) -> list[dict] | None:
 
 
 DEFAULT_COLOR = "GRAY"
+
+
+def creation_query(project_id: str, field: ProjectField) -> str:
+    """The `createProjectV2Field` mutation for one field.
+
+    Sent directly rather than through `gh project field-create`, which handles
+    only four of the six creatable types. The API itself creates all of them,
+    so the limit was the wrapper's and not GitHub's.
+    """
+    body = (f'projectId: "{project_id}", dataType: {field.data_type}, '
+            f'name: "{field.display}"')
+    if field.data_type in {"SINGLE_SELECT", "MULTI_SELECT"}:
+        if not field.options:
+            raise BoardError(f"`{field.name}` is a {field.data_type.lower()} "
+                             f"with no options")
+        rows = ", ".join(
+            "{" + f'name: "{name}", color: {DEFAULT_COLOR}, description: ""' + "}"
+            for name in field.options)
+        key = "singleSelectOptions" if field.data_type == "SINGLE_SELECT" \
+            else "multiSelectOptions"
+        body += f", {key}: [{rows}]"
+    if field.data_type == "ITERATION":
+        body += f", iterationConfiguration: {iterations_for(field)}"
+    return ("mutation { createProjectV2Field(input: {" + body +
+            " }) { projectV2Field { ... on ProjectV2FieldCommon { id name } } } }")
+
+
+def iterations_for(field: ProjectField) -> str:
+    """`iterations` in config is a count; GitHub wants the dated entries.
+
+    Each one carries its own start, length and title, so a count has to be
+    expanded into consecutive periods — which is also what the web UI does
+    when you say "create 4 iterations".
+    """
+    setup = field.iteration
+    start = datetime.date.fromisoformat(
+        setup.start_date or datetime.date.today().isoformat())
+    rows = []
+    for index in range(setup.iterations):
+        begins = start + datetime.timedelta(days=setup.duration * index)
+        rows.append("{" + f'startDate: "{begins.isoformat()}", '
+                    f'duration: {setup.duration}, '
+                    f'title: "{field.display} {index + 1}"' + "}")
+    return ("{" + f'startDate: "{start.isoformat()}", duration: {setup.duration}, '
+            f"iterations: [{', '.join(rows)}]" + "}")
+
+
+def add_field(project_id: str, field: ProjectField) -> None:
+    run_json(["gh", "api", "graphql", "-f", f"query={creation_query(project_id, field)}"])
 
 
 def decorated(config: Config, number: str, field: ProjectField,
@@ -131,9 +184,10 @@ def rendered(options: list[dict]) -> str:
 
 def apply_options(config: Config, number: str, field: ProjectField,
                   options: list[dict]) -> None:
-    """`gh` has no verb for a single select's options, so this is the one
-    mutation boardkit sends directly. It carries the full list, which is why
-    `align` never omits an option that already exists."""
+    """Bring a single select's options into line. `gh` has no verb for this.
+
+    The mutation carries the full list, which is why `align` never omits an
+    option that already exists."""
     full = decorated(config, number, field, options)
     query = (
         "mutation { updateProjectV2Field(input: {"
@@ -181,15 +235,9 @@ def create(config: Config, dry: bool = False) -> int:
             apply_options(config, number, current, options)
             print(f"  aligned {current.display} options")
 
+    project_id = found[0] if found else ""
     for field in missing:
-        args = ["project", "field-create", number, "--owner", config.owner,
-                "--name", field.display, "--data-type", field.data_type,
-                "--format", "json"]
-        if field.data_type == "SINGLE_SELECT":
-            if not field.options:
-                raise BoardError(f"`{field.name}` is a single select with no options")
-            args += ["--single-select-options", ",".join(field.options)]
-        gh_json(*args)
+        add_field(project_id, field)
         print(f"  added {field.display} [{field.data_type}]")
 
     if not missing:

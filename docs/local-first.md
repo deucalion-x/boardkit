@@ -114,9 +114,8 @@ code assuming it, so a project whose column field is called "Stage" works.
 values are project-owned and writable — `TEXT`, `NUMBER`, `DATE`,
 `SINGLE_SELECT`, `MULTI_SELECT`, `ITERATION` — and the rest are projections of
 the issue, read-only. `gh project field-create` accepts only four of the six
-(`TEXT`, `SINGLE_SELECT`, `DATE`, `NUMBER`), so those are what `admin create`
-can make; an iteration or multi-select field has to be added in the web UI or
-through GraphQL.
+(`TEXT`, `SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin create` sends
+`createProjectV2Field` itself and makes all six.
 
 ## Permission tiers
 

@@ -50,12 +50,19 @@ know a field's type and its options to create it:
 
 ```toml
 [tool.boardkit.fields.workstream]
-type = "single_select"              # or text, number, date, iteration
+data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
 options = ["Maps", "Planning", "Infra"]
 
 [tool.boardkit.fields.due]
-type = "date"
+data_type = "DATE"
+
+[tool.boardkit.fields.sprint]
+data_type = "ITERATION"
+iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
 ```
+
+All six creatable types work. `gh project field-create` handles only four of
+them, so boardkit sends `createProjectV2Field` itself.
 
 The two forms are exclusive: a flat list is enough to read a board that already
 exists. Defaults are deliberately generic — `status_order` is GitHub's own
