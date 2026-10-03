@@ -2,9 +2,9 @@
 
 ## Goal
 
-Agents do project and task management against a local store. Reads never hit
-the API. Writes enter a durable queue and boardkit immediately tries to push
-them. GitHub remains the real store; the local copy is a working copy.
+Agents do project and task management against a local store. Reads answer from
+that store — all of them but one, named below. Writes enter a durable queue and
+boardkit immediately tries to push them. GitHub remains the real store; the local copy is a working copy.
 
 ## Why reads are local
 
@@ -35,13 +35,18 @@ until an agent reads it.
 
 | Actor | Reads | Writes |
 |---|---|---|
-| An agent answering a question | `state` | — |
+| An agent answering a question | `state` (plus one remote call for `board item`'s child list) | — |
 | A change command | `state`, `pending`, remote target | `pending`, then `state` or `rejected` |
 | `board sync` | remote project | `state` |
 | `board sync push` | `state`, `pending`, remote targets | all three |
 
-Read commands never call `gh`. Change and sync commands use it behind the
-boardkit interface.
+Read commands never call `gh`, with one exception: a board does not record
+which issue is a sub-issue of which, so the child list in `board item` has to
+ask. It is skipped with a note when GitHub cannot be reached, after the rest of
+the item has already answered from the snapshot — the read still works offline,
+it just answers less.
+
+Change and sync commands use `gh` behind the boardkit interface.
 
 ## Conflict rule
 
@@ -81,7 +86,9 @@ after an offline or rate-limited run. There is no background daemon.
 2. Fetch current values only for the items named by queued writes.
 3. Compare each remote field with the value the write was decided against.
 4. Move conflicts to `rejected` and batch the safe mutations into one request.
-5. Remove only mutations GitHub reports as successful, then patch `state` with
+5. Remove every write that is finished with — the ones GitHub reports as
+   successful, the ones that lost, and the ones the board already agreed with,
+   which send nothing and so appear in neither list. Then patch `state` with
    the values that landed.
 
 The snapshot carries project, item, field and option ids because GitHub's
@@ -111,11 +118,16 @@ conventionally named "Status". Config names it (`status_field`) rather than the
 code assuming it, so a project whose column field is called "Stage" works.
 
 `data_type` uses GitHub's `ProjectV2FieldType` spelling. Six of its twenty-one
-values are project-owned and writable — `TEXT`, `NUMBER`, `DATE`,
-`SINGLE_SELECT`, `MULTI_SELECT`, `ITERATION` — and the rest are projections of
-the issue, read-only. `gh project field-create` accepts only four of the six
-(`TEXT`, `SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin apply` sends
+values are project-owned — `TEXT`, `NUMBER`, `DATE`, `SINGLE_SELECT`,
+`MULTI_SELECT`, `ITERATION` — and the rest are projections of the issue,
+read-only. `gh project field-create` accepts only four of the six (`TEXT`,
+`SINGLE_SELECT`, `DATE`, `NUMBER`), so `admin apply` sends
 `createProjectV2Field` itself and makes all six.
+
+Creating is not setting: `board set` refuses an `ITERATION` field, so five of
+the six can be written. Declaring one therefore gets a column nothing can
+fill. Deferred rather than hidden — see
+[#20](https://github.com/agerardin/boardkit/issues/20).
 
 ## Permission tiers
 
