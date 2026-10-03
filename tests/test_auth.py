@@ -1,0 +1,129 @@
+import pathlib
+
+import pytest
+
+from boardkit import auth
+from boardkit.auth import Capability, parse_status
+from boardkit.config import Config
+from boardkit.gh import BoardError
+
+LOGGED_IN = """github.com
+  ✓ Logged in to github.com account antoine-novatix (keyring)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'
+"""
+LOGGED_OUT = "You are not logged into any GitHub hosts. To log in, run: gh auth login\n"
+
+
+def config(tmp_path: pathlib.Path) -> Config:
+    return Config(root=tmp_path, owner="octo", project="4", repo="octo/widgets")
+
+
+def test_scopes_and_account_come_from_a_local_command():
+    found = parse_status(LOGGED_IN)
+    assert found.account == "antoine-novatix" and found.host == "github.com"
+    assert found.scopes == ("admin:public_key", "gist", "read:org", "repo")
+    assert found.logged_in
+
+
+def test_being_logged_out_is_an_answer_not_a_crash():
+    assert not parse_status(LOGGED_OUT).logged_in
+
+
+def test_a_repo_token_without_project_scope_can_read_nothing_of_the_board():
+    found = parse_status(LOGGED_IN)
+    assert found.allows("local")
+    assert not found.allows("read") and found.missing("read") == ["read:project|project"]
+
+
+def test_the_write_project_scope_also_satisfies_a_read():
+    found = Capability(account="octo", scopes=("repo", "project"))
+    assert found.allows("read") and found.allows("write") and found.allows("admin")
+
+
+def test_read_project_alone_does_not_allow_a_push():
+    found = Capability(account="octo", scopes=("repo", "read:project"))
+    assert found.allows("read") and not found.allows("write")
+
+
+def test_a_refused_tier_names_the_command_that_fixes_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth, "capability", lambda config, refresh=False: parse_status(LOGGED_IN))
+    with pytest.raises(BoardError, match=r"gh auth refresh -s project"):
+        auth.require(config(tmp_path), "write")
+
+
+def test_being_logged_out_points_at_login_rather_than_a_scope(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth, "capability", lambda config, refresh=False: parse_status(LOGGED_OUT))
+    with pytest.raises(BoardError, match="gh auth login"):
+        auth.require(config(tmp_path), "read")
+
+
+def test_a_project_it_cannot_see_blames_the_config_not_the_scopes(tmp_path, monkeypatch):
+    allowed = Capability(account="octo", scopes=("repo", "project"),
+                         can_see_repo=True, can_see_project=False)
+    monkeypatch.setattr(auth, "capability", lambda config, refresh=False: allowed)
+    with pytest.raises(BoardError, match=r"\[tool.boardkit\]"):
+        auth.require(config(tmp_path), "read")
+
+
+def test_the_cache_is_dropped_when_the_token_scopes_change(tmp_path, monkeypatch):
+    settings = config(tmp_path)
+    probed = Capability(account="octo", scopes=("repo", "project"),
+                        can_see_repo=True, can_see_project=True)
+    auth.save(settings, probed)
+
+    monkeypatch.setattr(auth, "status", lambda: Capability(account="octo",
+                                                           scopes=("repo", "project")))
+    assert auth.cached(settings) is not None
+
+    # A refreshed token: same account, different scopes, so the probe is void.
+    monkeypatch.setattr(auth, "status", lambda: Capability(account="octo",
+                                                           scopes=("repo",)))
+    assert auth.cached(settings) is None
+
+
+def test_visibility_is_probed_once_and_then_read_from_the_cache(tmp_path, monkeypatch):
+    settings = config(tmp_path)
+    calls = []
+    monkeypatch.setattr(auth, "status",
+                        lambda: Capability(account="octo", scopes=("repo", "project")))
+
+    def probe(config, capability):
+        calls.append(1)
+        return capability.model_copy(update={"can_see_repo": True, "can_see_project": True})
+
+    monkeypatch.setattr(auth, "visibility", probe)
+    assert auth.capability(settings).can_see_project
+    assert auth.capability(settings).can_see_project
+    assert len(calls) == 1
+    assert auth.capability(settings, refresh=True) and len(calls) == 2
+
+
+FINE_GRAINED = """github.com
+  ✓ Logged in to github.com account agerardin (keyring)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: github_pat_************************************
+"""
+
+
+def test_a_fine_grained_token_is_not_refused_for_reporting_no_scopes():
+    found = parse_status(FINE_GRAINED)
+    assert found.logged_in and found.fine_grained and found.scopes == ()
+    # Refusing here would block the narrowest token available.
+    assert found.allows("read") and found.allows("write") and found.allows("admin")
+
+
+def test_an_oauth_token_is_still_gated_on_its_scopes():
+    assert not parse_status(LOGGED_IN).fine_grained
+    assert not parse_status(LOGGED_IN).allows("read")
+
+
+def test_a_fine_grained_token_still_fails_on_what_it_cannot_see(tmp_path, monkeypatch):
+    blind = parse_status(FINE_GRAINED).model_copy(
+        update={"can_see_repo": True, "can_see_project": False})
+    monkeypatch.setattr(auth, "capability", lambda config, refresh=False: blind)
+    with pytest.raises(BoardError, match="cannot see the projects"):
+        auth.require(config(tmp_path), "read")

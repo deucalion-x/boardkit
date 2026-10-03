@@ -42,6 +42,19 @@ def git(*args: str) -> str:
     return run(["git", *args]).strip()
 
 
+def probe(args: list[str]) -> tuple[bool, str]:
+    """Run a command where failure is an answer, not an error.
+
+    `gh auth status` exits non-zero when nobody is logged in, and a visibility
+    check is asked precisely because it may fail, so neither can go through
+    `run`.
+    """
+    if shutil.which(args[0]) is None:
+        return False, f"{args[0]} is not installed or not on PATH"
+    result = subprocess.run(args, capture_output=True, text=True)
+    return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
+
+
 def git_ok(*args: str) -> bool:
     """True when the command exits zero. For probes, where failure is an answer."""
     return subprocess.run(["git", *args], capture_output=True).returncode == 0

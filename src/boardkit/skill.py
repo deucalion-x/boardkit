@@ -22,7 +22,7 @@ GENERATED = (
 
 
 def render(config: Config) -> str:
-    fields = [f for f in config.fields if f != "status"]
+    fields = [f for f in config.field_names if f != "status"]
     field_list = ""
     if fields:
         joined = ", ".join(fields[:-1])

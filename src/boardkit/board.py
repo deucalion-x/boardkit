@@ -1,17 +1,66 @@
-"""Read the board, filtered, and print only the rows that answer the question.
+"""Read the board, filtered, and print only the items that answer the question.
 
-Every view is a filter over `rows()`. For a question the verbs do not cover,
+Every view is a filter over `items()`. For a question the verbs do not cover,
 pipe `board json` into jq or python rather than growing a verb.
 """
 from __future__ import annotations
 
 import collections
+import re
+from typing import Literal, get_args
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .config import Config
 from .gh import gh_json
 
 MISSING = "-"
 UNGROUPED = "Unassigned"
+
+
+ItemType = Literal["ISSUE", "PULL_REQUEST", "DRAFT_ISSUE", "REDACTED"]
+
+
+class ProjectItem(BaseModel):
+    """One `gh project item-list` entry under GitHub's names for it.
+
+        ProjectV2Item.id        -> id        (needed to write a value)
+        ProjectV2Item.type      -> type
+        content.number/title/url -> number, title, url
+        every field value       -> fields[name], including the status field
+
+    GitHub hands field values over as name/value pairs, and which names exist
+    is Project configuration, so they stay a dict rather than being promoted
+    to attributes this class cannot know. Status is one of them: GitHub has no
+    Status concept, only a single select that is conventionally called that.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    number: int
+    id: str = ""
+    type: ItemType = "ISSUE"
+
+    title: str = ""
+    url: str = ""
+    fields: dict[str, str] = {}
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _as_enum(cls, value):
+        """`item-list` reports `Issue`; the GraphQL enum is `ISSUE`."""
+        if not isinstance(value, str):
+            return value
+        spelled = re.sub(r"(?<!^)(?=[A-Z])", "_", value).upper()
+        return spelled if spelled in get_args(ItemType) else "REDACTED"
+
+    def field(self, name: str) -> str:
+        return self.fields.get(name, MISSING)
+
+    def flat(self) -> dict:
+        """One row per item, field values inlined — the shape `board json`
+        has always printed, and what a jq pipeline is written against."""
+        return {"number": self.number, "title": self.title, "url": self.url,
+                **self.fields}
 
 
 def open_numbers(config: Config) -> set[int]:
@@ -22,34 +71,49 @@ def open_numbers(config: Config) -> set[int]:
     return {issue["number"] for issue in issues}
 
 
-def normalize(items: list[dict], still_open: set[int], config: Config) -> list[dict]:
-    """Project items to flat rows, dropping anything no longer open.
+def as_text(value) -> str:
+    """One field value as a string.
 
-    Pure, so the shape of a row is testable without touching the network.
+    Most values arrive as strings already, but an iteration reports an object
+    (`title`, `startDate`, `duration`, `iterationId`) and a multi-select a
+    list. Stringifying those raw would print a dict into a table column.
     """
-    rows = []
-    for item in items:
-        content = item.get("content") or {}
+    if isinstance(value, dict):
+        return str(value.get("title") or value.get("name") or MISSING)
+    if isinstance(value, list):
+        return ", ".join(as_text(item) for item in value) or MISSING
+    return str(value)
+
+
+def normalize(payload: list[dict], still_open: set[int], config: Config) -> list[ProjectItem]:
+    """Project payload to items, dropping anything no longer open.
+
+    Pure, so the shape of an item is testable without touching the network.
+    """
+    items = []
+    for entry in payload:
+        content = entry.get("content") or {}
         number = content.get("number")
         if number is None or number not in still_open:
             continue
-        row = {
-            "number": number,
-            "title": content.get("title", ""),
-            "url": content.get("url", ""),
-            "status": item.get("status", MISSING),
-        }
-        for field in config.fields:
+        fields = {}
+        for field in config.synced_names:
             default = UNGROUPED if field == config.grouping_field else MISSING
-            row[field] = item.get(field, default)
-        rows.append(row)
-    return rows
+            fields[field] = as_text(entry.get(field, default))
+        items.append(ProjectItem(
+            number=number,
+            id=entry.get("id", ""),
+            type=entry.get("content", {}).get("type", "ISSUE") or "ISSUE",
+            title=content.get("title", ""),
+            url=content.get("url", ""),
+            fields=fields,
+        ))
+    return items
 
 
-def rows(config: Config) -> list[dict]:
-    payload = gh_json("project", "item-list", config.project, "--owner", config.owner,
-                      "--limit", "200", "--format", "json")
-    return normalize(payload.get("items", []), open_numbers(config), config)
+def status_of(item: ProjectItem, config: Config) -> str:
+    """The column an item sits in, under whatever that field is called here."""
+    return item.field(config.status_field)
 
 
 def rank(status: str, config: Config) -> int:
@@ -57,36 +121,37 @@ def rank(status: str, config: Config) -> int:
     return order.index(status) if status in order else len(order)
 
 
-def show(items: list[dict], config: Config) -> None:
+def show(items: list[ProjectItem], config: Config) -> None:
     if not items:
         print("No matching items.")
         return
-    widths = {field: max(len(field), *(len(str(i[field])) for i in items))
-              for field in config.fields}
-    for item in sorted(items, key=lambda i: (rank(i["status"], config), i["number"])):
-        extra = "  ".join(f'{str(item[f]):{widths[f]}}' for f in config.fields)
-        print(f'{item["status"]:12} #{item["number"]:<4} {item["title"][:50]:50} '
-              f'{extra}  {item["url"]}')
+    extras = [f for f in config.field_names if f != config.status_field]
+    widths = {field: max(len(field), *(len(i.field(field)) for i in items))
+              for field in extras}
+    for item in sorted(items, key=lambda i: (rank(status_of(i, config), config), i.number)):
+        extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
+        print(f'{status_of(item, config):12} #{item.number:<4} {item.title[:50]:50} '
+              f'{extra}  {item.url}')
 
 
 def children(number: int, config: Config) -> list[int]:
     found = gh_json("issue", "list", "--repo", config.repo,
                     "--search", f"parent-issue:{config.repo}#{number}",
                     "--json", "number", "--limit", "50")
-    return [row["number"] for row in found]
+    return [found_item["number"] for found_item in found]
 
 
 def search(terms: str, config: Config) -> list[int]:
     found = gh_json("issue", "list", "--repo", config.repo, "--search", terms,
                     "--json", "number", "--limit", "30")
-    return [row["number"] for row in found]
+    return [found_item["number"] for found_item in found]
 
 
-def rollup(items: list[dict], config: Config) -> None:
+def rollup(items: list[ProjectItem], config: Config) -> None:
     field = config.grouping_field
     table: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for item in items:
-        table[str(item.get(field, UNGROUPED))][item["status"]] += 1
+        table[item.field(field)][status_of(item, config)] += 1
     width = max((len(name) for name in table), default=0)
     for name, counts in sorted(table.items()):
         summary = "  ".join(f"{status}={counts[status]}"

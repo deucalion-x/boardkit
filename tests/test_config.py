@@ -14,6 +14,15 @@ fields = ["workstream", "effort"]
 """
 
 
+# The table form of `fields` cannot coexist with the flat list in one file.
+BARE = """
+[tool.boardkit]
+owner = "octo"
+project = 4
+repo = "octo/places"
+"""
+
+
 def write(tmp_path: pathlib.Path, name: str, text: str) -> pathlib.Path:
     (tmp_path / name).write_text(text, encoding="utf-8")
     return tmp_path
@@ -53,8 +62,18 @@ def test_a_misspelled_setting_is_reported_rather_than_ignored(tmp_path):
 
 def test_a_missing_required_setting_names_itself(tmp_path):
     write(tmp_path, "pyproject.toml", '[tool.boardkit]\nowner = "octo"\n')
-    with pytest.raises(BoardError, match="missing `project`"):
+    with pytest.raises(BoardError, match="missing `repo`"):
         load(tmp_path)
+
+
+def test_a_repo_without_a_board_yet_still_loads(tmp_path):
+    """`admin create` produces the number, so it cannot be required before it."""
+    write(tmp_path, "pyproject.toml",
+          '[tool.boardkit]\nowner = "octo"\nrepo = "octo/widgets"\n')
+    config = load(tmp_path)
+    assert config.project == ""
+    with pytest.raises(BoardError, match="project is not set"):
+        config.require("project")
 
 
 def test_derived_names(tmp_path):
@@ -68,3 +87,52 @@ def test_derived_names(tmp_path):
 def test_an_org_project_lives_under_a_different_path(tmp_path):
     write(tmp_path, "pyproject.toml", TABLE + 'owner_type = "org"\n')
     assert load(tmp_path).url == "https://github.com/orgs/octo/projects/4"
+
+
+def test_a_flat_field_list_still_loads_and_defaults_to_single_select(tmp_path):
+    write(tmp_path, "pyproject.toml", TABLE)
+    config = load(tmp_path)
+    assert config.field_names == ("workstream", "effort")
+    assert config.fields[0].data_type == "SINGLE_SELECT"
+    assert config.fields[0].options == () and config.fields[0].id == ""
+
+
+def test_a_field_table_carries_the_type_and_options_create_needs(tmp_path):
+    write(tmp_path, "pyproject.toml", BARE + """
+[tool.boardkit.fields.workstream]
+options = ["Maps", "Infra"]
+
+[tool.boardkit.fields.due]
+data_type = "date"
+""")
+    config = load(tmp_path)
+    assert config.field_names == ("workstream", "due")
+    assert config.fields[0].options == ("Maps", "Infra")
+    # Written lowercase in TOML, stored in GitHub's spelling.
+    assert config.fields[1].data_type == "DATE"
+
+
+def test_an_unusable_field_type_is_refused(tmp_path):
+    write(tmp_path, "pyproject.toml", BARE + """
+[tool.boardkit.fields.due]
+data_type = "sundial"
+""")
+    with pytest.raises(BoardError, match="fields"):
+        load(tmp_path)
+
+
+def test_a_project_number_written_as_an_integer_is_accepted(tmp_path):
+    write(tmp_path, "pyproject.toml", BARE)
+    assert load(tmp_path).project == "4"
+
+
+def test_the_default_columns_belong_to_no_particular_project(tmp_path):
+    write(tmp_path, "pyproject.toml", BARE)
+    assert load(tmp_path).status_order == ("Todo", "In Progress", "Done")
+
+
+def test_a_dedicated_file_wins_over_a_table_in_pyproject(tmp_path):
+    write(tmp_path, "pyproject.toml", TABLE)
+    write(tmp_path, "boardkit.toml",
+          'owner = "dedicated"\nproject = "9"\nrepo = "dedicated/widgets"\n')
+    assert load(tmp_path).owner == "dedicated"
