@@ -10,7 +10,7 @@ dependencies = ["pydantic>=2.7,<3.0"]
 board = "boardkit.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3,<9.0"]
+dev = ["pytest>=8.3,<9.0", "ruff>=0.14,<1.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -22,3 +22,22 @@ packages = ["src/boardkit"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+# Matches the prose style already in the source: a full sentence fits on a
+# line, a signature rarely needs to wrap. E501 is deliberately not selected —
+# enforcing it would reflow 284 existing lines to say nothing new.
+line-length = 100
+
+[tool.ruff.lint]
+# Ruff's default (E4/E7/E9/F) plus the families that found real defects when
+# this was first run: an unsorted or duplicated import, a mutable default, a
+# naive timestamp, a string pair in a list that reads as a missing comma.
+select = ["E4", "E7", "E9", "F", "I", "B", "C4", "ISC", "UP", "RUF", "PLW", "DTZ"]
+
+[tool.ruff.lint.per-file-ignores]
+# The log's path and its open handler are module state on purpose: a read must
+# leave no trace, so the file is chosen late and opened on first use rather
+# than at import. Threading that through every caller would be the only way
+# to avoid the global, and it is not worth it for one logger.
+"src/boardkit/trail.py" = ["PLW0603"]
