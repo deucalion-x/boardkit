@@ -497,6 +497,25 @@ def value_literal(write: Write, field: ProjectField) -> str:
     raise BoardError(f"boardkit cannot write a {field.data_type} field yet")
 
 
+def check(write: Write, snapshot: Snapshot) -> None:
+    """Refuse a write that cannot succeed, before it is recorded.
+
+    The queue is for changes that are good and not yet sent. One that local
+    knowledge already rejects — a value that is not an option of its field —
+    would otherwise sit there being retried forever, because a refusal on
+    push is not a rejection and nothing clears it.
+
+    Silent where only GitHub can judge: an unknown field, or an item the
+    snapshot has not seen. The push says so in GitHub's own words.
+    """
+    if not write.value:
+        return  # Clearing is allowed for every field type.
+    field = snapshot.field(write.field)
+    if field is None or not field.id:
+        return
+    value_literal(write, field)
+
+
 def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
     """Send every write in one request, and return those that landed.
 
@@ -519,6 +538,15 @@ def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
         if field is None or not field.id:
             raise BoardError(
                 f"field `{write.field}` has no id in the snapshot; pull first")
+        # An empty value means "unset this", which is its own mutation —
+        # `update` has no way to express the absence of a value.
+        if not write.value:
+            parts.append(
+                f"m{index}: clearProjectV2ItemFieldValue(input: {{"
+                f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
+                f' fieldId: "{field.id}"'
+                " }) { projectV2Item { id } }")
+            continue
         parts.append(
             f"m{index}: updateProjectV2ItemFieldValue(input: {{"
             f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'

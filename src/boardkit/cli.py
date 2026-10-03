@@ -35,7 +35,7 @@ from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync,
 from . import board as board_module
 from .config import load
 from .gh import BoardError
-from .store import Store
+from .store import Store, Write
 
 BOARD_COMMANDS = {"list", "item", "find", "json", "views"}
 STALE = "No local snapshot. Run `board sync` first."
@@ -200,6 +200,9 @@ def queue(config, store: Store, args: list[str]) -> int:
     if snapshot.item(ref) is None:
         print(f"#{ref} is not on the board")
         return 1
+    # Before recording, not after: a write refused here must never enter the
+    # queue, where nothing would ever get it out again.
+    sync.check(Write(ref=ref, field=field, value=value), snapshot)
     write = store.queue(ref, field, value)
     was = write.was or "unset"
     if "--later" in args:

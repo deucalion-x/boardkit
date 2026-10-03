@@ -473,3 +473,52 @@ def test_a_pull_carries_a_field_config_never_declared():
            "content": {"number": 4, "title": "A thing", "type": "ISSUE"}}
     item = normalize([row], {4}, config, names)[0]
     assert item.field("blocked") == "waiting on a decision"
+
+
+def test_clearing_a_field_is_its_own_mutation(monkeypatch):
+    """`update` has no way to say "no value", so an empty write has to use
+    `clearProjectV2ItemFieldValue` or it reads as an invalid update."""
+    from boardkit import sync
+    sent = {}
+    monkeypatch.setattr(sync, "run_json",
+                        lambda args: (sent.update(q=args[-1]), {"data": {}})[1])
+    snapshot = Snapshot(
+        project_id="PVT_1", synced_at="t",
+        fields=(ProjectField(name="area", id="F_A", options=("sync",),
+                             option_ids={"sync": "O_S"}),),
+        items=(ProjectItem(number=1, id="I_1", fields={"area": "sync"}),))
+    sync.apply_all([Write(ref="1", field="area", value="")], snapshot)
+    assert "clearProjectV2ItemFieldValue" in sent["q"]
+    assert "updateProjectV2ItemFieldValue" not in sent["q"]
+
+
+def test_a_value_that_is_not_an_option_is_refused_before_it_is_recorded():
+    """`check` runs before the queue. A refusal that reached the queue would
+    stay there: a push refusal is not a rejection, so nothing clears it."""
+    from boardkit import sync
+    snapshot = Snapshot(
+        project_id="PVT_1", synced_at="t",
+        fields=(ProjectField(name="area", id="F_A", options=("sync",),
+                             option_ids={"sync": "O_S"}),),
+        items=(ProjectItem(number=1, id="I_1"),))
+    with pytest.raises(BoardError, match="not an option"):
+        sync.check(Write(ref="1", field="area", value="nonsense"), snapshot)
+
+
+def test_clearing_passes_the_check_for_every_field_type():
+    from boardkit import sync
+    snapshot = Snapshot(
+        project_id="PVT_1", synced_at="t",
+        fields=(ProjectField(name="area", id="F_A", options=("sync",),
+                             option_ids={"sync": "O_S"}),),
+        items=(ProjectItem(number=1, id="I_1"),))
+    assert sync.check(Write(ref="1", field="area", value=""), snapshot) is None
+
+
+def test_a_field_only_github_can_judge_is_left_to_github():
+    """An unknown field is not refused locally: the snapshot may simply be
+    behind, and GitHub's own words are the better error."""
+    from boardkit import sync
+    snapshot = Snapshot(project_id="PVT_1", synced_at="t",
+                        items=(ProjectItem(number=1, id="I_1"),))
+    assert sync.check(Write(ref="1", field="whatever", value="x"), snapshot) is None
