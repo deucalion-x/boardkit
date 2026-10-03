@@ -10,7 +10,7 @@ dependencies = ["pydantic>=2.7,<3.0"]
 board = "boardkit.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3,<9.0", "ruff>=0.14,<1.0"]
+dev = ["pytest>=8.3,<9.0", "ruff>=0.14,<1.0", "mypy>=1.18,<2.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -41,3 +41,11 @@ select = ["E4", "E7", "E9", "F", "I", "B", "C4", "ISC", "UP", "RUF", "PLW", "DTZ
 # than at import. Threading that through every caller would be the only way
 # to avoid the global, and it is not worth it for one logger.
 "src/boardkit/trail.py" = ["PLW0603"]
+
+[tool.mypy]
+files = ["src/boardkit"]
+python_version = "3.12"
+# `gh` returns JSON, so the boundary is genuinely untyped; what matters is
+# that it is validated the moment it is read, which pydantic does. Strict
+# mode would mostly argue about that boundary.
+ignore_missing_imports = true
