@@ -1,6 +1,6 @@
 import pathlib
 
-from boardkit.board import ProjectItem, Shape, normalize, rank, rollup
+from boardkit.board import ProjectItem, Shape, normalize, rank
 from boardkit.config import Config, ProjectField
 from boardkit.config import Config
 
@@ -29,25 +29,16 @@ def test_a_draft_item_with_no_issue_is_skipped():
     assert all(item.number for item in normalize(ITEMS, {1, 3}, CONFIG))
 
 
-def test_missing_fields_fall_back_per_role():
+def test_a_field_an_item_does_not_carry_reads_as_absent():
     item = normalize(ITEMS, {3}, CONFIG)[0]
-    # The grouping field needs a bucket name; any other field is just absent.
-    assert (item.field("workstream"), item.field("effort")) == ("Unassigned", "-")
+    assert (item.field("workstream"), item.field("effort")) == ("-", "-")
 
 
-VIEW = Shape(columns=("Ready", "Inbox", "Done"), names=("workstream", "effort"),
-             grouping="workstream")
+VIEW = Shape(columns=("Ready", "Inbox", "Done"), names=("workstream", "effort"))
 
 
 def test_rank_orders_by_configured_columns_and_parks_the_unknown_last():
     assert rank("Ready", VIEW) < rank("Done", VIEW) < rank("Mystery", VIEW)
-
-
-def test_rollup_counts_by_the_grouping_field(capsys):
-    rollup(normalize(ITEMS, {1, 2, 3}, CONFIG), VIEW)
-    out = capsys.readouterr().out
-    assert "Maps" in out and "Ready=1" in out and "Done=1" in out
-    assert "Unassigned  Inbox=1" in out
 
 
 def test_board_json_keeps_the_flat_shape_a_jq_pipeline_expects():
@@ -57,7 +48,7 @@ def test_board_json_keeps_the_flat_shape_a_jq_pipeline_expects():
                            "effort": "M"}
 
 
-def test_status_is_reachable_as_a_field_so_a_board_can_group_by_it():
+def test_status_is_reachable_as_a_field_like_any_other():
     item = normalize(ITEMS, {1}, CONFIG)[0]
     assert item.field("status") == "Ready"
 
@@ -101,7 +92,7 @@ def test_a_board_that_declares_nothing_is_read_from_its_own_fields():
              ProjectField(name="area", options=("sync", "docs")))
     view = shape(bare, found)
     assert view.columns == ("Inbox", "Todo", "Done")
-    assert view.names == ("area",) and view.grouping == "area"
+    assert view.names == ("area",)
 
 
 def test_what_a_repo_does_declare_wins_over_the_board():
@@ -200,31 +191,3 @@ def test_every_word_has_to_appear_somewhere():
 def test_searching_for_nothing_finds_nothing():
     from boardkit.board import matching
     assert matching(SEARCHABLE, "   ") == []
-
-
-FIELDS = (ProjectField(name="status", options=("Todo", "Done")),
-          ProjectField(name="effort"), ProjectField(name="area"))
-
-
-def shaped(group_by: str):
-    from boardkit.board import shape
-    return shape(Config(root=pathlib.Path("."), owner="o", repo="o/p",
-                        group_by=group_by), FIELDS)
-
-
-def test_a_grouping_field_is_matched_without_case():
-    """The API names it `area`; a person reading the board writes `Area`."""
-    assert shaped("Area").grouping == "area"
-    assert shaped("Area").unknown_grouping == ""
-
-
-def test_a_grouping_the_board_does_not_have_is_reported():
-    """Silently it grouped everything under one `-` row, which looks like an
-    answer rather than a mistake."""
-    view = shaped("banana")
-    assert view.unknown_grouping == "banana"
-    assert view.grouping == "effort"
-
-
-def test_no_grouping_asked_for_is_not_a_miss():
-    assert shaped("").unknown_grouping == ""

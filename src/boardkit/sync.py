@@ -59,6 +59,9 @@ def parse_fields(payload: list[dict], config: Config) -> tuple[ProjectField, ...
             id=entry.get("id", ""),
             option_ids={option.get("name", ""): option.get("id", "")
                         for option in choices},
+            # What each option means, as the board itself carries it.
+            descriptions={option.get("name", ""): option.get("description", "")
+                          for option in choices if option.get("description")},
         ))
     return tuple(fields)
 
@@ -197,7 +200,7 @@ def fields_block(config: Config, after: str | None) -> str:
     return (f"fields(first: {config.page_size}{cursor}) {{ "
             "pageInfo { hasNextPage endCursor } nodes { "
             "... on ProjectV2FieldCommon { id name dataType } "
-            "... on ProjectV2SingleSelectField { options { id name } } "
+            "... on ProjectV2SingleSelectField { options { id name description } } "
             "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
             "} } ")
 

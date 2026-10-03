@@ -1,46 +1,19 @@
-# boardkit's own board. Three settings are decisions; everything else about
-# the board — its columns, its other fields, their options and order — is
-# discovered on sync, because GitHub already knows it and a second copy here
-# could only drift.
-#
-# Nothing is declared here, so a sync carries every field the board owns.
-# Declaring one no longer narrows what a sync keeps — it only fixes print
-# order and tells `board admin apply` what to create on a fresh board.
+# Which board this is. Its columns and fields are discovered on sync.
+# The starter config every other repo gets is src/boardkit/templates/boardkit.toml.
 owner = "agerardin"
 repo = "agerardin/boardkit"
 project_name = "boardkit"
-# Without this the rollup groups by whichever field the board returns first,
-# which is arbitrary and was briefly effort.
-group_by = "area"
 
-# Saved tabs, under [admin] because that is the only command that reads them.
-# `admin apply` creates one that is missing and never removes one;
-# a view made in the browser is not boardkit's to delete. Grouping is not in
-# the API, so a board view groups by Status on its own and anything else is a
-# UI setting.
-[[admin.views]]
+[board]
+# The tabs this board should have. `admin apply` creates a missing one and
+# never deletes any.
+[[board.views]]
 name = "Open work"
 layout = "BOARD"
 fields = ["status", "area", "effort"]
 filter = "-status:Done"
 
-[[admin.views]]
+[[board.views]]
 name = "Everything"
 layout = "TABLE"
 fields = ["status", "area", "effort", "sprint"]
-
-# To create the board rather than reach one that exists, uncomment and edit,
-# then run `board admin apply`. Everything under [admin] is read by that verb
-# alone; a board that already exists needs none of it.
-# [admin]
-# status_order = ["Inbox", "Todo", "In progress", "Done"]
-#
-# [admin.fields.area]
-# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
-# options = ["Maps", "Planning", "Infra"]
-#
-# [[admin.views]]
-# name = "Open work"
-# layout = "BOARD"
-# fields = ["status", "area"]
-# filter = "-status:Done"

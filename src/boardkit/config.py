@@ -11,7 +11,6 @@ rejected by pydantic rather than by checks written out here.
 from __future__ import annotations
 
 import pathlib
-import re
 import tomllib
 from typing import Literal
 
@@ -24,20 +23,33 @@ from .gh import BoardError
 # table in pyproject.toml: writing one is the more explicit statement, and a
 # repo with no Python packaging has nowhere else to put it.
 CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
-# Settings that describe the board this repo wants rather than how to reach the
-# one it has. They may be written under `[admin]`, which says so in the file
-# itself; `admin apply` is the only command that needs them, apart from the
-# print order a declared shape also fixes.
-ADMIN_SETTINGS = ("fields", "views", "status_order")
-# What a skill is called when a repo does not say. Derived rather than fixed,
-# because two repos open at once — a tool and the project using it — would
-# otherwise install two skills under one name, each describing a different
-# board and neither distinguishable from the other.
-SKILL_SUFFIX = "-board"
-FALLBACK_SKILL = "github-board"
-# GitHub's own columns on a new Project. A default that fits one project would
-# work silently and wrongly everywhere else, so this is deliberately generic.
-DEFAULT_STATUS_ORDER = ("Todo", "In Progress", "Done")
+# Everything about the board itself, as opposed to which board it is. They may
+# be written under `[board]`, so a config reads as identity at the top and the
+# board's own shape in one section below it.
+BOARD_SETTINGS = ("fields", "views", "status_order", "status_descriptions",
+                  "status_field", "default_status", "blocked_field")
+# What the generated skills are called, in every repo: an agent should find
+# the same names wherever it is working. The admin one takes a suffix.
+SKILL_NAME = "board"
+# The columns a board gets when config names none, with what each one means.
+# They say how far along an item is, which is true of any project. Being
+# blocked is not a stage — a blocked item is still wherever it was — so it is
+# not one of these.
+# GitHub carries the description on the option itself, so the meaning is
+# visible on the board.
+# The one column that means startable, in the model every board gets.
+READY_STATUS = "Todo"
+# Being blocked is not a stage: it can happen at any of them, and the card
+# does not move when it does. So it is a field holding why, empty when the
+# card can move, and `board ready` leaves out whatever carries one.
+BLOCKED_FIELD = "blocked"
+DEFAULT_STATUS = {
+    "Inbox": "captured, not yet refined",
+    "Todo": "refined enough to pick up now",
+    "In progress": "started",
+    "In review": "finished and waiting on review",
+    "Done": "reviewed and closed; stays on the board",
+}
 
 # GitHub's ProjectV2FieldType, limited to the values a project owns rather than
 # projects from the issue. All six are creatable through the API; the four that
@@ -73,11 +85,33 @@ class ProjectField(BaseModel):
     title: str = ""
     data_type: DataType = "SINGLE_SELECT"
     options: tuple[str, ...] = ()
+    # Option name -> what it means. GitHub carries a description on every
+    # single-select option, so the meaning of a column belongs on the board
+    # where everyone reading it can see it, rather than in a file beside it.
+    # Declared as `{ name = "Ready", description = "..." }` entries in
+    # `options`, which also accepts plain strings.
+    descriptions: dict[str, str] = {}
     # Only read for an ITERATION field.
     iteration: Iteration = Iteration()
     id: str = ""
     # Option name -> option id, filled by a sync. Empty until then.
     option_ids: dict[str, str] = {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _options_either_form(cls, data):
+        """`options = ["Ready"]`, or entries carrying a description."""
+        if not isinstance(data, dict) or not isinstance(data.get("options"), (list, tuple)):
+            return data
+        names, meanings = [], dict(data.get("descriptions") or {})
+        for option in data["options"]:
+            if isinstance(option, dict):
+                names.append(option["name"])
+                if option.get("description"):
+                    meanings[option["name"]] = option["description"]
+            else:
+                names.append(option)
+        return {**data, "options": tuple(names), "descriptions": meanings}
 
     @field_validator("data_type", mode="before")
     @classmethod
@@ -137,15 +171,24 @@ class Config(BaseModel):
     owner_type: Literal["user", "org"] = "user"
     # Empty means "whatever the board says", in the board's own order. A repo
     # only names its columns to assert an order, or to create them.
+    # The columns to create when `status_order` names none, and what each
+    # means. A field rather than a constant, so `board schema` shows it and a
+    # repo can replace it; reads never use it, because an empty `status_order`
+    # means "whatever the board has".
+    default_status: dict[str, str] = DEFAULT_STATUS
+    # Created alongside the columns: what is in the way, at whatever stage the
+    # card has reached. Empty means nothing is.
+    blocked_field: str = BLOCKED_FIELD
     status_order: tuple[str, ...] = ()
+    # Column name -> what it means, for the status field. Same form as a
+    # field's `options`: a list of strings, or entries with a description.
+    status_descriptions: dict[str, str] = {}
     # Which field holds the columns. GitHub has no Status concept: it is a
     # single select the default template happens to name "Status", so a project
     # that calls it "Stage" only has to say so here.
     status_field: str = "status"
-    # Project fields beyond the status one, in the order they are printed. The
-    # first groups the rollup unless `group_by` says otherwise.
+    # Project fields beyond the status one, in the order they are printed.
     fields: tuple[ProjectField, ...] = ()
-    group_by: str = ""
     # Saved tabs. Declared for the same reason a field is: `admin apply` has to
     # create them, and nothing else needs them stated.
     views: tuple[View, ...] = ()
@@ -158,43 +201,51 @@ class Config(BaseModel):
     mirror_path: str = ""
     docs_prefix: str = "docs/"
     project_name: str = ""
-    # Empty means derived from the repository name; a repo only states this to
-    # be called something the derivation would not produce.
-    skill_name: str = ""
-    skill_notes: str = ""
     project_url: str = ""
 
     @model_validator(mode="before")
     @classmethod
-    def _name_the_skill(cls, data):
-        """Fill in `skill_name` from the repository when it is not stated."""
-        if isinstance(data, dict) and not data.get("skill_name"):
-            data = dict(data) | {"skill_name": skill_name_for(data.get("repo", ""))}
-        return data
+    def _status_order_either_form(cls, data):
+        """`status_order` carries the columns, with or without meanings."""
+        board = data.get("board") if isinstance(data, dict) else None
+        table = board if isinstance(board, dict) and "status_order" in board else data
+        if not isinstance(table, dict) or not isinstance(
+                table.get("status_order"), (list, tuple)):
+            return data
+        names, meanings = [], dict(table.get("status_descriptions") or {})
+        for column in table["status_order"]:
+            if isinstance(column, dict):
+                names.append(column["name"])
+                if column.get("description"):
+                    meanings[column["name"]] = column["description"]
+            else:
+                names.append(column)
+        table = {**table, "status_order": tuple(names), "status_descriptions": meanings}
+        return {**data, "board": table} if table is board else table
 
     @model_validator(mode="before")
     @classmethod
-    def _lift_admin_table(cls, data):
-        """`[admin]` is an optional home for the settings that exist to build a
-        board, so a file says which of its settings are for that. The values are
-        the same ones; grouping them changes nothing but where they are read."""
-        if not isinstance(data, dict) or "admin" not in data:
+    def _lift_board_table(cls, data):
+        """`[board]` is an optional home for everything about the board's own
+        shape. The values are the same ones; grouping them changes nothing but
+        where they are read."""
+        if not isinstance(data, dict) or "board" not in data:
             return data
         data = dict(data)
-        admin = data.pop("admin") or {}
-        if not isinstance(admin, dict):
-            raise ValueError("[admin] has to be a table")
-        stray = sorted(key for key in admin if key not in ADMIN_SETTINGS)
+        board = data.pop("board") or {}
+        if not isinstance(board, dict):
+            raise ValueError("[board] has to be a table")
+        stray = sorted(key for key in board if key not in BOARD_SETTINGS)
         if stray:
             raise ValueError(
-                f"{', '.join(stray)} cannot go under [admin]; it holds "
-                f"{', '.join(ADMIN_SETTINGS)}")
-        both = sorted(set(admin) & set(data))
+                f"{', '.join(stray)} cannot go under [board]; it holds "
+                f"{', '.join(BOARD_SETTINGS)}")
+        both = sorted(set(board) & set(data))
         if both:
             raise ValueError(
                 f"{', '.join(both)} is declared twice, at the top level and "
-                "under [admin]; keep one")
-        return data | admin
+                "under [board]; keep one")
+        return data | board
 
     @field_validator("views", mode="before")
     @classmethod
@@ -231,9 +282,10 @@ class Config(BaseModel):
     def field(self, name: str) -> ProjectField | None:
         return next((f for f in self.fields if f.name == name), None)
 
+
     @property
-    def grouping_field(self) -> str:
-        return self.group_by or (self.field_names[0] if self.fields else self.status_field)
+    def skill_name(self) -> str:
+        return SKILL_NAME
 
     @property
     def name(self) -> str:
@@ -263,13 +315,6 @@ class Config(BaseModel):
         if self.source.name == "pyproject.toml":
             return f"[tool.boardkit] in {self.source}"
         return str(self.source)
-
-
-def skill_name_for(repo: str) -> str:
-    """`agerardin/places` becomes `places-board`: the repo's own word, plus
-    what the skill is about."""
-    slug = re.sub(r"[^a-z0-9]+", "-", repo.split("/")[-1].strip().lower()).strip("-")
-    return f"{slug}{SKILL_SUFFIX}" if slug else FALLBACK_SKILL
 
 
 def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, pathlib.Path]:

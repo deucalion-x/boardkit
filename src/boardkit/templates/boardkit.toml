@@ -1,0 +1,21 @@
+# Which board this is.
+owner = "$owner"
+repo = "$repo"
+project_name = "$project_name"
+
+# Everything about the board itself. What is commented out is what `board
+# admin apply` would create; a board that already exists needs none of it,
+# because its shape is discovered on sync.
+[board]
+# status_order = ["Inbox", "Todo", "In progress", "Done"]   # default columns
+# status_order = [{ name = "Ready", description = "what it means" }]
+#
+# [board.fields.area]
+# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+# options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]
+#
+# [[board.views]]
+# name = "Open work"
+# layout = "BOARD"
+# fields = ["status", "area"]
+# filter = "-status:Done"

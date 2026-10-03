@@ -81,7 +81,6 @@ def test_derived_names(tmp_path):
     config = load(tmp_path)
     assert config.url == "https://github.com/users/octo/projects/4"
     assert config.name == "Places"
-    assert config.grouping_field == "workstream"
 
 
 def test_an_org_project_lives_under_a_different_path(tmp_path):
@@ -159,14 +158,14 @@ owner = "octo"
 repo = "octo/places"
 project_name = "Places"
 
-[admin]
+[board]
 status_order = ["Inbox", "Todo", "Done"]
 
-[admin.fields.workstream]
+[board.fields.workstream]
 data_type = "SINGLE_SELECT"
 options = ["Maps", "Infra"]
 
-[[admin.views]]
+[[board.views]]
 name = "Open work"
 layout = "BOARD"
 """
@@ -187,15 +186,15 @@ def test_the_flat_form_still_works(tmp_path):
     assert load(tmp_path).field_names == ("workstream", "effort")
 
 
-def test_a_setting_that_is_not_admins_is_refused_there(tmp_path):
-    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n\n[admin]\nowner = "someone"\n')
-    with pytest.raises(BoardError, match="cannot go under \\[admin\\]"):
+def test_a_setting_that_is_not_the_boards_is_refused_there(tmp_path):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n\n[board]\nowner = "someone"\n')
+    with pytest.raises(BoardError, match="cannot go under \\[board\\]"):
         load(tmp_path)
 
 
 def test_declaring_a_setting_in_both_places_is_refused(tmp_path):
     write(tmp_path, "boardkit.toml",
-          'owner = "octo"\nrepo = "o/p"\nstatus_order = ["Todo"]\n\n[admin]\nstatus_order = ["Done"]\n')
+          'owner = "octo"\nrepo = "o/p"\nstatus_order = ["Todo"]\n\n[board]\nstatus_order = ["Done"]\n')
     with pytest.raises(BoardError, match="declared twice"):
         load(tmp_path)
 
@@ -223,21 +222,6 @@ def test_the_internal_source_field_is_not_offered_as_a_setting(tmp_path):
     assert "source" not in str(caught.value).split("Known settings:")[1]
 
 
-def test_a_skill_is_named_after_the_repository_by_default(tmp_path):
-    """Two repos open at once — a tool and the project using it — must not
-    install two skills under one name."""
+def test_the_skill_name_is_the_same_in_every_repo(tmp_path):
     write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "octo/places"\n')
-    assert load(tmp_path).skill_name == "places-board"
-
-
-def test_a_repo_can_still_choose_its_own_name(tmp_path):
-    write(tmp_path, "boardkit.toml",
-          'owner = "octo"\nrepo = "octo/places"\nskill_name = "places-github"\n')
-    assert load(tmp_path).skill_name == "places-github"
-
-
-def test_a_repository_name_becomes_a_usable_directory_name(tmp_path):
-    from boardkit.config import skill_name_for
-    assert skill_name_for("octo/Places 2") == "places-2-board"
-    assert skill_name_for("octo/my_tool.py") == "my-tool-py-board"
-    assert skill_name_for("") == "github-board"
+    assert load(tmp_path).skill_name == "board"

@@ -5,7 +5,6 @@ pipe `board json` into jq or python rather than growing a verb.
 """
 from __future__ import annotations
 
-import collections
 import re
 from typing import Literal, get_args
 
@@ -15,7 +14,6 @@ from .config import Config
 from .gh import gh_json
 
 MISSING = "-"
-UNGROUPED = "Unassigned"
 
 
 ItemType = Literal["ISSUE", "PULL_REQUEST", "DRAFT_ISSUE", "REDACTED"]
@@ -149,7 +147,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             continue
         fields = {}
         for field in (names or config.synced_names):
-            default = UNGROUPED if field == config.grouping_field else MISSING
+            default = MISSING
             fields[field] = as_text(entry.get(field, default))
         items.append(ProjectItem(
             number=number or 0,
@@ -180,11 +178,6 @@ class Shape(BaseModel):
     status_field: str = "status"
     columns: tuple[str, ...] = ()
     names: tuple[str, ...] = ()
-    grouping: str = "status"
-    # What config asked to group by when the board carries no such field. A
-    # miss is silent otherwise: every item answers "-" and the rollup becomes
-    # one row of everything, which looks like an answer.
-    unknown_grouping: str = ""
 
 
 def shape(config: Config, fields: tuple) -> Shape:
@@ -196,20 +189,9 @@ def shape(config: Config, fields: tuple) -> Shape:
     discovered = [f.name for f in fields if f.name != config.status_field]
     names = (*config.field_names,
              *(n for n in discovered if n not in config.field_names))
-    fallback = names[0] if names else config.status_field
-    grouping, unknown = fallback, ""
-    if config.group_by:
-        # Matched without case, because a field is named `area` by the API and
-        # written `Area` by anyone reading the board in a browser.
-        known = (*names, config.status_field)
-        grouping = next((n for n in known if n.lower() == config.group_by.lower()), "")
-        if not grouping:
-            grouping, unknown = fallback, config.group_by
     return Shape(status_field=config.status_field,
                  columns=tuple(columns),
-                 names=names,
-                 grouping=grouping,
-                 unknown_grouping=unknown)
+                 names=names)
 
 
 def rank(status: str, view: Shape) -> int:
@@ -259,13 +241,48 @@ def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
     return found
 
 
-def rollup(items: list[ProjectItem], view: Shape) -> None:
-    table: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+def rank(status: str, view: Shape) -> int:
+    order = view.columns
+    return order.index(status) if status in order else len(order)
+
+
+def show(items: list[ProjectItem], view: Shape) -> None:
+    if not items:
+        print("No matching items.")
+        return
+    extras = [f for f in view.names if f != view.status_field]
+    widths = {field: max(len(field), *(len(i.field(field)) for i in items))
+              for field in extras}
+    names = max((len(item.ref) for item in items), default=4)
+    for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
+                                             i.number, i.ref)):
+        extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
+        marker = "" if item.number else " (draft)"
+        print(f'{item.field(view.status_field):12} #{item.ref:<{names}} '
+              f'{item.title[:50]:50} {extra}  {item.url}{marker}')
+
+
+def children(number: int, config: Config) -> list[int]:
+    found = gh_json("issue", "list", "--repo", config.repo,
+                    "--search", f"parent-issue:{config.repo}#{number}",
+                    "--json", "number", "--limit", "50")
+    return [found_item["number"] for found_item in found]
+
+
+def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
+    """Items whose title or body contains every word given.
+
+    Local, because the snapshot carries the text now. It is a substring match
+    and not GitHub's search syntax — `gh issue list --search` is still what
+    answers a question about closed work or history, which the snapshot does
+    not hold.
+    """
+    words = [word.lower() for word in terms.split() if word]
+    if not words:
+        return []
+    found = []
     for item in items:
-        table[item.field(view.grouping)][item.field(view.status_field)] += 1
-    width = max((len(name) for name in table), default=0)
-    for name, counts in sorted(table.items()):
-        summary = "  ".join(f"{status}={counts[status]}"
-                            for status in view.columns if counts[status])
-        print(f"{name:{width}}  {summary}")
-    print(f"\n{len(items)} items. `board ready` for what is startable.")
+        haystack = f"{item.title}\n{item.body}\n{' '.join(item.labels)}".lower()
+        if all(word in haystack for word in words):
+            found.append(item)
+    return found

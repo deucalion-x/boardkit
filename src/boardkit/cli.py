@@ -2,9 +2,9 @@
 
 Reads answer from the local store; only the sync verbs touch GitHub.
 
-  board                      rollup by grouping field x status
+  board                      every open item, by status
   board ready                startable items only
-  board group <name>         one group, by status            (alias: ws)
+  board group <value>        items carrying that field value (alias: ws)
   board item <n>             one item with its text and children
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
@@ -35,17 +35,17 @@ import sys
 from . import board as board_module
 from . import trail
 from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync
-from .config import load
+from .config import READY_STATUS, load
 from .gh import BoardError
 from .store import Store
 
-BOARD_COMMANDS = {"rollup", "ready", "group", "ws", "item", "find", "json"}
+BOARD_COMMANDS = {"list", "ready", "group", "ws", "item", "find", "json"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    command = argv[0] if argv else "rollup"
+    command = argv[0] if argv else "list"
     try:
         return dispatch(command, argv[1:])
     except BoardError as error:
@@ -69,8 +69,7 @@ def dispatch(command: str, args: list[str]) -> int:
     # Named once per command, because three files can hold this configuration
     # and the costly confusion is editing one that is not the one being read.
     trail.note("configured", file=str(config.source), command=command,
-               project=config.name, group_by=config.grouping_field,
-               declares=config.declares)
+               project=config.name, declares=config.declares)
 
     # Verbs that never read the board are handled before it is loaded.
     if command == "install-skill":
@@ -125,25 +124,23 @@ def dispatch(command: str, args: list[str]) -> int:
     index = {item.ref: item for item in items}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
-    if view.unknown_grouping:
-        print(f"warning: group_by names {view.unknown_grouping!r}, which this "
-              f"board has no field for. Grouping by {view.grouping!r}; the "
-              f"board carries {', '.join(view.names) or 'no fields'}.",
-              file=sys.stderr)
-        trail.note("unknown_grouping", wanted=view.unknown_grouping,
-                   used=view.grouping, fields=list(view.names))
-
-    if command == "rollup":
-        board_module.rollup(items, view)
+    if command == "list":
+        board_module.show(items, view)
         report_queue(store)
     elif command == "ready":
-        startable = view.columns[0] if view.columns else "Todo"
-        board_module.show([i for i in items
-                           if i.field(view.status_field) == startable], view)
+        # Startable means the Todo column with nothing in the way: a blocked
+        # card stays where it is, so the column alone does not say it can move.
+        board_module.show(
+            [i for i in items
+             if i.field(view.status_field).lower() == READY_STATUS.lower()
+             and i.field(config.blocked_field) in ("", "-")],
+            view)
     elif command in {"group", "ws"}:
+        # Matched against every field, because a value like `auth` or `L` says
+        # which field it belongs to without being told.
         name = " ".join(args).lower()
-        board_module.show([i for i in items
-                           if name in i.field(view.grouping).lower()], view)
+        board_module.show([i for i in items if any(
+            name in i.field(field).lower() for field in view.names)], view)
     elif command == "item":
         ref = args[0].lstrip("#")
         board_module.show([index[ref]] if ref in index else [], view)

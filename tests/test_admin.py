@@ -26,18 +26,18 @@ def test_a_status_field_declared_explicitly_wins_over_the_columns():
 def test_fields_that_already_exist_are_left_alone():
     present = (ProjectField(name="status", id="F_S"),
                ProjectField(name="workstream", id="F_W"))
-    assert [field.name for field in plan(CONFIG, present)] == ["effort"]
+    assert [field.name for field in plan(CONFIG, present)] == ["effort", "blocked"]
 
 
 def test_everything_is_missing_when_the_project_is_new():
-    assert [f.name for f in plan(CONFIG, ())] == ["status", "workstream", "effort"]
+    assert [f.name for f in plan(CONFIG, ())] == ["status", "workstream", "effort", "blocked"]
 
 
 def test_an_iteration_field_is_planned_like_any_other():
     """`gh project field-create` cannot make one; the API can, so boardkit does."""
     config = CONFIG.model_copy(update={
         "fields": (ProjectField(name="sprint", data_type="ITERATION"),)})
-    assert [f.name for f in plan(config, ())] == ["status", "sprint"]
+    assert [f.name for f in plan(config, ())] == ["status", "sprint", "blocked"]
 
 
 def test_a_second_create_finds_the_first_rather_than_making_another(monkeypatch):

@@ -28,10 +28,11 @@ def seeded(repo):
     store.save_state(Snapshot(
         project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
         fields=(ProjectField(name="status", id="F_S",
-                             option_ids={"Ready": "O_R", "In progress": "O_P"}),
+                             options=("Inbox", "Todo", "In progress", "Done"),
+                             option_ids={"Todo": "O_R", "In progress": "O_P"}),
                 ProjectField(name="workstream", id="F_W", option_ids={"Maps": "O_M"})),
         items=(ProjectItem(number=7, id="I_7", title="Corridor",
-                           fields={"status": "Ready", "workstream": "Maps"}),
+                           fields={"status": "Todo", "workstream": "Maps"}),
                ProjectItem(number=8, id="I_8", title="Later",
                            fields={"status": "Done", "workstream": "Maps"}))))
     return store
@@ -59,17 +60,17 @@ def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, cap
 
 
 def test_a_read_with_no_snapshot_says_to_sync_rather_than_fetching(repo, capsys):
-    assert cli.main(["rollup"]) == 1
+    assert cli.main(["list"]) == 1
     assert "Run `board sync`" in capsys.readouterr().out
 
 
-def test_the_rollup_answers_from_the_snapshot(seeded, capsys):
-    assert cli.main(["rollup"]) == 0
+def test_the_listing_answers_from_the_snapshot(seeded, capsys):
+    assert cli.main(["list"]) == 0
     out = capsys.readouterr().out
-    assert "Maps" in out and "Ready=1" in out and "Done=1" in out
+    assert "Maps" in out and "#7" in out
 
 
-def test_ready_takes_the_first_configured_column(seeded, capsys):
+def test_ready_is_the_startable_column_of_the_one_model(seeded, capsys):
     assert cli.main(["ready"]) == 0
     out = capsys.readouterr().out
     assert "#7" in out and "#8" not in out
@@ -78,7 +79,7 @@ def test_ready_takes_the_first_configured_column(seeded, capsys):
 def test_json_stays_flat_for_a_jq_pipeline(seeded, capsys):
     assert cli.main(["json"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    assert rows[0]["number"] == 7 and rows[0]["status"] == "Ready"
+    assert rows[0]["number"] == 7 and rows[0]["status"] == "Todo"
 
 
 def test_later_queues_without_reaching_for_the_network(seeded, capsys):
@@ -86,7 +87,7 @@ def test_later_queues_without_reaching_for_the_network(seeded, capsys):
     assert "Queued" in capsys.readouterr().out
     pending = seeded.pending()
     assert (pending[0].field, pending[0].value, pending[0].was) == (
-        "status", "In progress", "Ready")
+        "status", "In progress", "Todo")
 
 
 def test_a_change_is_pushed_when_it_is_made(seeded, monkeypatch, capsys):
@@ -116,7 +117,7 @@ def test_setting_an_item_that_is_not_on_the_board_is_refused(seeded, capsys):
 def test_the_rollup_mentions_queued_work_so_it_is_not_forgotten(seeded, capsys):
     cli.main(["set", "7", "status", "In progress", "--later"])
     capsys.readouterr()
-    cli.main(["rollup"])
+    cli.main(["list"])
     assert "1 change(s) queued" in capsys.readouterr().out
 
 
@@ -129,8 +130,67 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     """A new repo should not have to find the shape of these tables in the
     docs; it should not have to use them either, hence commented."""
     from boardkit.setup import rendered
-    text = rendered({"owner": "octo", "repo": "octo/places"})
-    assert "# [admin]" in text and "# [admin.fields.area]" in text
+    text = rendered({"owner": "octo", "repo": "octo/places", "project_name": "P"})
+    assert "# [board.fields.area]" in text and "# [[board.views]]" in text
     import tomllib
-    assert tomllib.loads(text.replace("[tool.boardkit]\n", "")) == {
-        "owner": "octo", "repo": "octo/places"}
+    assert tomllib.loads(text) == {
+        "owner": "octo", "repo": "octo/places", "project_name": "P", "board": {}}
+
+
+def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
+    """Writing config and stopping would only ask for one more command."""
+    from boardkit import setup
+    done = []
+    monkeypatch.setattr(setup, "detect", lambda: {
+        "owner": "octo", "owner_type": "user", "repo": "octo/places",
+        "project_name": "Places"})
+    monkeypatch.setattr(setup, "board_exists", lambda settings: False)
+    monkeypatch.setattr(setup, "root", lambda: tmp_path)
+    import boardkit.admin, boardkit.sync
+    monkeypatch.setattr(boardkit.admin, "apply", lambda config, dry=False: done.append("apply"))
+    monkeypatch.setattr(boardkit.sync, "pull", lambda config, store: done.append("pull"))
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+    setup.init()
+    assert done == ["apply", "pull"]
+    assert "[tool.boardkit.board]" in (tmp_path / "pyproject.toml").read_text()
+
+
+def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
+    """In pyproject every table has to sit under [tool.boardkit]; a bare
+    [board] there is a different table that nothing reads."""
+    from boardkit.config import load
+    from boardkit.setup import rendered
+    settings = {"owner": "octo", "repo": "octo/places", "project_name": "Places"}
+
+    own = tmp_path / "own"
+    own.mkdir()
+    (own / "boardkit.toml").write_text(rendered(settings), encoding="utf-8")
+    assert load(own).repo == "octo/places"
+
+    packaged = tmp_path / "packaged"
+    packaged.mkdir()
+    (packaged / "pyproject.toml").write_text(
+        rendered(settings, nested=True), encoding="utf-8")
+    assert load(packaged).repo == "octo/places"
+    # The columns are not restated here: the model holds them.
+    assert load(packaged).status_order == ()
+
+
+def test_an_existing_board_gets_the_columns_commented_out(tmp_path):
+    from boardkit.config import load
+    from boardkit.setup import rendered
+    settings = {"owner": "octo", "repo": "octo/places", "project_name": "Places"}
+    (tmp_path / "boardkit.toml").write_text(rendered(settings, exists=True), encoding="utf-8")
+    assert load(tmp_path).status_order == ()
+
+
+
+
+def test_ready_leaves_out_what_is_blocked(seeded, capsys):
+    """Blocked is not a column: the card stays in Todo and still cannot move."""
+    state = seeded.state()
+    stuck = state.items[0].model_copy(update={
+        "fields": {**state.items[0].fields, "blocked": "waiting on the API key"}})
+    seeded.save_state(state.model_copy(update={"items": (stuck, state.items[1])}))
+    assert cli.main(["ready"]) == 0
+    assert "No matching items." in capsys.readouterr().out

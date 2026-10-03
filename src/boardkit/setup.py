@@ -35,34 +35,40 @@ def root() -> pathlib.Path:
     return pathlib.Path(git("rev-parse", "--show-toplevel"))
 
 
-# Commented out, because a repo whose board already exists needs none of it:
-# its columns and fields are discovered on the first sync. It is written all
-# the same, so that making a board from scratch does not mean finding the
-# shape of these tables in the documentation first.
-EXAMPLE = """
-# To create the board rather than reach one that exists, uncomment and edit,
-# then run `board admin apply`. Everything under [admin] is read by that verb
-# alone; a board that already exists needs none of it.
-# [admin]
-# status_order = ["Inbox", "Todo", "In progress", "Done"]
-#
-# [admin.fields.area]
-# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
-# options = ["Maps", "Planning", "Infra"]
-#
-# [[admin.views]]
-# name = "Open work"
-# layout = "BOARD"
-# fields = ["status", "area"]
-# filter = "-status:Done"
-"""
+TEMPLATE = pathlib.Path(__file__).with_name("templates") / "boardkit.toml"
 
 
-def rendered(settings: dict) -> str:
-    lines = [TABLE]
-    for key, value in settings.items():
-        lines.append(f'{key} = "{value}"')
-    return "\n".join(lines) + "\n" + EXAMPLE
+def board_exists(settings: dict) -> bool:
+    """Whether a project by this title is already there, so `init` writes a
+    config that reads it rather than one that would create a second."""
+    try:
+        listed = gh_json("project", "list", "--owner", settings["owner"],
+                         "--limit", "100", "--format", "json")
+    except BoardError:
+        return False
+    return any(entry.get("title") == settings["project_name"]
+               for entry in listed.get("projects", []))
+
+
+def rendered(settings: dict, exists: bool = True, nested: bool = False) -> str:
+    """The starter config for this repo.
+
+    One template, with the columns commented out when the board already exists
+    — its shape is discovered on sync — and left ready to run when it does not.
+
+    `nested` is for `pyproject.toml`, where every table has to sit under
+    `[tool.boardkit]`: a bare `[board]` there is a different table that nothing
+    reads, which is a silent way to lose the whole section.
+    """
+    import string
+    text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
+        **{key: str(value) for key, value in settings.items()})
+    if nested:
+        text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
+        text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")
+        head, _, rest = text.partition("\n[")
+        text = f"{TABLE}\n{head.lstrip()}\n[{rest}"
+    return text
 
 
 def target(where: pathlib.Path) -> pathlib.Path:
@@ -83,10 +89,8 @@ def init(title: str = "", dry: bool = False) -> int:
     if title:
         settings["project_name"] = title
     file = target(where)
-    block = rendered(settings)
-    # A dedicated file holds the keys at the top level; only pyproject needs
-    # the table header.
-    body = block if file.name == "pyproject.toml" else block.replace(TABLE + "\n", "")
+    exists = board_exists(settings)
+    body = rendered(settings, exists, nested=file.name == "pyproject.toml")
 
     if dry:
         print(f"Would write to {file.relative_to(where)}:\n\n{body}")
@@ -94,8 +98,25 @@ def init(title: str = "", dry: bool = False) -> int:
     with file.open("a", encoding="utf-8") as handle:
         handle.write(("\n" if file.exists() and file.stat().st_size else "") + body)
     print(f"Wrote {file.relative_to(where)}:\n\n{body}")
-    print("Next: `board admin apply` to make the board, or `board sync` if it "
-          "already exists.")
+
+    # Carry on into the board itself: the config just written says everything
+    # `apply` needs, and stopping here would only ask for one more command.
+    # `apply` adds what is missing and changes nothing that exists, so running
+    # it against a board that is already there is safe.
+    from . import admin, sync
+    from .config import load
+    from .store import Store
+    config = load(where)
+    store = Store(config)
+    admin.apply(config)
+    sync.pull(config, store)
+    # From the snapshot, not config: the number is discovered, and config has
+    # deliberately never been told it.
+    number = store.state().project_number
+    kind = "orgs" if config.owner_type == "org" else "users"
+    print(f"\nReady: https://github.com/{kind}/{config.owner}/projects/{number}\n"
+          f"Add a column or a field by editing [board] and running "
+          f"`board admin apply` again; it never removes anything.")
     return 0
 
 

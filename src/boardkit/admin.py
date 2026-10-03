@@ -60,8 +60,13 @@ def wanted(config: Config) -> tuple[ProjectField, ...]:
     declared = {field.name: field for field in config.fields}
     status = declared.get(config.status_field) or ProjectField(
         name=config.status_field, data_type="SINGLE_SELECT",
-        options=config.status_order)
+        # A repo that names no columns gets the generic ones rather than
+        # whatever GitHub seeds, so every board starts meaning the same thing.
+        options=config.status_order or tuple(config.default_status),
+        descriptions=config.status_descriptions or config.default_status)
     rest = [f for f in config.fields if f.name != config.status_field]
+    if config.blocked_field and not any(f.name == config.blocked_field for f in rest):
+        rest.append(ProjectField(name=config.blocked_field, data_type="TEXT"))
     return (status, *rest)
 
 
@@ -193,11 +198,13 @@ def add_field(project_id: str, field: ProjectField) -> None:
 
 def decorated(config: Config, number: str, field: ProjectField,
               options: list[dict]) -> list[dict]:
-    """Options with the colour and description each one already has.
+    """Options with their colour and description.
 
     `updateProjectV2Field` requires both on every entry, and
     `gh project field-list` reports neither, so the current values have to be
-    read back or the mutation would repaint the whole field.
+    read back or the mutation would repaint the whole field. A description
+    config declares wins over the one on the board: that is the point of
+    declaring it.
     """
     kind = "organization" if config.owner_type == "org" else "user"
     query = (f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) '
@@ -210,9 +217,10 @@ def decorated(config: Config, number: str, field: ProjectField,
     dressed = []
     for option in options:
         current = known.get(option.get("id", ""), {})
+        declared = field.descriptions.get(option["name"], "")
         dressed.append({**option,
                         "color": current.get("color") or DEFAULT_COLOR,
-                        "description": current.get("description") or ""})
+                        "description": declared or current.get("description") or ""})
     return dressed
 
 

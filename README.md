@@ -56,21 +56,21 @@ Declare a field when `board admin apply` has to create it, or to fix print
 order. Nothing else needs saying:
 
 ```toml
-[admin.fields.workstream]
+[board.fields.workstream]
 data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
 options = ["Maps", "Planning", "Infra"]
 
-[admin.fields.sprint]
+[board.fields.sprint]
 data_type = "ITERATION"
 iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
 
-[[admin.views]]
+[[board.views]]
 name = "Open work"
 layout = "BOARD"
 filter = "-status:Done"
 ```
 
-`fields`, `views` and `status_order` may be written under `[admin]`, which is
+`fields`, `views` and `status_order` may be written under `[board]`, which is
 what says in the file itself that they exist to build a board rather than to
 reach one. They also work at the top level, and mean the same thing either
 way; declaring one in both places is refused rather than silently resolved.
@@ -90,12 +90,11 @@ and its default — so an agent can fill it in rather than guess.
 |---|---|
 | `owner_type` | `"org"` if an organisation owns the project |
 | `status_field` | the column field's name, if the board does not call it Status |
-| `status_order` | to assert an order; empty means the board's own |
-| `group_by` | which field drives the rollup; defaults to the first |
+| `status_order` | to assert the columns; empty means the board's own |
+| `default_status` | the columns `admin apply` creates, with what each means |
+| `blocked_field` | the field holding what is in the way; empty means nothing is |
 | `mirror_path` | enables `board mirror` |
 | `docs_prefix` | which paths `board links` pins to a sha |
-| `skill_name` | what the generated skill is called; defaults to the repo's name plus `-board` |
-| `skill_notes` | a file appended verbatim to the generated skill |
 
 Config is read from `.boardkit.toml`, `boardkit.toml` or a `[tool.boardkit]`
 table in `pyproject.toml`, in that order — a dedicated file wins, because
@@ -110,9 +109,9 @@ Reads answer from the local snapshot and touch nothing:
 
 | Command | Answers |
 |---|---|
-| `board` | Grouping-field-by-status rollup. Start here. |
-| `board ready` | What is actually startable now. |
-| `board group <name>` | One group, by status (`ws` is an alias). |
+| `board` | Every open item, by status. Start here. |
+| `board ready` | The `Todo` column, minus anything with `blocked` set. |
+| `board group <value>` | Items carrying that field value (`ws` is an alias). |
 | `board item <ref>` | One item: fields, labels, full text, sub-issues. |
 | `board find <terms>` | Titles, bodies and labels holding every word given. |
 | `board json` | Normalized work items, for jq or python. |
@@ -218,24 +217,17 @@ branch before filing the issue, and do not squash the merge.
 ## The agent skill
 
 ```bash
-board install-skill          # write .claude/skills/<skill_name>/SKILL.md
+board install-skill          # write .claude/skills/board/ and board-admin/
 board install-skill --check  # fail if the committed copy has drifted
 ```
 
-`skill_name` defaults to the repository's own name plus `-board`
-(`agerardin/places` gives `places-board`), so a tool and the project using it
-can both be open without installing two skills under one name. Set it only to
-be called something else.
+Two skills are written: `board` for reading and changing work, `board-admin`
+for changing the board's shape. The names are the same in every repo.
 
-The rendered file is generic text from the package's template, filled in with
-this repo's board URL, columns, fields and grouping — taken from config, and
-from the last sync for whatever config does not declare — with `skill_notes`
-appended verbatim for what is true only of this project: its column meanings,
-its label vocabulary, the issues to leave out of history.
-
-Commit the result, and never edit it: change the template or `skill_notes` and
-run `install-skill` again. Run it again after a sync that changed the board's
-shape, too, so the text keeps naming the columns the board actually has.
+The files are copied from the package, identical in every repo: they tell an
+agent to run `board`, which answers for whichever repo it is standing in.
+Commit them, and never edit them — change the template in boardkit and run
+`install-skill` again.
 
 See [docs/overview.md](docs/overview.md) for why a skill cannot simply ship
 inside the package.

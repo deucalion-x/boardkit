@@ -1,0 +1,74 @@
+---
+name: board-admin
+description: Change the shape of this repository's GitHub Project board itself — add or rename a column, add a field or one of its options, add a saved tab — by editing the `[board]` section of this repo's boardkit config and running `board admin apply`. Use when the vocabulary a work item needs does not exist yet: a status to move something into, a field to classify it by, an option that is missing from one. Triggers on "add a column", "new status", "add a field", "add an option", "rename a column", "set up the board", "create the project", "the board has no", plus any request to classify work in a way the board cannot express today.
+---
+
+# Changing the board
+
+Work items are moved with `board set`; this is for when the value you need
+does not exist. Both go through config: the board's shape is declared in
+the repo's boardkit config and applied, never clicked together in the browser, so the next
+repo that runs `board admin apply` gets the same board.
+
+## What this board has now
+
+`board` prints the items and the columns they sit in; `board json` carries
+every field value. Read that before adding anything, so a field that exists
+under another name is not added twice.
+
+## Adding something
+
+Edit the `[board]` section of the repo's boardkit config, then apply:
+
+```toml
+[board]
+status_order = ["Inbox", "Todo", "In progress", "Done"]   # the columns, in order
+
+[board.fields.area]
+data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]
+
+[[board.views]]
+name = "Open work"
+layout = "BOARD"             # or TABLE
+fields = ["status", "area"]
+filter = "-status:Done"
+```
+
+```bash
+board admin apply -n     # what would change, without changing it
+board admin apply        # make it so
+board sync               # pull the new shape into the snapshot
+```
+
+## What apply will and will not do
+
+It adds: a missing field, a missing option, a missing view. It renames an
+option that differs from config only in case, keeping the items in it.
+
+It never deletes. A field, option or view the board has and config does not is
+left alone, because deleting an option discards the value every item holds in
+it. So removing something is a decision taken in the browser, by someone who
+can see what is in it.
+
+Two options differing only in case are reported rather than merged: moving
+items between columns is a change to contents, not shape.
+
+## After changing the shape
+
+```bash
+board sync
+board install-skill      # the work skill names these columns; re-render it
+```
+
+A status renamed in config and applied leaves items where they were — the
+option keeps its id. A status added is empty until something is moved into it
+with `board set`.
+
+## What belongs here and what does not
+
+Shape only: columns, fields, options, saved tabs. Which item sits in which
+column is work, not shape — that is `board set`, in the work skill.
+
+Creating the project itself is the same verb: with no board at all,
+`board init` writes the config and applies it in one go.
