@@ -13,6 +13,8 @@ import string
 
 from .config import Config
 from .gh import BoardError
+from .store import Snapshot, Store
+from .trail import note
 
 TEMPLATE = pathlib.Path(__file__).with_name("templates") / "SKILL.md"
 GENERATED = (
@@ -21,27 +23,71 @@ GENERATED = (
 )
 
 
-def render(config: Config) -> str:
-    fields = [f for f in config.field_names if f != "status"]
-    field_list = ""
-    if fields:
-        joined = ", ".join(fields[:-1])
-        field_list = f", {joined} and {fields[-1]}" if len(fields) > 1 else f" and {fields[0]}"
+def render(config: Config, state: Snapshot | None = None) -> str:
+    """The skill text for this repo.
+
+    Config declares only what is a decision; a board's columns and extra
+    fields are discovered on sync. So the snapshot is read for them, and the
+    skill a repo installs after its first sync names the columns it really
+    has rather than leaving the sentence empty.
+    """
+    state = state or Snapshot()
+    fields = [name for name in merged(config, state) if name != config.status_field]
+    statuses = config.status_order or status_options(config, state)
     text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
         skill_name=config.skill_name,
         project_name=config.name,
-        project_url=config.url,
+        project_url=project_url(config, state),
         repo=config.repo,
         group_by=config.grouping_field,
         group_title=config.grouping_field.capitalize(),
-        field_list=field_list,
-        status_list=", ".join(f"`{status}`" for status in config.status_order),
+        field_list=field_list(fields),
+        status_list=status_list(statuses),
     )
     body, notes = text.rstrip() + "\n", notes_text(config)
     # The banner sits under the frontmatter, which must stay the first line.
     head, _, rest = body.partition("---\n\n")
     body = f"{head}---\n\n{GENERATED}\n\n{rest}" if rest else body
     return body if not notes else f"{body}\n{notes.rstrip()}\n"
+
+
+def project_url(config: Config, state: Snapshot) -> str:
+    """The board's URL, taking the number from the snapshot when config has
+    none — the number is discovered on sync, like the fields are."""
+    if config.project or config.project_url:
+        return config.url
+    if not state.project_number:
+        return config.url
+    kind = "orgs" if config.owner_type == "org" else "users"
+    return f"https://github.com/{kind}/{config.owner}/projects/{state.project_number}"
+
+
+def merged(config: Config, state: Snapshot) -> tuple[str, ...]:
+    """Declared field names first, then whatever else the board carries."""
+    discovered = [f.name for f in state.fields]
+    return (*config.field_names,
+            *(name for name in discovered if name not in config.field_names))
+
+
+def status_options(config: Config, state: Snapshot) -> tuple[str, ...]:
+    field = state.field(config.status_field)
+    return tuple(field.options) if field else ()
+
+
+def field_list(fields: list[str]) -> str:
+    """The sentence subject for "… are Project fields, not issue fields"."""
+    if not fields:
+        # Before the first sync nothing but Status is known, and naming no
+        # field at all would read as a claim that there are none.
+        return "Status, and every other field the board carries,"
+    joined = ", ".join(["Status", *fields[:-1]])
+    return f"{joined} and {fields[-1]}"
+
+
+def status_list(statuses: tuple[str, ...]) -> str:
+    if not statuses:
+        return "run `board` to see the ones this board carries"
+    return ", ".join(f"`{status}`" for status in statuses)
 
 
 def notes_text(config: Config) -> str:
@@ -53,16 +99,61 @@ def notes_text(config: Config) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def orphans(config: Config) -> list[pathlib.Path]:
+    """Skills this tool generated that the current `skill_name` no longer owns.
+
+    Renaming the setting writes the new directory and leaves the old one in
+    place, where it keeps loading and keeps describing a board it may no longer
+    match. Two near-identical descriptions is the worst case for an agent
+    choosing between them, so a rename has to be finished rather than just
+    started. Ours are identified by the banner `render` writes, so a
+    hand-written skill in the same folder is never touched.
+    """
+    skills = config.path(".claude/skills")
+    if not skills.is_dir():
+        return []
+    found = []
+    for directory in sorted(skills.iterdir()):
+        if not directory.is_dir() or directory.name == config.skill_name:
+            continue
+        candidate = directory / "SKILL.md"
+        if candidate.exists() and GENERATED.splitlines()[0] in candidate.read_text(
+                encoding="utf-8"):
+            found.append(candidate)
+    return found
+
+
 def install(config: Config, check: bool = False) -> int:
     target = config.path(".claude/skills") / config.skill_name / "SKILL.md"
-    wanted = render(config)
+    state = Store(config).state()
+    wanted = render(config, state)
+    # The text varies with what the last sync found, so a skill that describes
+    # the wrong columns is explained by this line rather than by guesswork.
+    source = {"columns": "config" if config.status_order else
+                         ("snapshot" if status_options(config, state) else "neither"),
+              "fields": list(merged(config, state)),
+              "synced_at": state.synced_at or "never"}
+    left = orphans(config)
     if check:
-        if target.exists() and target.read_text(encoding="utf-8") == wanted:
+        current = target.exists() and target.read_text(encoding="utf-8") == wanted
+        for path in left:
+            print(f"{path.relative_to(config.root)} is a skill this repo no "
+                  f"longer names; delete it")
+        if current and not left:
             print(f"{target.relative_to(config.root)} is up to date")
+            note("skill_checked", target=str(target), stale=False, orphans=0, **source)
             return 0
-        print(f"{target.relative_to(config.root)} is stale; run `board install-skill`")
+        if not current:
+            print(f"{target.relative_to(config.root)} is stale; run `board install-skill`")
+        note("skill_checked", target=str(target), stale=not current,
+             orphans=len(left), **source)
         return 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(wanted, encoding="utf-8")
     print(f"Wrote {target.relative_to(config.root)}")
+    note("skill_written", target=str(target), bytes=len(wanted),
+         orphans=len(left), **source)
+    for path in left:
+        print(f"{path.relative_to(config.root)} is left over from an earlier "
+              f"skill_name and still loads. Delete it.")
     return 0
