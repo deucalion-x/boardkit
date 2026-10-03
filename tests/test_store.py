@@ -167,3 +167,36 @@ def test_a_second_field_on_the_same_item_is_its_own_change(tmp_path):
     kept.queue("7", "status", "Done")
     kept.queue("7", "workstream", "Infra")
     assert len(kept.pending()) == 2
+
+
+def test_the_log_can_be_turned_off_for_one_run(tmp_path, monkeypatch):
+    """A property of the run, not of the repo: one CI job or one debugging
+    session wants no file, without editing config."""
+    from boardkit import trail
+    monkeypatch.setenv(trail.ENV, "off")
+    store(tmp_path)
+    trail.note("queued", ref="7", field="status", value="Done")
+    assert not (tmp_path / ".boardkit" / "log.jsonl").exists()
+
+
+def test_the_log_can_be_sent_somewhere_else(tmp_path, monkeypatch):
+    from boardkit import trail
+    elsewhere = tmp_path / "audit" / "boardkit.jsonl"
+    monkeypatch.setenv(trail.ENV, str(elsewhere))
+    store(tmp_path)
+    trail.note("queued", ref="7", field="status", value="Done")
+    assert '"ref": "7"' in elsewhere.read_text(encoding="utf-8")
+    assert not (tmp_path / ".boardkit" / "log.jsonl").exists()
+
+
+def test_a_host_application_can_capture_the_namespace(tmp_path, caplog):
+    """Records are emitted on `boardkit.trail` whether or not a file is kept,
+    so an application that configures the `boardkit` logger receives them."""
+    import logging
+
+    from boardkit import trail
+    trail.configure(tmp_path / ".boardkit" / "log.jsonl")
+    with caplog.at_level(logging.INFO, logger="boardkit"):
+        trail.note("pulled", items=3)
+    assert any('"action": "pulled"' in record.message for record in caplog.records)
+    assert [r.name for r in caplog.records] == ["boardkit.trail"]

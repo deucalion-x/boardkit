@@ -33,6 +33,7 @@ import json
 import sys
 
 from . import board as board_module
+from . import trail
 from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync
 from .config import load
 from .gh import BoardError
@@ -65,6 +66,11 @@ def dispatch(command: str, args: list[str]) -> int:
 
     config = load()
     store = Store(config)
+    # Named once per command, because three files can hold this configuration
+    # and the costly confusion is editing one that is not the one being read.
+    trail.note("configured", file=str(config.source), command=command,
+               project=config.name, group_by=config.grouping_field,
+               declares=config.declares)
 
     # Verbs that never read the board are handled before it is loaded.
     if command == "install-skill":

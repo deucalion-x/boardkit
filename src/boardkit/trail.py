@@ -15,10 +15,19 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import os
 import pathlib
 import time
 
+# One namespace under the package, so a host application can raise, lower or
+# silence everything boardkit records with `logging.getLogger("boardkit")` and
+# no boardkit-specific API.
 NAME = "boardkit.trail"
+# Set to a path to write somewhere else, or to one of these to write nowhere.
+# An env var rather than a setting, because turning a log off is a property of
+# the run — one CI job, one debugging session — not of the repository.
+OFF = ("", "0", "off", "none", "no", "false")
+ENV = "BOARDKIT_LOG"
 # Small enough to read, large enough to cover a long session: a few thousand
 # actions across three files.
 MAX_BYTES = 256 * 1024
@@ -27,15 +36,33 @@ KEEP = 2
 _path: pathlib.Path | None = None
 _opened: pathlib.Path | None = None
 
+# A library attaches no handler of its own: without this, a host that has not
+# configured logging would see "No handlers could be found" for our records.
+# The package logger carries it, so every `boardkit.*` logger inherits it.
+logging.getLogger("boardkit").addHandler(logging.NullHandler())
+# Our records are INFO; say so here rather than leaving them at the root's
+# level, which is WARNING by default and would drop every one of them.
+logging.getLogger(NAME).setLevel(logging.INFO)
+
 
 def configure(path: pathlib.Path) -> None:
     """Name the file. Nothing is created until there is something to write.
 
     Deferred because reading a board must leave no trace: a repo that has never
     synced has no `.boardkit/`, and opening a log would quietly make one.
+
+    `BOARDKIT_LOG` overrides the choice: unset is this path, a path is that one
+    instead, and `off` is no file at all — the records are still emitted, so
+    anything that has configured the `boardkit` logger still receives them.
     """
     global _path
-    _path = path
+    chosen = os.environ.get(ENV)
+    if chosen is None:
+        _path = path
+    elif chosen.strip().lower() in OFF:
+        _path = None
+    else:
+        _path = pathlib.Path(chosen).expanduser()
 
 
 def opened() -> logging.Logger | None:
@@ -57,21 +84,21 @@ def opened() -> logging.Logger | None:
             return None
         handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        # Ours alone: a consuming application's logging configuration is not
-        # ours to inherit from or to write into.
-        logger.propagate = False
         _opened = _path
     return logger
 
 
 def note(action: str, **detail) -> None:
-    """Record one action. Silent when no trail has been named."""
-    logger = opened()
-    if logger is None:
-        return
+    """Record one action.
+
+    Always emitted on the `boardkit.trail` logger, so a host that captures that
+    namespace sees it whether or not boardkit is keeping a file. The file is
+    attached here when one has been named, which is what makes the record
+    survive the process.
+    """
+    opened()
     entry = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "action": action, **detail}
-    logger.info(json.dumps(entry))
+    logging.getLogger(NAME).info(json.dumps(entry), extra={"boardkit": entry})
 
 
 def read(limit: int = 50) -> list[dict]:
