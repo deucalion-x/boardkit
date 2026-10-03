@@ -522,3 +522,88 @@ def test_a_field_only_github_can_judge_is_left_to_github():
     snapshot = Snapshot(project_id="PVT_1", synced_at="t",
                         items=(ProjectItem(number=1, id="I_1"),))
     assert sync.check(Write(ref="1", field="whatever", value="x"), snapshot) is None
+
+
+def test_a_write_already_true_remotely_leaves_the_queue(tmp_path, monkeypatch):
+    """Found by `scripts/contract.py` against a real board.
+
+    `plan` skips such a write — it is neither applied nor lost — and `push`
+    was clearing only what landed and what lost. So the write stayed pending
+    forever: retried on every push, and counted as queued by every listing,
+    with nothing able to clear it because it can never land or be rejected.
+    """
+    from boardkit import sync
+    from boardkit.store import Store
+
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets")
+    kept = Store(config)
+    kept.save_state(Snapshot(
+        project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+        fields=(ProjectField(name="status", id="F_S",
+                             option_ids={"Ready": "O_R"}),),
+        items=(ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),)))
+    kept.queue("7", "status", "Ready")
+    # Already true on GitHub, which is what makes it a no-op rather than a win.
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [
+        {"id": "I_7", "content": {"number": 7, "state": "OPEN"}, "status": "Ready"}])
+    def nothing_to_send(writes, snapshot):
+        assert writes == [], "a value already true should send no mutation"
+        return []
+
+    monkeypatch.setattr(sync, "apply_all", nothing_to_send)
+
+    pushed, lost = sync.push(config, kept)
+    assert (pushed, lost) == (0, 0)
+    assert kept.pending() == []
+    assert kept.rejected() == []
+
+
+def test_a_change_queued_during_a_push_is_not_dropped_by_it(tmp_path, monkeypatch):
+    """The queue is re-read under the lock, so clearing names what it clears.
+
+    Dropping everything the push did not attempt would be the shorter way to
+    write this, and it would discard a `board set` made while the push was in
+    flight.
+    """
+    from boardkit import sync
+    from boardkit.store import Store
+
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets")
+    kept = Store(config)
+    kept.save_state(Snapshot(
+        project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+        fields=(ProjectField(name="status", id="F_S",
+                             option_ids={"Ready": "O_R", "Done": "O_D"}),),
+        items=(ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),)))
+    kept.queue("7", "status", "Done")
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [
+        {"id": "I_7", "content": {"number": 7, "state": "OPEN"}, "status": "Ready"}])
+
+    def lands_and_someone_else_queues(writes, snapshot):
+        kept.queue("7", "status", "Ready")
+        return writes
+
+    monkeypatch.setattr(sync, "apply_all", lands_and_someone_else_queues)
+    pushed, _lost = sync.push(config, kept)
+    assert pushed == 1
+    assert [write.value for write in kept.pending()] == ["Ready"]
+
+
+def test_a_number_write_matching_the_board_is_settled_rather_than_resent():
+    """GitHub stores a NUMBER as a float, so a board holding 3 reports 3.0.
+    Compared as text that never equalled `board set 7 effort 3`, so the write
+    was re-sent on every push. `as_text` drops the `.0`; this is the seam
+    that depended on it.
+    """
+    from boardkit.board import normalize
+    config = Config(root=pathlib.Path("/repo"), owner="octo", project="4",
+                    repo="octo/widgets", fields=("effort",))
+    board = normalize([{"content": {"number": 7, "title": "T"}, "effort": 3.0}],
+                      {7}, config)
+    remote = Snapshot(project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+                      fields=(ProjectField(name="effort", id="F_E",
+                                           data_type="NUMBER"),),
+                      items=tuple(board))
+    applies, lost = plan([Write(ref="7", field="effort", value="3", was="3")],
+                         remote)
+    assert applies == [] and lost == []

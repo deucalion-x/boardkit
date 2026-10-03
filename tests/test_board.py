@@ -204,3 +204,18 @@ def test_json_reports_an_unset_field_as_empty_rather_than_a_dash():
     assert item.flat()["blocked"] == ""
     # The listing still shows the dash.
     assert item.field("blocked") == "-"
+
+
+# GitHub stores a NUMBER field as a float, so `value_of` hands a whole number
+# over as `3.0`. These pin the two things that depended on it reading as "3":
+# a legible column, and a write that can be recognised as already true.
+NUMBERED = [{"content": {"number": 1, "title": "T"}, "effort": 3.0}]
+
+
+def test_a_whole_number_field_reads_without_the_trailing_zero():
+    assert normalize(NUMBERED, {1}, CONFIG)[0].field("effort") == "3"
+
+
+def test_a_fractional_number_field_keeps_its_fraction():
+    halved = [{"content": {"number": 1, "title": "T"}, "effort": 2.5}]
+    assert normalize(halved, {1}, CONFIG)[0].field("effort") == "2.5"

@@ -116,9 +116,16 @@ def as_text(value) -> str:
     Most values arrive as strings already — `value_of` has already taken the
     one scalar out of each typed shape — but a multi-select arrives as a list
     of names. Joining it here keeps a table column from holding a repr.
+
+    A NUMBER is the one type GitHub stores as a float, so a whole number comes
+    back as `3.0`. That is not just ugly in a column: a write is compared to
+    the snapshot as text, so `effort=3` could never be seen as already true
+    and was re-sent on every push. Whole numbers therefore lose the `.0`.
     """
     if isinstance(value, list):
         return ", ".join(as_text(item) for item in value) or MISSING
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
     return str(value)
 
 

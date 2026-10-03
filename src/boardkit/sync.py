@@ -669,13 +669,23 @@ def push(config: Config, store: Store) -> tuple[int, int]:
     for write in landed:
         note("pushed", id=write.id, ref=write.ref, field=write.field,
              value=write.value, was=write.was)
-    sent = {write.id for write in landed}
+    # Three ways a write is finished with: it landed, it lost, or it was
+    # already true remotely and `plan` had nothing to send. The third one
+    # has to be named — it is in neither list, and a queue cleared by
+    # subtracting only the first two kept it forever, retried on every push
+    # and counted by every listing, with nothing able to clear it because it
+    # can never land or be rejected.
+    settled = ({write.id for write in writes} - {write.id for write in applies}
+               - {write.id for write, _, _ in lost})
+    done = ({write.id for write in landed} | settled
+            | {write.id for write, _, _ in lost})
     with store.held():
-        # Anything that did not land stays queued: a document's mutations run
-        # in order and do not roll back, so a partial failure is possible.
-        store.save_pending([w for w in store.pending()
-                            if w.id not in sent and not any(
-                                lost_write.id == w.id for lost_write, _, _ in lost)])
+        # The queue is re-read under the lock and filtered by id rather than
+        # replaced: a change made while the push was in flight is still
+        # pending, and must survive it. Anything attempted that did not land
+        # stays queued too — a document's mutations run in order and do not
+        # roll back, so a partial failure is possible.
+        store.save_pending([w for w in store.pending() if w.id not in done])
     if landed:
         store.save_state(patched(remote, landed))
     return len(landed), len(lost)
