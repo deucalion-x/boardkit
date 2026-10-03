@@ -263,3 +263,44 @@ def test_a_multi_select_field_survives_being_read():
     area = next(f for f in fields if f.name == "area")
     assert area.data_type == "MULTI_SELECT" and area.id == "F_A"
     assert area.option_ids == {"config": "O_C", "docs": "O_D"}
+
+
+def test_a_push_re_reads_only_the_items_it_targets(tmp_path, monkeypatch):
+    """The board is a one-time cost; a push needs a handful of nodes."""
+    from boardkit import sync
+    from boardkit.store import Store
+
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets")
+    kept = Store(config)
+    kept.save_state(Snapshot(
+        project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+        fields=(ProjectField(name="status", id="F_S",
+                             option_ids={"Ready": "O_R", "Done": "O_D"}),),
+        items=(ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),
+               ProjectItem(number=8, id="I_8", fields={"status": "Ready"}))))
+    asked = []
+
+    def only_targets(config, ids):
+        asked.append(ids)
+        return [{"id": "I_7", "content": {"number": 7, "state": "OPEN"},
+                 "status": "Done"}]
+
+    monkeypatch.setattr(sync, "fetch_some", only_targets)
+    fresh = sync.refreshed(config, kept, [Write(number=7, field="status", value="x")])
+    assert asked == [["I_7"]]                      # not I_8
+    assert fresh.item(7).field("status") == "Done"  # the re-read value
+    assert fresh.item(8).field("status") == "Ready" # left as it was
+
+
+def test_an_item_that_closed_since_the_pull_drops_out_for_rejection(tmp_path, monkeypatch):
+    from boardkit import sync
+    from boardkit.store import Store
+
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets")
+    kept = Store(config)
+    kept.save_state(Snapshot(
+        project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+        items=(ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),)))
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [])
+    fresh = sync.refreshed(config, kept, [Write(number=7, field="status", value="x")])
+    assert fresh.item(7) is None

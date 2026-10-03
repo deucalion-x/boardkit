@@ -161,6 +161,31 @@ def value_of(value: dict):
     return MISSING
 
 
+def fetch_some(config: Config, ids: list[str]) -> list[dict]:
+    """Current values for named items only, by node id.
+
+    A push does not need the board. It needs to know whether the handful of
+    items it is about to write to still hold what their writes were decided
+    against, and `nodes(ids:)` answers exactly that — a few nodes rather than
+    every item, every field and every body on the board.
+
+    A full pull still has its place: it is what discovers items that are new,
+    and it is what `board sync` does.
+    """
+    if not ids:
+        return []
+    listed = ", ".join(f'"{identity}"' for identity in ids)
+    query = (
+        "fragment fieldName on ProjectV2FieldCommon { name } "
+        f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
+        "content { ... on Issue { number state } "
+        "          ... on PullRequest { number state } } "
+        f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
+        "} } }")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    return [flatten(node) for node in payload["data"]["nodes"] if node]
+
+
 def fetch_fields(config: Config, number: str) -> list[dict]:
     """Just the fields, for `admin apply`, which asks before any item matters."""
     return fetch_board(config, number)["fields"]
@@ -380,12 +405,40 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
     return snapshot.model_copy(update={"items": items})
 
 
+def refreshed(config: Config, store: Store, writes: list[Write]) -> Snapshot:
+    """The snapshot with current values for the items about to be written.
+
+    Only those items are re-read. Everything else in the snapshot is as stale
+    as it was, which is the standing arrangement: boardkit does not claim the
+    snapshot is current, it claims a write never silently overwrites — and
+    that needs fresh values for the targets and nothing else.
+    """
+    snapshot = store.state()
+    wanted = {write.number for write in writes}
+    ids = [item.id for item in snapshot.items if item.number in wanted and item.id]
+    if not ids:
+        return snapshot
+    names = tuple(field.name for field in snapshot.fields)
+    rows = fetch_some(config, ids)
+    still_open = {row["content"]["number"] for row in rows
+                  if row.get("content", {}).get("state") == "OPEN"}
+    fresh = {item.number: item for item in normalize(rows, still_open, config, names)}
+    items = []
+    for item in snapshot.items:
+        current = fresh.get(item.number)
+        if item.number in wanted and current is None:
+            continue          # Closed or gone: the write will be rejected.
+        items.append(item.model_copy(update={"fields": current.fields})
+                     if current else item)
+    return snapshot.model_copy(update={"items": tuple(items)})
+
+
 def push(config: Config, store: Store) -> tuple[int, int]:
-    """Drain pending writes against a freshly pulled snapshot."""
+    """Drain pending writes, re-reading only the items they target."""
     writes = store.pending()
     if not writes:
         return 0, 0
-    remote = pull(config, store)
+    remote = refreshed(config, store, writes)
     applies, lost = plan(writes, remote)
     for write, current, why in lost:
         store.reject(write, remote=current, reason=why)
