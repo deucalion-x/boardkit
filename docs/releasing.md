@@ -21,8 +21,52 @@ registry without coupling the build to either destination.
    uv build --no-sources
    ```
 
-4. Merge the release change to `main` and confirm CI is green, including the
+4. Run the live contract check (below) and record the result.
+5. Merge the release change to `main` and confirm CI is green, including the
    `package` job.
+
+## The live contract check
+
+Every test in `tests/` mocks `gh`, so they assert the document boardkit would
+send and never that GitHub accepts it. One command closes that gap against a
+project it creates and deletes:
+
+```bash
+uv run python scripts/contract.py
+```
+
+It creates a throwaway project, applies a config declaring one field of every
+creatable type, reads the shape back from GitHub, writes and reads every
+writable field type on a draft and on a real issue, clears five of them,
+asserts the one unwritable type is refused, and deletes the project and the
+issue it made. `--keep` leaves them for inspection; `--no-issue` stays out of
+the repository entirely and exercises drafts only.
+
+It is not in CI and does not gate a release. Scheduled CI would need a token
+that can create and delete projects, and an unmocked run against a live API is
+flaky enough that a blocking gate would get ignored — which is worse than not
+having one. So it is run by hand, and the result goes in the table below.
+
+| Version | Run | Covered |
+|---|---|---|
+| unreleased | 2026-10-03, `--no-issue`, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on a draft; five cleared; an iteration write refused. **Not run:** the issue path (`board add` of a real issue). |
+
+Add a row per release. A release whose row says the run failed, or that it was
+skipped, is a release whose mutations were never confirmed against GitHub —
+which is worth stating rather than leaving blank.
+
+The first run found three things the mocked suite could not:
+
+- `align` keeps the options GitHub seeds a new project with, so the declared
+  columns are a prefix of what the board carries rather than the whole list.
+  Intended, and now asserted.
+- A NUMBER comes back as a float: `3` written reads as `3.0`. So a listing
+  shows `3.0` for a point estimate, and re-setting the same number is sent
+  again rather than recognised as already true.
+- A write that was already true remotely never left the queue. It is in
+  neither the applied nor the rejected list, and the queue was cleared by
+  subtracting only those two — so it was retried on every push and counted by
+  every listing, with nothing able to clear it. Fixed in `sync.push`.
 
 ## Tag
 
