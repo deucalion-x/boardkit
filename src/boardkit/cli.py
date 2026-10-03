@@ -9,6 +9,9 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board find <terms>         full-text search on GitHub, joined to the board
   board json                 normalized items on stdout, for jq or python
 
+  board add <title> [f=v]    create an issue and put it on the board
+                             --body <text> for its text
+                             --draft for a board card with no issue behind it
   board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
                              --later: queue without trying
   board rejected [--clear]   local changes that lost to a remote change
@@ -30,7 +33,7 @@ import json
 import sys
 
 from . import board as board_module
-from . import admin, auth, issue_mirror, plan_links, setup, skill, sync
+from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync
 from .config import load
 from .gh import BoardError
 from .store import Store
@@ -78,6 +81,11 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "sync":
         verbs = [a for a in args if not a.startswith("-")]
         return run_sync(config, store, verbs[0] if verbs else "pull")
+    if command == "add":
+        title, body, values, draft = create.parse(args)
+        if draft:
+            return create.add_draft(config, store, title, body, values)
+        return create.add(config, store, title, body, values)
     if command == "set":
         return queue(config, store, args)
     if command == "log":
@@ -100,7 +108,7 @@ def dispatch(command: str, args: list[str]) -> int:
         return usage()
     if command not in BOARD_COMMANDS:
         return usage()
-    if command == "item" and not (args and args[0].lstrip("#").isdigit()):
+    if command == "item" and not args:
         return usage()
 
     snapshot = store.state()
@@ -108,7 +116,7 @@ def dispatch(command: str, args: list[str]) -> int:
         print(STALE)
         return 1
     items = list(snapshot.items)
-    index = {item.number: item for item in items}
+    index = {item.ref: item for item in items}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
 
@@ -124,9 +132,9 @@ def dispatch(command: str, args: list[str]) -> int:
         board_module.show([i for i in items
                            if name in i.field(view.grouping).lower()], view)
     elif command == "item":
-        number = int(args[0].lstrip("#"))
-        board_module.show([index[number]] if number in index else [], view)
-        found = index.get(number)
+        ref = args[0].lstrip("#")
+        board_module.show([index[ref]] if ref in index else [], view)
+        found = index.get(ref)
         if found is not None:
             about = [f"labels: {', '.join(found.labels)}" if found.labels else "",
                      f"assignees: {', '.join(found.assignees)}" if found.assignees else "",
@@ -138,15 +146,18 @@ def dispatch(command: str, args: list[str]) -> int:
             print()
             print(found.body.rstrip())
             print()
-        # Parent links are not in the snapshot, so children cost a call.
-        kids = [index[n] for n in board_module.children(number, config) if n in index]
+        # Parent links are not in the snapshot, so children cost a call. A
+        # draft cannot have any: nothing can name it as a parent.
+        kids = ([] if found is None or found.draft else
+                [index[str(n)] for n in board_module.children(found.number, config)
+                 if str(n) in index])
         if kids:
             print("  children:")
             board_module.show(kids, view)
     elif command == "find":
         # Issue bodies are not in the snapshot; this is real full-text search.
         found = board_module.search(" ".join(args), config)
-        board_module.show([index[n] for n in found if n in index], view)
+        board_module.show([index[str(n)] for n in found if str(n) in index], view)
     elif command == "json":
         json.dump([item.flat() for item in items], sys.stdout, indent=2)
         print()
@@ -175,31 +186,31 @@ def run_sync(config, store: Store, verb: str) -> int:
 
 
 def queue(config, store: Store, args: list[str]) -> int:
-    if len([a for a in args if a != "--later"]) < 3 or not args[0].lstrip("#").isdigit():
-        return usage()
     words = [a for a in args if a != "--later"]
-    number, field, value = int(words[0].lstrip("#")), words[1], " ".join(words[2:])
+    if len(words) < 3:
+        return usage()
+    ref, field, value = words[0].lstrip("#"), words[1], " ".join(words[2:])
     snapshot = store.state()
     if snapshot.empty:
         print(STALE)
         return 1
-    if snapshot.item(number) is None:
-        print(f"#{number} is not on the board")
+    if snapshot.item(ref) is None:
+        print(f"#{ref} is not on the board")
         return 1
-    write = store.queue(number, field, value)
+    write = store.queue(ref, field, value)
     was = write.was or "unset"
     if "--later" in args:
-        print(f"Queued #{number} {field} = {value} (was {was}).")
+        print(f"Queued #{ref} {field} = {value} (was {was}).")
         return report_queue(store)
 
     pushed, lost, why = sync.push_now(config, store)
     if why:
-        print(f"#{number} {field} = {value} (was {was}) — kept, {why}. "
+        print(f"#{ref} {field} = {value} (was {was}) — kept, {why}. "
               f"`board sync push` when that clears.")
         return 0
     if lost:
         return rejected(store, clear=False)
-    print(f"#{number} {field} = {value} (was {was})")
+    print(f"#{ref} {field} = {value} (was {was})")
     return 0
 
 
@@ -214,7 +225,7 @@ def rejected(store: Store, clear: bool) -> int:
     for rejection in rejections:
         write = rejection.write
         holds = f"GitHub holds {rejection.remote!r}; " if rejection.remote else ""
-        print(f"#{write.number} {write.field}: wanted {write.value!r} — "
+        print(f"#{write.ref} {write.field}: wanted {write.value!r} — "
               f"{holds}{rejection.reason}")
     print(f"\n{len(rejections)} rejected. Re-decide, then `board set` again; "
           f"`board rejected --clear` to drop them.")

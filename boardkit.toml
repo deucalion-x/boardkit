@@ -3,13 +3,15 @@
 # discovered on sync, because GitHub already knows it and a second copy here
 # could only drift.
 #
-# Nothing is declared here, so a sync carries every field the board owns. A
-# field would be added back only to let `board admin apply` create it on a
-# fresh board — and taken out again once it exists, since declaring one also
-# narrows what a sync keeps.
+# Nothing is declared here, so a sync carries every field the board owns.
+# Declaring one no longer narrows what a sync keeps — it only fixes print
+# order and tells `board admin apply` what to create on a fresh board.
 owner = "agerardin"
 repo = "agerardin/boardkit"
 project_name = "boardkit"
+# Without this the rollup groups by whichever field the board returns first,
+# which is arbitrary and was briefly effort.
+group_by = "area"
 
 # Saved tabs. `admin apply` creates one that is missing and never removes one;
 # a view made in the browser is not boardkit's to delete. Grouping is not in

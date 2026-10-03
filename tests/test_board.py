@@ -51,8 +51,9 @@ def test_rollup_counts_by_the_grouping_field(capsys):
 
 def test_board_json_keeps_the_flat_shape_a_jq_pipeline_expects():
     item = normalize(ITEMS, {1}, CONFIG)[0]
-    assert item.flat() == {"number": 1, "title": "Corridor", "url": "u1",
-                           "status": "Ready", "workstream": "Maps", "effort": "M"}
+    assert item.flat() == {"ref": "1", "number": 1, "title": "Corridor",
+                           "url": "u1", "status": "Ready", "workstream": "Maps",
+                           "effort": "M"}
 
 
 def test_status_is_reachable_as_a_field_so_a_board_can_group_by_it():
@@ -144,3 +145,32 @@ def test_json_carries_labels_but_omits_what_an_item_does_not_have():
     assert row["labels"] == "feature, concept:offline" and row["milestone"] == "v1"
     bare = normalize([{"content": {"number": 2, "title": "T"}}], {2}, CONFIG)[0].flat()
     assert "labels" not in bare and "milestone" not in bare
+
+
+DRAFT = [{"id": "PVTI_lAHOabcdef123456", "type": "DRAFT_ISSUE",
+          "content": {"title": "Try a sticky note", "body": "no plan yet"}}]
+
+
+def test_a_draft_is_named_by_a_handle_since_it_has_no_number():
+    item = normalize(DRAFT, set(), LIVE_CONFIG)[0]
+    assert item.number == 0 and item.ref == "~123456" and item.draft
+    assert item.title == "Try a sticky note" and item.body == "no plan yet"
+
+
+def test_a_draft_is_kept_even_though_it_can_be_neither_open_nor_closed():
+    """Closed issues are dropped by number; a draft has no number to check."""
+    assert len(normalize(DRAFT, set(), LIVE_CONFIG)) == 1
+
+
+def test_an_issue_is_still_named_by_its_number():
+    assert normalize(LIVE, {62}, LIVE_CONFIG)[0].ref == "62"
+
+
+def test_the_kind_is_taken_in_either_spelling():
+    """GraphQL says DRAFT_ISSUE, `gh` said DraftIssue, and splitting an
+    already-spelled value on capitals turned it into nonsense."""
+    from boardkit.board import ProjectItem
+    assert ProjectItem(number=1, type="DRAFT_ISSUE").type == "DRAFT_ISSUE"
+    assert ProjectItem(number=1, type="DraftIssue").type == "DRAFT_ISSUE"
+    assert ProjectItem(number=1, type="Issue").type == "ISSUE"
+    assert ProjectItem(number=1, type="Mystery").type == "REDACTED"

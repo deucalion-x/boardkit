@@ -37,18 +37,18 @@ def test_a_snapshot_round_trips_with_the_ids_a_push_needs(tmp_path):
 
 def test_a_queued_write_remembers_what_it_was_decided_against(tmp_path):
     kept = seeded(tmp_path)
-    write = kept.queue(7, "status", "In progress")
+    write = kept.queue("7", "status", "In progress")
     assert (write.field, write.value, write.was) == ("status", "In progress", "Ready")
     assert [w.id for w in kept.pending()] == [write.id]
 
 
 def test_a_write_against_an_unknown_item_records_no_prior_value(tmp_path):
-    assert store(tmp_path).queue(99, "status", "Done").was == ""
+    assert store(tmp_path).queue("99", "status", "Done").was == ""
 
 
 def test_a_rejection_keeps_both_values(tmp_path):
     kept = seeded(tmp_path)
-    write = kept.queue(7, "status", "In progress")
+    write = kept.queue("7", "status", "In progress")
     kept.reject(write, remote="Blocked")
     rejection = kept.rejected()[0]
     assert (rejection.write.value, rejection.remote) == ("In progress", "Blocked")
@@ -57,9 +57,9 @@ def test_a_rejection_keeps_both_values(tmp_path):
 
 def test_a_write_is_replaced_atomically_and_leaves_no_temporary(tmp_path):
     kept = seeded(tmp_path)
-    kept.save_pending([Write(number=1, field="status", value="Done")])
+    kept.save_pending([Write(ref="1", field="status", value="Done")])
     assert list((tmp_path / ".boardkit").glob("*.tmp")) == []
-    assert json.loads((tmp_path / ".boardkit" / "pending.json").read_text())[0]["number"] == 1
+    assert json.loads((tmp_path / ".boardkit" / "pending.json").read_text())[0]["ref"] == "1"
 
 
 def test_the_cache_excludes_itself_from_git(tmp_path):
@@ -147,7 +147,7 @@ def test_a_lock_left_by_a_dead_process_is_broken(tmp_path):
 
 def test_recording_the_same_rejection_twice_changes_nothing(tmp_path):
     kept = seeded(tmp_path)
-    write = kept.queue(7, "status", "In progress")
+    write = kept.queue("7", "status", "In progress")
     kept.reject(write, remote="Blocked", reason="moved")
     kept.reject(write, remote="Blocked", reason="moved")
     assert len(kept.rejected()) == 1
@@ -155,8 +155,8 @@ def test_recording_the_same_rejection_twice_changes_nothing(tmp_path):
 
 def test_setting_a_field_twice_queues_one_change_not_two(tmp_path):
     kept = seeded(tmp_path)
-    kept.queue(7, "status", "In progress")
-    second = kept.queue(7, "status", "Done")
+    kept.queue("7", "status", "In progress")
+    second = kept.queue("7", "status", "Done")
     assert [(w.field, w.value) for w in kept.pending()] == [("status", "Done")]
     # The original value GitHub showed us is what a conflict is judged against.
     assert second.was == "Ready"
@@ -164,6 +164,6 @@ def test_setting_a_field_twice_queues_one_change_not_two(tmp_path):
 
 def test_a_second_field_on_the_same_item_is_its_own_change(tmp_path):
     kept = seeded(tmp_path)
-    kept.queue(7, "status", "Done")
-    kept.queue(7, "workstream", "Infra")
+    kept.queue("7", "status", "Done")
+    kept.queue("7", "workstream", "Infra")
     assert len(kept.pending()) == 2

@@ -103,7 +103,10 @@ CONTENT = (
     "    milestone { title } } "
     "  ... on PullRequest { number title url state body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
-    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } } } ")
+    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } } "
+    # A draft has a title and a body and nothing else — no number, no url, no
+    # labels. It is the board's own note rather than a repository's issue.
+    "  ... on DraftIssue { title body } } ")
 
 
 def items_block(config: Config, after: str | None) -> str:
@@ -351,10 +354,10 @@ def edit_args(write: Write, snapshot: Snapshot, config: Config) -> list[str]:
 
     Pure, so the flag choice per field type is testable without a project.
     """
-    item = snapshot.item(write.number)
+    item = snapshot.item(write.ref)
     field = snapshot.field(write.field)
     if item is None or not item.id:
-        raise BoardError(f"#{write.number} is not in the snapshot; pull first")
+        raise BoardError(f"#{write.ref} is not in the snapshot; pull first")
     if field is None or not field.id:
         raise BoardError(f"field `{write.field}` has no id in the snapshot; pull first")
 
@@ -397,10 +400,10 @@ def chosen(write: Write, field: ProjectField) -> list[str]:
 
 def multi_select_query(write: Write, snapshot: Snapshot) -> str:
     """`gh project item-edit` has no multi-select flag, so this one goes direct."""
-    item = snapshot.item(write.number)
+    item = snapshot.item(write.ref)
     field = snapshot.field(write.field)
     if item is None or not item.id:
-        raise BoardError(f"#{write.number} is not in the snapshot; pull first")
+        raise BoardError(f"#{write.ref} is not in the snapshot; pull first")
     if field is None or not field.id:
         raise BoardError(f"field `{write.field}` has no id in the snapshot; pull first")
     ids = ", ".join(f'"{option}"' for option in chosen(write, field))
@@ -447,9 +450,9 @@ def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
         return []
     parts = []
     for index, write in enumerate(writes):
-        item, field = snapshot.item(write.number), snapshot.field(write.field)
+        item, field = snapshot.item(write.ref), snapshot.field(write.field)
         if item is None or not item.id:
-            raise BoardError(f"#{write.number} is not in the snapshot; pull first")
+            raise BoardError(f"#{write.ref} is not in the snapshot; pull first")
         if field is None or not field.id:
             raise BoardError(
                 f"field `{write.field}` has no id in the snapshot; pull first")
@@ -476,7 +479,7 @@ def plan(writes: list[Write],
     """
     applies, lost = [], []
     for write in writes:
-        item = remote.item(write.number)
+        item = remote.item(write.ref)
         if item is None:
             lost.append((write, "", "the item is closed or no longer on the board"))
             continue
@@ -504,10 +507,10 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
     """
     changes: dict[int, dict[str, str]] = {}
     for write in writes:
-        changes.setdefault(write.number, {})[write.field] = write.value
+        changes.setdefault(write.ref, {})[write.field] = write.value
     items = tuple(
-        item.model_copy(update={"fields": {**item.fields, **changes[item.number]}})
-        if item.number in changes else item
+        item.model_copy(update={"fields": {**item.fields, **changes[item.ref]}})
+        if item.ref in changes else item
         for item in snapshot.items)
     return snapshot.model_copy(update={"items": items})
 
@@ -521,19 +524,19 @@ def refreshed(config: Config, store: Store, writes: list[Write]) -> Snapshot:
     that needs fresh values for the targets and nothing else.
     """
     snapshot = store.state()
-    wanted = {write.number for write in writes}
-    ids = [item.id for item in snapshot.items if item.number in wanted and item.id]
+    wanted = {write.ref for write in writes}
+    ids = [item.id for item in snapshot.items if item.ref in wanted and item.id]
     if not ids:
         return snapshot
     names = tuple(field.name for field in snapshot.fields)
     rows = fetch_some(config, ids)
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
-    fresh = {item.number: item for item in normalize(rows, still_open, config, names)}
+    fresh = {item.ref: item for item in normalize(rows, still_open, config, names)}
     items = []
     for item in snapshot.items:
-        current = fresh.get(item.number)
-        if item.number in wanted and current is None:
+        current = fresh.get(item.ref)
+        if item.ref in wanted and current is None:
             continue          # Closed or gone: the write will be rejected.
         items.append(item.model_copy(update={"fields": current.fields})
                      if current else item)
@@ -573,7 +576,7 @@ def push(config: Config, store: Store) -> tuple[int, int]:
         store.reject(write, remote=current, reason=why)
     landed = apply_all(applies, remote)
     for write in landed:
-        note("pushed", id=write.id, number=write.number, field=write.field,
+        note("pushed", id=write.id, ref=write.ref, field=write.field,
              value=write.value, was=write.was)
     sent = {write.id for write in landed}
     with store.held():

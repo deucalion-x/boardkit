@@ -42,9 +42,10 @@ def test_an_unknown_verb_prints_usage_without_querying_github(repo, capsys):
     assert "board find <terms>" in capsys.readouterr().out
 
 
-def test_item_without_a_number_prints_usage_rather_than_crashing(repo):
+def test_item_without_a_reference_prints_usage_rather_than_crashing(repo):
+    """A reference is an issue number or a draft handle, so it is not checked
+    for being digits — only for being there."""
     assert cli.main(["item"]) == 2
-    assert cli.main(["item", "not-a-number"]) == 2
 
 
 def test_help_exits_clean(repo):

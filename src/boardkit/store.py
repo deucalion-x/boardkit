@@ -75,8 +75,11 @@ class Snapshot(BaseModel):
     fields: tuple[ProjectField, ...] = ()
     items: tuple[ProjectItem, ...] = ()
 
-    def item(self, number: int) -> ProjectItem | None:
-        return next((i for i in self.items if i.number == number), None)
+    def item(self, ref: str | int) -> ProjectItem | None:
+        """By issue number or by a draft's handle; both arrive as text from a
+        command line, and an issue number is accepted either way."""
+        wanted = str(ref)
+        return next((i for i in self.items if i.ref == wanted), None)
 
     def field(self, name: str) -> ProjectField | None:
         return next((f for f in self.fields if f.name == name), None)
@@ -97,7 +100,9 @@ class Write(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     at: str = Field(default_factory=now)
-    number: int
+    # The item's ref — an issue number as text, or a draft's handle. Drafts
+    # have no number, so a number cannot be what names a write.
+    ref: str
     field: str
     value: str
     was: str = ""
@@ -193,7 +198,7 @@ class Store:
     def save_pending(self, writes: list[Write]) -> None:
         self._write(PENDING, [write.model_dump(mode="json") for write in writes])
 
-    def queue(self, number: int, field: str, value: str) -> Write:
+    def queue(self, ref: str, field: str, value: str) -> Write:
         """Record a local change, replacing any still-pending write to the
         same field.
 
@@ -203,16 +208,16 @@ class Store:
         `was` is kept, because that is still the value GitHub last showed us
         and so the one a conflict must be judged against.
         """
-        item = self.state().item(number)
+        item = self.state().item(ref)
         with self.held():
             standing = self.pending()
             earlier = next((w for w in standing
-                            if w.number == number and w.field == field), None)
-            write = Write(number=number, field=field, value=value,
+                            if w.ref == ref and w.field == field), None)
+            write = Write(ref=ref, field=field, value=value,
                           was=earlier.was if earlier else
                           (item.field(field) if item else ""))
             self.save_pending([*(w for w in standing if w is not earlier), write])
-        note("queued", id=write.id, number=number, field=field,
+        note("queued", id=write.id, ref=ref, field=field,
              value=value, was=write.was, replaced=earlier.id if earlier else None)
         return write
 
@@ -232,7 +237,7 @@ class Store:
         if any(kept.write.id == write.id for kept in standing):
             return rejection
         self.save_rejected([*standing, rejection])
-        note("rejected", id=write.id, number=write.number, field=write.field,
+        note("rejected", id=write.id, ref=write.ref, field=write.field,
              wanted=write.value, was=write.was, remote=remote, reason=reason)
         return rejection
 

@@ -36,7 +36,9 @@ class ProjectItem(BaseModel):
     """
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    number: int
+    # Zero for a draft card, which GitHub gives no issue number. `ref` is what
+    # names an item in every command, so that drafts can be addressed at all.
+    number: int = 0
     id: str = ""
     type: ItemType = "ISSUE"
 
@@ -57,11 +59,31 @@ class ProjectItem(BaseModel):
     @field_validator("type", mode="before")
     @classmethod
     def _as_enum(cls, value):
-        """`item-list` reports `Issue`; the GraphQL enum is `ISSUE`."""
+        """GraphQL says `DRAFT_ISSUE`; `gh` said `DraftIssue`. Take either.
+
+        An already-spelled enum value passes through untouched — splitting it
+        on capitals would turn DRAFT_ISSUE into D_R_A_F_T___I_S_S_U_E and land
+        it in REDACTED, which is how a draft came to read as a hidden item.
+        """
         if not isinstance(value, str):
+            return value
+        if value in get_args(ItemType):
             return value
         spelled = re.sub(r"(?<!^)(?=[A-Z])", "_", value).upper()
         return spelled if spelled in get_args(ItemType) else "REDACTED"
+
+    @property
+    def ref(self) -> str:
+        """How an item is named: its issue number, or a short handle for a
+        draft, which has none. The handle is the tail of the node id, which is
+        stable for the life of the card and distinct enough to type."""
+        if self.number:
+            return str(self.number)
+        return f"~{self.id[-6:]}" if self.id else "~?"
+
+    @property
+    def draft(self) -> bool:
+        return self.type == "DRAFT_ISSUE"
 
     def field(self, name: str) -> str:
         return self.fields.get(name, MISSING)
@@ -71,8 +93,8 @@ class ProjectItem(BaseModel):
         has always printed, and what a jq pipeline is written against."""
         # The body is deliberately absent: `board json` feeds jq pipelines,
         # and a page of prose per item buries the rows. `board item` shows it.
-        row = {"number": self.number, "title": self.title, "url": self.url,
-               **self.fields}
+        row = {"ref": self.ref, "number": self.number, "title": self.title,
+               "url": self.url, **self.fields}
         if self.labels:
             row["labels"] = ", ".join(self.labels)
         if self.assignees:
@@ -120,16 +142,21 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
     for entry in payload:
         content = entry.get("content") or {}
         number = content.get("number")
-        if number is None or number not in still_open:
+        kind = entry.get("type") or content.get("type")
+        # A draft has no number and so cannot be open or closed; everything
+        # else is dropped once it is closed.
+        if kind != "DRAFT_ISSUE" and (number is None or number not in still_open):
             continue
         fields = {}
         for field in (names or config.synced_names):
             default = UNGROUPED if field == config.grouping_field else MISSING
             fields[field] = as_text(entry.get(field, default))
         items.append(ProjectItem(
-            number=number,
+            number=number or 0,
             id=entry.get("id", ""),
-            type=entry.get("content", {}).get("type", "ISSUE") or "ISSUE",
+            # GraphQL puts the kind on the item node; `gh` put it inside the
+            # content. Accept either rather than depend on which produced it.
+            type=entry.get("type") or content.get("type") or "ISSUE",
             title=content.get("title", ""),
             url=content.get("url", ""),
             body=content.get("body") or "",
@@ -183,11 +210,13 @@ def show(items: list[ProjectItem], view: Shape) -> None:
     extras = [f for f in view.names if f != view.status_field]
     widths = {field: max(len(field), *(len(i.field(field)) for i in items))
               for field in extras}
+    names = max((len(item.ref) for item in items), default=4)
     for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
-                                             i.number)):
+                                             i.number, i.ref)):
         extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
-        print(f'{item.field(view.status_field):12} #{item.number:<4} '
-              f'{item.title[:50]:50} {extra}  {item.url}')
+        marker = "" if item.number else " (draft)"
+        print(f'{item.field(view.status_field):12} #{item.ref:<{names}} '
+              f'{item.title[:50]:50} {extra}  {item.url}{marker}')
 
 
 def children(number: int, config: Config) -> list[int]:

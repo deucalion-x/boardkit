@@ -50,7 +50,7 @@ def test_a_graphql_type_name_is_read_as_a_data_type():
 
 
 def test_a_single_select_write_resolves_the_option_id():
-    args = edit_args(Write(number=7, field="status", value="In progress", was="Ready"),
+    args = edit_args(Write(ref="7", field="status", value="In progress", was="Ready"),
                      snapshot(), CONFIG)
     assert args[:2] == ["project", "item-edit"]
     assert "--single-select-option-id" in args and "O_P" in args
@@ -58,41 +58,41 @@ def test_a_single_select_write_resolves_the_option_id():
 
 
 def test_a_date_write_uses_the_date_flag():
-    args = edit_args(Write(number=7, field="due", value="2026-11-01"), snapshot(), CONFIG)
+    args = edit_args(Write(ref="7", field="due", value="2026-11-01"), snapshot(), CONFIG)
     assert args[-2:] == ["--date", "2026-11-01"]
 
 
 def test_a_value_that_is_not_an_option_is_refused_before_the_call():
     with pytest.raises(BoardError, match="not an option"):
-        edit_args(Write(number=7, field="status", value="Sideways"), snapshot(), CONFIG)
+        edit_args(Write(ref="7", field="status", value="Sideways"), snapshot(), CONFIG)
 
 
 def test_writing_an_item_absent_from_the_snapshot_asks_for_a_pull():
     with pytest.raises(BoardError, match="pull first"):
-        edit_args(Write(number=99, field="status", value="Ready"), snapshot(), CONFIG)
+        edit_args(Write(ref="99", field="status", value="Ready"), snapshot(), CONFIG)
 
 
 def test_a_write_applies_when_the_remote_still_holds_what_it_was_decided_against():
-    applies, lost = plan([Write(number=7, field="status", value="In progress",
+    applies, lost = plan([Write(ref="7", field="status", value="In progress",
                                 was="Ready")], snapshot())
     assert len(applies) == 1 and lost == []
 
 
 def test_a_write_loses_when_the_field_moved_on_github():
-    applies, lost = plan([Write(number=7, field="status", value="In progress",
+    applies, lost = plan([Write(ref="7", field="status", value="In progress",
                                 was="Done")], snapshot())
     assert applies == [] and lost[0][1] == "Ready"
     assert "changed on GitHub" in lost[0][2]
 
 
 def test_a_write_already_true_remotely_is_dropped_rather_than_pushed():
-    applies, lost = plan([Write(number=7, field="status", value="Ready",
+    applies, lost = plan([Write(ref="7", field="status", value="Ready",
                                 was="Ready")], snapshot())
     assert applies == [] and lost == []
 
 
 def test_a_write_against_an_item_that_left_the_board_loses():
-    applies, lost = plan([Write(number=99, field="status", value="Ready")], snapshot())
+    applies, lost = plan([Write(ref="99", field="status", value="Ready")], snapshot())
     # The reason is a reason, not a value dressed up as one.
     assert applies == [] and lost[0][1] == ""
     assert "closed or no longer on the board" in lost[0][2]
@@ -101,7 +101,7 @@ def test_a_write_against_an_item_that_left_the_board_loses():
 def test_rejected_writes_land_in_the_store_with_both_values(tmp_path):
     kept = Store(Config(root=tmp_path, owner="octo", project="4",
                         repo="octo/widgets", fields=("workstream",)))
-    write = Write(number=7, field="status", value="In progress", was="Done")
+    write = Write(ref="7", field="status", value="In progress", was="Done")
     kept.reject(write, remote="Ready")
     assert kept.rejected()[0].remote == "Ready"
     assert kept.rejected()[0].write.value == "In progress"
@@ -163,13 +163,13 @@ MULTI = Snapshot(
 
 def test_a_multi_select_write_resolves_every_option_it_names():
     from boardkit.sync import chosen
-    write = Write(number=8, field="area", value="config, docs")
+    write = Write(ref="8", field="area", value="config, docs")
     assert chosen(write, MULTI.field("area")) == ["o1", "o2"]
 
 
 def test_a_multi_select_write_goes_through_its_own_mutation():
     from boardkit.sync import multi_select_query
-    query = multi_select_query(Write(number=8, field="area", value="config, docs"), MULTI)
+    query = multi_select_query(Write(ref="8", field="area", value="config, docs"), MULTI)
     assert 'multiSelectOptionIds: ["o1", "o2"]' in query
     assert 'itemId: "I_8"' in query and 'fieldId: "F_A"' in query
 
@@ -177,7 +177,7 @@ def test_a_multi_select_write_goes_through_its_own_mutation():
 def test_one_bad_option_refuses_the_whole_multi_select_write():
     from boardkit.sync import chosen
     with pytest.raises(BoardError, match="not an option"):
-        chosen(Write(number=8, field="area", value="config, nonsense"),
+        chosen(Write(ref="8", field="area", value="config, nonsense"),
                MULTI.field("area"))
 
 
@@ -229,7 +229,7 @@ def test_a_failure_that_is_not_about_rate_is_raised_as_itself(monkeypatch):
 
 def test_what_was_written_is_folded_in_rather_than_pulled_again():
     from boardkit.sync import patched
-    after = patched(snapshot(), [Write(number=7, field="status", value="In progress",
+    after = patched(snapshot(), [Write(ref="7", field="status", value="In progress",
                                        was="Ready")])
     assert after.item(7).field("status") == "In progress"
     # Untouched fields survive the copy.
@@ -239,7 +239,7 @@ def test_what_was_written_is_folded_in_rather_than_pulled_again():
 def test_folding_in_leaves_items_nobody_wrote_to_alone():
     from boardkit.sync import patched
     before = snapshot()
-    after = patched(before, [Write(number=99, field="status", value="Done")])
+    after = patched(before, [Write(ref="99", field="status", value="Done")])
     assert after.item(7) == before.item(7)
 
 
@@ -286,7 +286,7 @@ def test_a_push_re_reads_only_the_items_it_targets(tmp_path, monkeypatch):
                  "status": "Done"}]
 
     monkeypatch.setattr(sync, "fetch_some", only_targets)
-    fresh = sync.refreshed(config, kept, [Write(number=7, field="status", value="x")])
+    fresh = sync.refreshed(config, kept, [Write(ref="7", field="status", value="x")])
     assert asked == [["I_7"]]                      # not I_8
     assert fresh.item(7).field("status") == "Done"  # the re-read value
     assert fresh.item(8).field("status") == "Ready" # left as it was
@@ -302,7 +302,7 @@ def test_an_item_that_closed_since_the_pull_drops_out_for_rejection(tmp_path, mo
         project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
         items=(ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),)))
     monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [])
-    fresh = sync.refreshed(config, kept, [Write(number=7, field="status", value="x")])
+    fresh = sync.refreshed(config, kept, [Write(ref="7", field="status", value="x")])
     assert fresh.item(7) is None
 
 
@@ -378,9 +378,9 @@ def test_every_write_travels_in_one_request(monkeypatch):
     sent = []
     monkeypatch.setattr(sync, "run_json",
                         lambda args: (sent.append(args[-1]), {"data": {}})[1])
-    writes = [Write(number=7, field="status", value="In progress"),
-              Write(number=7, field="workstream", value="Maps"),
-              Write(number=7, field="due", value="2026-11-01")]
+    writes = [Write(ref="7", field="status", value="In progress"),
+              Write(ref="7", field="workstream", value="Maps"),
+              Write(ref="7", field="due", value="2026-11-01")]
     landed = sync.apply_all(writes, snapshot())
     assert len(sent) == 1                      # one request, not three
     assert sent[0].count("updateProjectV2ItemFieldValue") == 3
@@ -392,8 +392,8 @@ def test_a_write_github_names_in_an_error_stays_queued(monkeypatch):
     from boardkit import sync
     monkeypatch.setattr(sync, "run_json", lambda args: {
         "data": {}, "errors": [{"path": ["m1"], "message": "nope"}]})
-    writes = [Write(number=7, field="status", value="In progress"),
-              Write(number=7, field="workstream", value="Maps")]
+    writes = [Write(ref="7", field="status", value="In progress"),
+              Write(ref="7", field="workstream", value="Maps")]
     landed = sync.apply_all(writes, snapshot())
     assert [write.field for write in landed] == ["status"]
 
@@ -403,7 +403,22 @@ def test_each_field_type_is_sent_in_the_shape_the_mutation_wants(monkeypatch):
     sent = []
     monkeypatch.setattr(sync, "run_json",
                         lambda args: (sent.append(args[-1]), {"data": {}})[1])
-    sync.apply_all([Write(number=7, field="status", value="In progress"),
-                    Write(number=7, field="due", value="2026-11-01")], snapshot())
+    sync.apply_all([Write(ref="7", field="status", value="In progress"),
+                    Write(ref="7", field="due", value="2026-11-01")], snapshot())
     assert 'singleSelectOptionId: "O_P"' in sent[0]
     assert 'date: "2026-11-01"' in sent[0]
+
+
+
+
+def test_a_draft_survives_the_pull_that_used_to_drop_it():
+    """`flatten` puts the kind inside `content`; the skip only looked on top."""
+    from boardkit.board import normalize
+    from boardkit.sync import flatten
+    node = {"id": "PVTI_abcdef123456", "type": "DRAFT_ISSUE",
+            "content": {"title": "An idea", "body": ""},
+            "fieldValues": {"nodes": []}}
+    row = flatten(node)
+    assert row["content"]["type"] == "DRAFT_ISSUE"
+    kept = normalize([row], set(), CONFIG)
+    assert len(kept) == 1 and kept[0].ref.startswith("~")
