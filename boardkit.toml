@@ -12,18 +12,20 @@ project_name = "boardkit"
 # Without this the rollup groups by whichever field the board returns first,
 # which is arbitrary and was briefly effort.
 group_by = "area"
+skill_name = "boardkit-board"
 
-# Saved tabs. `admin apply` creates one that is missing and never removes one;
+# Saved tabs, under [admin] because that is the only command that reads them.
+# `admin apply` creates one that is missing and never removes one;
 # a view made in the browser is not boardkit's to delete. Grouping is not in
 # the API, so a board view groups by Status on its own and anything else is a
 # UI setting.
-[[views]]
+[[admin.views]]
 name = "Open work"
 layout = "BOARD"
 fields = ["status", "area", "effort"]
 filter = "-status:Done"
 
-[[views]]
+[[admin.views]]
 name = "Everything"
 layout = "TABLE"
 fields = ["status", "area", "effort", "sprint"]

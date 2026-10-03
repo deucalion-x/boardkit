@@ -14,7 +14,8 @@ import pathlib
 import tomllib
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (BaseModel, ConfigDict, Field, ValidationError, field_validator,
+                      model_validator)
 
 from .gh import BoardError
 
@@ -22,6 +23,11 @@ from .gh import BoardError
 # table in pyproject.toml: writing one is the more explicit statement, and a
 # repo with no Python packaging has nowhere else to put it.
 CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
+# Settings that describe the board this repo wants rather than how to reach the
+# one it has. They may be written under `[admin]`, which says so in the file
+# itself; `admin apply` is the only command that needs them, apart from the
+# print order a declared shape also fixes.
+ADMIN_SETTINGS = ("fields", "views", "status_order")
 # GitHub's own columns on a new Project. A default that fits one project would
 # work silently and wrongly everywhere else, so this is deliberately generic.
 DEFAULT_STATUS_ORDER = ("Todo", "In Progress", "Done")
@@ -111,6 +117,10 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, coerce_numbers_to_str=True)
 
     root: pathlib.Path
+    # Which file this was read from. Set by `load`; an error that tells someone
+    # to edit a file has to name the one actually in use, and three are
+    # possible.
+    source: pathlib.Path | None = None
     owner: str
     repo: str
     # Empty until the board exists: `admin create` is what produces the number,
@@ -144,6 +154,30 @@ class Config(BaseModel):
     skill_name: str = "github-board"
     skill_notes: str = ""
     project_url: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_admin_table(cls, data):
+        """`[admin]` is an optional home for the settings that exist to build a
+        board, so a file says which of its settings are for that. The values are
+        the same ones; grouping them changes nothing but where they are read."""
+        if not isinstance(data, dict) or "admin" not in data:
+            return data
+        data = dict(data)
+        admin = data.pop("admin") or {}
+        if not isinstance(admin, dict):
+            raise ValueError("[admin] has to be a table")
+        stray = sorted(key for key in admin if key not in ADMIN_SETTINGS)
+        if stray:
+            raise ValueError(
+                f"{', '.join(stray)} cannot go under [admin]; it holds "
+                f"{', '.join(ADMIN_SETTINGS)}")
+        both = sorted(set(admin) & set(data))
+        if both:
+            raise ValueError(
+                f"{', '.join(both)} is declared twice, at the top level and "
+                "under [admin]; keep one")
+        return data | admin
 
     @field_validator("views", mode="before")
     @classmethod
@@ -201,14 +235,20 @@ class Config(BaseModel):
     def require(self, setting: str) -> str:
         value = getattr(self, setting)
         if not value:
-            raise BoardError(
-                f"{setting} is not set; add it to [tool.boardkit] in "
-                f"{self.root / 'pyproject.toml'}"
-            )
+            raise BoardError(f"{setting} is not set; add it to {self.where}")
         return value
 
+    @property
+    def where(self) -> str:
+        """The config file to edit, named as a person would find it."""
+        if self.source is None:
+            return f"the boardkit configuration in {self.root}"
+        if self.source.name == "pyproject.toml":
+            return f"[tool.boardkit] in {self.source}"
+        return str(self.source)
 
-def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict]:
+
+def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, pathlib.Path]:
     """Walk up from `start` for the first file carrying a boardkit table."""
     here = (start or pathlib.Path.cwd()).resolve()
     for directory in [here, *here.parents]:
@@ -220,7 +260,7 @@ def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict]:
             table = data.get("tool", {}).get("boardkit") if name.endswith(
                 "pyproject.toml") else data.get("tool", {}).get("boardkit", data)
             if table:
-                return directory, table
+                return directory, table, candidate
     raise BoardError(
         "no boardkit configuration found. Add a [tool.boardkit] table to "
         "pyproject.toml, or a boardkit.toml, at the root of the repository."
@@ -228,20 +268,20 @@ def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict]:
 
 
 def load(start: pathlib.Path | None = None) -> Config:
-    root, table = find_config(start)
+    root, table, source = find_config(start)
     try:
-        return Config(root=root, **table)
+        return Config(root=root, source=source, **table)
     except ValidationError as error:
-        raise BoardError(describe(error, root)) from None
+        raise BoardError(describe(error, source)) from None
 
 
-def describe(error: ValidationError, root: pathlib.Path) -> str:
+def describe(error: ValidationError, source: pathlib.Path) -> str:
     """Pydantic's report as advice: one line per bad setting, no traceback.
 
     The two common mistakes get their own wording, because "Field required"
     and "Extra inputs are not permitted" do not tell the reader what to type.
     """
-    known = ", ".join(sorted(Config.model_fields.keys() - {"root"}))
+    known = ", ".join(sorted(Config.model_fields.keys() - {"root", "source"}))
     lines = []
     for detail in error.errors():
         setting = ".".join(str(part) for part in detail["loc"]) or "<table>"
@@ -252,7 +292,7 @@ def describe(error: ValidationError, root: pathlib.Path) -> str:
         else:
             lines.append(f"  {setting}: {detail['msg']}")
     return (
-        f"invalid boardkit configuration in {root / 'pyproject.toml'}:\n"
+        f"invalid boardkit configuration in {source}:\n"
         + "\n".join(lines)
         + f"\nKnown settings: {known}."
     )

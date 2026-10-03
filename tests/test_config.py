@@ -152,3 +152,72 @@ def test_a_page_larger_than_github_allows_is_refused(tmp_path):
     write(tmp_path, "pyproject.toml", BARE + "page_size = 150\n")
     with pytest.raises(BoardError, match="page_size"):
         load(tmp_path)
+
+
+ADMIN = """
+owner = "octo"
+repo = "octo/places"
+project_name = "Places"
+
+[admin]
+status_order = ["Inbox", "Todo", "Done"]
+
+[admin.fields.workstream]
+data_type = "SINGLE_SELECT"
+options = ["Maps", "Infra"]
+
+[[admin.views]]
+name = "Open work"
+layout = "BOARD"
+"""
+
+
+def test_an_admin_table_groups_what_only_admin_apply_needs(tmp_path):
+    """Grouping is for the reader: the values mean exactly what they mean at
+    the top level."""
+    write(tmp_path, "boardkit.toml", ADMIN)
+    config = load(tmp_path)
+    assert config.field_names == ("workstream",)
+    assert config.status_order == ("Inbox", "Todo", "Done")
+    assert [view.name for view in config.views] == ["Open work"]
+
+
+def test_the_flat_form_still_works(tmp_path):
+    write(tmp_path, "pyproject.toml", TABLE)
+    assert load(tmp_path).field_names == ("workstream", "effort")
+
+
+def test_a_setting_that_is_not_admins_is_refused_there(tmp_path):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n\n[admin]\nowner = "someone"\n')
+    with pytest.raises(BoardError, match="cannot go under \\[admin\\]"):
+        load(tmp_path)
+
+
+def test_declaring_a_setting_in_both_places_is_refused(tmp_path):
+    write(tmp_path, "boardkit.toml",
+          'owner = "octo"\nrepo = "o/p"\nstatus_order = ["Todo"]\n\n[admin]\nstatus_order = ["Done"]\n')
+    with pytest.raises(BoardError, match="declared twice"):
+        load(tmp_path)
+
+
+def test_an_error_names_the_file_that_was_actually_read(tmp_path):
+    """Three files can hold this configuration; naming the wrong one sends
+    someone to edit a file nothing reads."""
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\nnonsense = 1\n')
+    with pytest.raises(BoardError, match="boardkit.toml") as caught:
+        load(tmp_path)
+    assert "pyproject.toml" not in str(caught.value)
+
+
+def test_require_points_at_that_same_file(tmp_path):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    config = load(tmp_path)
+    with pytest.raises(BoardError, match="boardkit.toml"):
+        config.require("project")
+
+
+def test_the_internal_source_field_is_not_offered_as_a_setting(tmp_path):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\nnonsense = 1\n')
+    with pytest.raises(BoardError) as caught:
+        load(tmp_path)
+    assert "source" not in str(caught.value).split("Known settings:")[1]
