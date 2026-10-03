@@ -1,0 +1,34 @@
+# The suite is fast and hermetic — no network, no `gh`, no board — so there is
+# no reason for it to run anywhere but on every push.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of `requires-python`. The versions
+        # between them are not interesting enough to pay for.
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked --dev
+        env:
+          UV_PYTHON: ${{ matrix.python }}
+
+      - name: lint
+        run: uv run ruff check src tests
+
+      - name: test
+        run: uv run pytest -q
