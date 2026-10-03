@@ -17,9 +17,12 @@ jobs:
         # between them are not interesting enough to pay for.
         python: ["3.12", "3.14"]
     steps:
-      - uses: actions/checkout@v7
+      # Pinned exactly: setup-uv publishes no floating major tag past v7,
+      # so `@v10` does not resolve. Pin both the same way rather than
+      # keep two conventions in six lines.
+      - uses: actions/checkout@v7.0.1
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
 
