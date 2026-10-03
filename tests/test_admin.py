@@ -52,3 +52,48 @@ def test_no_matching_project_reads_as_not_yet_created(monkeypatch):
     from boardkit import admin
     monkeypatch.setattr(admin, "gh_json", lambda *args: {"projects": []})
     assert admin.locate(CONFIG.model_copy(update={"project_name": "Widgets"})) == ""
+
+
+def test_a_field_is_created_under_a_readable_name_not_the_lookup_key():
+    """Config names fields by the key `item-list` emits, which is lowercased."""
+    assert ProjectField(name="status").display == "Status"
+    assert ProjectField(name="target_date").display == "Target Date"
+    assert ProjectField(name="area", title="Work area").display == "Work area"
+
+
+def test_aligning_options_keeps_the_ids_of_those_that_already_exist():
+    from boardkit.admin import align
+    present = ProjectField(name="status", id="F_S", options=("Todo", "Done"),
+                           option_ids={"Todo": "o1", "Done": "o2"})
+    wanted = ProjectField(name="status", options=("Todo", "In Review", "Done"))
+    assert align(wanted, present) == [
+        {"name": "Todo", "id": "o1"},
+        {"name": "In Review"},
+        {"name": "Done", "id": "o2"}]
+
+
+def test_an_option_config_does_not_know_about_is_kept_not_deleted():
+    """Dropping an option unsets every item in it; create must not do that."""
+    from boardkit.admin import align
+    present = ProjectField(name="status", id="F_S", options=("Todo", "Archived"),
+                           option_ids={"Todo": "o1", "Archived": "o9"})
+    wanted = ProjectField(name="status", options=("Todo",))
+    assert align(wanted, present) == [{"name": "Todo", "id": "o1"},
+                                      {"name": "Archived", "id": "o9"}]
+
+
+def test_options_that_already_match_send_no_mutation():
+    from boardkit.admin import align
+    same = ProjectField(name="status", id="F_S", options=("Todo", "Done"),
+                        option_ids={"Todo": "o1", "Done": "o2"})
+    assert align(ProjectField(name="status", options=("Todo", "Done")), same) is None
+
+
+def test_every_option_carries_the_colour_the_mutation_demands():
+    """updateProjectV2Field rejects an option without colour or description."""
+    from boardkit.admin import rendered
+    text = rendered([{"id": "o1", "name": "Todo", "color": "GREEN",
+                      "description": "not started"},
+                     {"name": "Inbox", "color": "GRAY", "description": ""}])
+    assert text == ('{id: "o1", name: "Todo", color: GREEN, description: "not started"}, '
+                    '{name: "Inbox", color: GRAY, description: ""}')

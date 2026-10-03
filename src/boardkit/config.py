@@ -43,6 +43,10 @@ class ProjectField(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str
+    # What the field is called on GitHub. Config names a field by the key
+    # `item-list` emits — lowercased — so creating one has to turn that back
+    # into something a person reads in a column header.
+    title: str = ""
     data_type: DataType = "SINGLE_SELECT"
     options: tuple[str, ...] = ()
     id: str = ""
@@ -58,6 +62,10 @@ class ProjectField(BaseModel):
     @property
     def creatable(self) -> bool:
         return self.data_type in CREATABLE
+
+    @property
+    def display(self) -> str:
+        return self.title or self.name.replace("_", " ").title()
 
 
 class Config(BaseModel):

@@ -28,7 +28,7 @@ owner = "agerardin"
 owner_type = "user"
 repo = "agerardin/boardkit"
 project_name = "boardkit"
-status_order = ["Ready", "In progress", "Blocked", "Inbox", "Done"]
+status_order = ["Todo", "In Progress", "In Review", "Inbox", "Blocked", "Done"]
 group_by = "area"
 skill_name = "boardkit-board"
 
