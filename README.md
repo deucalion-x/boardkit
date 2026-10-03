@@ -5,15 +5,14 @@ from git. Extracted from the Places repository, where the same three scripts
 had the project number, the custom field names and the docs path edited into
 them.
 
-The strategy the package exists to enforce is **read locally, sync in the
-background**. An agent that asks ten questions to plan one change should not
-pay ten round trips for them, so a pull snapshots the project once and every
-read answers from it. Changes queue locally and a push drains them. GitHub
-stays the real store; `.boardkit/` is a working copy.
+A pull snapshots the project once; every read answers from that snapshot, so
+reads cost no network and no API quota. A change is sent as it is made, and
+queued locally if it cannot be. GitHub stays the real store; `.boardkit/` is a
+working copy, and on a conflict the remote value wins.
 
-See [docs/local-first.md](docs/local-first.md) for the design, including the
-conflict rule: remote wins, and a local change that loses is handed back
-rather than dropped.
+This file is the manual. [docs/overview.md](docs/overview.md) is why it works
+this way, and [docs/local-first.md](docs/local-first.md) is the design of the
+store and the sync loop in detail.
 
 Requires `gh`, authenticated. One dependency: pydantic, which is
 the configuration schema rather than a validation layer bolted onto it.
@@ -57,14 +56,24 @@ Declare a field when `board admin apply` has to create it, or to fix print
 order. Nothing else needs saying:
 
 ```toml
-[fields.workstream]
+[admin.fields.workstream]
 data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
 options = ["Maps", "Planning", "Infra"]
 
-[fields.sprint]
+[admin.fields.sprint]
 data_type = "ITERATION"
 iteration = { start_date = "2026-10-05", duration = 7, iterations = 4 }
+
+[[admin.views]]
+name = "Open work"
+layout = "BOARD"
+filter = "-status:Done"
 ```
+
+`fields`, `views` and `status_order` may be written under `[admin]`, which is
+what says in the file itself that they exist to build a board rather than to
+reach one. They also work at the top level, and mean the same thing either
+way; declaring one in both places is refused rather than silently resolved.
 
 All six creatable types work. `gh project field-create` handles only four, so
 boardkit sends `createProjectV2Field` itself.
@@ -89,8 +98,10 @@ and its default — so an agent can fill it in rather than guess.
 
 Config is read from `.boardkit.toml`, `boardkit.toml` or a `[tool.boardkit]`
 table in `pyproject.toml`, in that order — a dedicated file wins, because
-writing one is the more explicit statement. Any of them is found by walking up
-from the working directory, so the commands work from anywhere in the repo.
+writing one is the more explicit statement. The first one found wins outright;
+they are not merged. Any of them is found by walking up from the working
+directory, so the commands work from anywhere in the repo, and every error
+about a setting names the file actually in use.
 
 ## Commands
 
@@ -101,18 +112,30 @@ Reads answer from the local snapshot and touch nothing:
 | `board` | Grouping-field-by-status rollup. Start here. |
 | `board ready` | What is actually startable now. |
 | `board group <name>` | One group, by status (`ws` is an alias). |
-| `board item <n>` | One item plus its sub-issues. |
+| `board item <ref>` | One item: fields, labels, full text, sub-issues. |
+| `board find <terms>` | Titles, bodies and labels holding every word given. |
 | `board json` | Normalized work items, for jq or python. |
 
-Changes queue, then push:
+The snapshot holds open items only: closed issues stay on a Project board, and
+a pull joins against open issues and drops the rest. For closed work, or for
+the discussion on an item, ask GitHub — `gh issue list --search "… is:closed"`,
+`gh issue view <n> --comments`.
+
+An item is named by its issue number, or — for a draft card, which has no
+issue behind it — by the `~handle` the board prints. Either is accepted
+wherever a reference is taken.
+
+Changes are recorded locally, then sent:
 
 | Command | Does |
 |---|---|
-| `board set <n> <field> <value>` | Queue one local change. |
+| `board add <title> [field=value]` | Create an issue and put it on the board. `--body <text>` for its text, `--draft` for a card with no issue behind it. |
+| `board set <ref> <field> <value>` | Change a field. Sent now; queued if it cannot be, or with `--later`. |
 | `board sync` | Pull: replace the snapshot. |
 | `board sync push` | Drain the queue against a fresh pull. |
 | `board sync status` | Snapshot age, queue depth, rejections. |
-| `board rejected` / `--clear` | Changes that lost to a remote edit. |
+| `board rejected` / `--clear` | Changes that lost to a remote edit, with both values. |
+| `board log [n]` | What boardkit did, for audit and debugging. |
 
 The rest:
 
@@ -123,7 +146,6 @@ The rest:
 | `board admin apply` / `-n` | Make the board match what this repo declares. |
 | `board admin link` | Attach the project to the repository. |
 | `board auth` / `--refresh` | What this `gh` login is allowed to do. |
-| `board find <terms>` | Full-text search. Hits GitHub: issue bodies are not in the snapshot. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |
 | `board links check` / `rewrite` | Sha-pinned document links in issue bodies. |
 | `board install-skill` / `--check` | Write the agent skill into `.claude/skills/`. |
@@ -143,6 +165,26 @@ rejected.json   changes that lost to a remote edit, with both values
 auth.json       the cached visibility probe, keyed by token scopes
 ```
 
+## The log
+
+Every action — queued, pushed, rejected, pulled, created, refused — is one JSON
+object on a line in `.boardkit/log.jsonl`, rotated so it cannot grow without
+bound. `board log [n]` prints the tail.
+
+It is standard `logging`: records go to `boardkit.trail`, under the `boardkit`
+namespace, at INFO. A host application that imports boardkit can capture or
+silence all of it through that namespace alone —
+`logging.getLogger("boardkit")` — and boardkit attaches nothing to the root
+logger.
+
+The file is a property of the run, not of the repo, so it is an environment
+variable rather than a setting:
+
+```bash
+BOARDKIT_LOG=off board sync          # emit the records, keep no file
+BOARDKIT_LOG=/tmp/audit.jsonl board sync   # keep it somewhere else
+```
+
 ## Permissions
 
 `board auth` reports four tiers. Scopes come from `gh auth status` — local, no
@@ -160,28 +202,34 @@ A refused tier prints the `gh auth refresh -s …` line that fixes it. boardkit
 never runs `gh auth login` or `refresh` itself: both are interactive and mutate
 global state.
 
-## What the three parts are for
+## The mirror and the links
 
-**The board reader** answers "what should I work on" without a dump, and
-without a round trip. Closed issues stay on a Project board, so a pull joins
-against open issues and drops the rest.
+`board mirror write` regenerates one Markdown file — `mirror_path` — holding
+every open issue's body, so that a reworded acceptance criterion shows up as a
+diff. It is regenerated, never edited; `board mirror check` fails when the file
+and the issues disagree, which is what catches an edit made in the web UI.
 
-**The mirror** (`board mirror`) writes open issue bodies into one Markdown file
-in the repo. Nothing reads it to learn current state — that is the board's job.
-It exists so a reworded acceptance criterion arrives as a reviewable diff. It
-is regenerated, never maintained; `check` catches an edit made in the web UI.
+`board links rewrite` turns `docs/…md` paths in issue bodies into blob URLs
+pinned to the current sha, for the paths under `docs_prefix`; `check` reports
+what is unpinned or stale. The sha has to exist on the remote, so push the
+branch before filing the issue, and do not squash the merge.
 
-**The links** (`board links`) rewrite `docs/...md` paths in issue bodies into
-blob URLs pinned to a commit sha. An issue outlives any branch, so a link into
-a branch rots when the branch is deleted. This holds only if the branch is
-pushed before the issue is filed and merges are not squashed.
+## The agent skill
 
-## The skill
+```bash
+board install-skill          # write .claude/skills/<skill_name>/SKILL.md
+board install-skill --check  # fail if the committed copy has drifted
+```
 
-A Claude Code skill is only loaded from `.claude/skills/`, so it cannot travel
-as an importable module. `board install-skill` renders
-`src/boardkit/templates/SKILL.md` — the part that is true for any repo — into
-the consuming repository, and appends the `skill_notes` file verbatim for what
-is true only of that project: its column meanings, label vocabulary, and the
-issues to exclude from history. The generated file is committed, and
-`board install-skill --check` fails when it has drifted.
+The rendered file is generic text from the package's template, filled in with
+this repo's board URL, columns, fields and grouping — taken from config, and
+from the last sync for whatever config does not declare — with `skill_notes`
+appended verbatim for what is true only of this project: its column meanings,
+its label vocabulary, the issues to leave out of history.
+
+Commit the result, and never edit it: change the template or `skill_notes` and
+run `install-skill` again. Run it again after a sync that changed the board's
+shape, too, so the text keeps naming the columns the board actually has.
+
+See [docs/overview.md](docs/overview.md) for why a skill cannot simply ship
+inside the package.

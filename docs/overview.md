@@ -33,3 +33,18 @@ Reads are local so no network hits on read, no api quotas used.
   * if online
     * proceed to syncing
 
+
+## agent use of this tool
+
+* the tool is a package othe project needing it will import as a package. 
+* we need in addition to install a skill that expose the api to a agent.
+  * a package alone cannot do it: Claude Code only loads skills from
+    `.claude/skills/` in the repo it works in, so a skill inside the installed
+    package is never found
+  * so the package ships the skill as a template and `board install-skill`
+    renders it into the consuming repo, where it is committed
+  * rendering fills in that repo's board url, columns, fields and grouping,
+    from its config and its last sync
+  * the rendered copy is generated, never hand-edited: change the template or
+    the repo's `skill_notes` and run `board install-skill` again
+  * `board install-skill --check` fails when the committed copy has drifted
