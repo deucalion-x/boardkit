@@ -12,8 +12,6 @@ project_name = "boardkit"
 # shows on the board itself. A `blocked` text field is created alongside them:
 # being blocked is not a stage, so it is a field holding what is in the way.
 # This board was made in the browser, so its columns carry GitHub's spelling.
-# `Blocked` is still one of them; it is a field now, so the column is empty
-# and waiting to be deleted in the browser.
 status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
 
 # Saved tabs. `admin apply` creates a missing one and never deletes any.
