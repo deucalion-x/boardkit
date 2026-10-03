@@ -126,6 +126,13 @@ def dispatch(command: str, args: list[str]) -> int:
         number = int(args[0].lstrip("#"))
         board_module.show([index[number]] if number in index else [], view)
         found = index.get(number)
+        if found is not None:
+            about = [f"labels: {', '.join(found.labels)}" if found.labels else "",
+                     f"assignees: {', '.join(found.assignees)}" if found.assignees else "",
+                     f"milestone: {found.milestone}" if found.milestone else ""]
+            said = "  ".join(part for part in about if part)
+            if said:
+                print(f"  {said}")
         if found is not None and found.body:
             print()
             print(found.body.rstrip())

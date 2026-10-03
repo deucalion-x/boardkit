@@ -115,8 +115,17 @@ def fetch_board(config: Config, number: str) -> dict:
         # `body` is a scalar on a node already being fetched, so it costs no
         # points — only bytes. Worth it: deciding what to work on means reading
         # the acceptance criteria, and without it that is an API call.
-        "content { ... on Issue { number title url state body } "
-        "          ... on PullRequest { number title url state body } } "
+        # Labels, assignees and milestone are connections, so they are the
+        # expensive shape in principle. Measured here they cost nothing worth
+        # saving, and an agent deciding what to work on reads them — this repo
+        # carries kind and cross-cutting concept in labels.
+        "content { ... on Issue { number title url state body "
+        "    labels(first: 20) { nodes { name } } "
+        "    assignees(first: 10) { nodes { login } } "
+        "    milestone { title } } "
+        "  ... on PullRequest { number title url state body "
+        "    labels(first: 20) { nodes { name } } "
+        "    assignees(first: 10) { nodes { login } } } } "
         f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
         "} } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])

@@ -124,3 +124,23 @@ def test_the_issue_text_travels_with_the_item():
 def test_json_leaves_the_body_out_so_a_pipeline_stays_readable():
     carried = [{"content": {"number": 1, "title": "T", "body": "pages of prose"}}]
     assert "body" not in normalize(carried, {1}, CONFIG)[0].flat()
+
+
+LABELLED = [{"content": {"number": 1, "title": "T",
+                         "labels": {"nodes": [{"name": "feature"},
+                                              {"name": "concept:offline"}]},
+                         "assignees": {"nodes": [{"login": "agerardin"}]},
+                         "milestone": {"title": "v1"}}}]
+
+
+def test_issue_metadata_an_agent_reads_travels_with_the_item():
+    item = normalize(LABELLED, {1}, CONFIG)[0]
+    assert item.labels == ("feature", "concept:offline")
+    assert item.assignees == ("agerardin",) and item.milestone == "v1"
+
+
+def test_json_carries_labels_but_omits_what_an_item_does_not_have():
+    row = normalize(LABELLED, {1}, CONFIG)[0].flat()
+    assert row["labels"] == "feature, concept:offline" and row["milestone"] == "v1"
+    bare = normalize([{"content": {"number": 2, "title": "T"}}], {2}, CONFIG)[0].flat()
+    assert "labels" not in bare and "milestone" not in bare

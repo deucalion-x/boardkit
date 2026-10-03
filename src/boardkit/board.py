@@ -46,6 +46,12 @@ class ProjectItem(BaseModel):
     # reading the acceptance criteria — needs no API call. A scalar on a node
     # already fetched, so it costs bytes and no rate-limit points.
     body: str = ""
+    # Issue metadata, not board metadata. Carried because an agent choosing
+    # work reads it — labels especially, which is where a repo tends to keep
+    # kind and cross-cutting concept.
+    labels: tuple[str, ...] = ()
+    assignees: tuple[str, ...] = ()
+    milestone: str = ""
     fields: dict[str, str] = {}
 
     @field_validator("type", mode="before")
@@ -65,8 +71,15 @@ class ProjectItem(BaseModel):
         has always printed, and what a jq pipeline is written against."""
         # The body is deliberately absent: `board json` feeds jq pipelines,
         # and a page of prose per item buries the rows. `board item` shows it.
-        return {"number": self.number, "title": self.title, "url": self.url,
-                **self.fields}
+        row = {"number": self.number, "title": self.title, "url": self.url,
+               **self.fields}
+        if self.labels:
+            row["labels"] = ", ".join(self.labels)
+        if self.assignees:
+            row["assignees"] = ", ".join(self.assignees)
+        if self.milestone:
+            row["milestone"] = self.milestone
+        return row
 
 
 def open_numbers(config: Config) -> set[int]:
@@ -75,6 +88,12 @@ def open_numbers(config: Config) -> set[int]:
     issues = gh_json("issue", "list", "--repo", config.repo, "--state", "open",
                      "--limit", str(config.item_limit), "--json", "number")
     return {issue["number"] for issue in issues}
+
+
+def named(connection, key: str) -> tuple[str, ...]:
+    """The names out of a GraphQL connection, which arrives as {"nodes": [...]}."""
+    nodes = (connection or {}).get("nodes") or []
+    return tuple(node.get(key, "") for node in nodes if node)
 
 
 def as_text(value) -> str:
@@ -114,6 +133,9 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             title=content.get("title", ""),
             url=content.get("url", ""),
             body=content.get("body") or "",
+            labels=named(content.get("labels"), "name"),
+            assignees=named(content.get("assignees"), "login"),
+            milestone=(content.get("milestone") or {}).get("title", ""),
             fields=fields,
         ))
     return items
