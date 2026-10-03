@@ -221,3 +221,23 @@ def test_the_internal_source_field_is_not_offered_as_a_setting(tmp_path):
     with pytest.raises(BoardError) as caught:
         load(tmp_path)
     assert "source" not in str(caught.value).split("Known settings:")[1]
+
+
+def test_a_skill_is_named_after_the_repository_by_default(tmp_path):
+    """Two repos open at once — a tool and the project using it — must not
+    install two skills under one name."""
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "octo/places"\n')
+    assert load(tmp_path).skill_name == "places-board"
+
+
+def test_a_repo_can_still_choose_its_own_name(tmp_path):
+    write(tmp_path, "boardkit.toml",
+          'owner = "octo"\nrepo = "octo/places"\nskill_name = "places-github"\n')
+    assert load(tmp_path).skill_name == "places-github"
+
+
+def test_a_repository_name_becomes_a_usable_directory_name(tmp_path):
+    from boardkit.config import skill_name_for
+    assert skill_name_for("octo/Places 2") == "places-2-board"
+    assert skill_name_for("octo/my_tool.py") == "my-tool-py-board"
+    assert skill_name_for("") == "github-board"

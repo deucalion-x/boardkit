@@ -11,6 +11,7 @@ rejected by pydantic rather than by checks written out here.
 from __future__ import annotations
 
 import pathlib
+import re
 import tomllib
 from typing import Literal
 
@@ -28,6 +29,12 @@ CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
 # itself; `admin apply` is the only command that needs them, apart from the
 # print order a declared shape also fixes.
 ADMIN_SETTINGS = ("fields", "views", "status_order")
+# What a skill is called when a repo does not say. Derived rather than fixed,
+# because two repos open at once — a tool and the project using it — would
+# otherwise install two skills under one name, each describing a different
+# board and neither distinguishable from the other.
+SKILL_SUFFIX = "-board"
+FALLBACK_SKILL = "github-board"
 # GitHub's own columns on a new Project. A default that fits one project would
 # work silently and wrongly everywhere else, so this is deliberately generic.
 DEFAULT_STATUS_ORDER = ("Todo", "In Progress", "Done")
@@ -151,9 +158,19 @@ class Config(BaseModel):
     mirror_path: str = ""
     docs_prefix: str = "docs/"
     project_name: str = ""
-    skill_name: str = "github-board"
+    # Empty means derived from the repository name; a repo only states this to
+    # be called something the derivation would not produce.
+    skill_name: str = ""
     skill_notes: str = ""
     project_url: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _name_the_skill(cls, data):
+        """Fill in `skill_name` from the repository when it is not stated."""
+        if isinstance(data, dict) and not data.get("skill_name"):
+            data = dict(data) | {"skill_name": skill_name_for(data.get("repo", ""))}
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -246,6 +263,13 @@ class Config(BaseModel):
         if self.source.name == "pyproject.toml":
             return f"[tool.boardkit] in {self.source}"
         return str(self.source)
+
+
+def skill_name_for(repo: str) -> str:
+    """`agerardin/places` becomes `places-board`: the repo's own word, plus
+    what the skill is about."""
+    slug = re.sub(r"[^a-z0-9]+", "-", repo.split("/")[-1].strip().lower()).strip("-")
+    return f"{slug}{SKILL_SUFFIX}" if slug else FALLBACK_SKILL
 
 
 def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, pathlib.Path]:

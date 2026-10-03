@@ -94,7 +94,8 @@ and its default — so an agent can fill it in rather than guess.
 | `group_by` | which field drives the rollup; defaults to the first |
 | `mirror_path` | enables `board mirror` |
 | `docs_prefix` | which paths `board links` pins to a sha |
-| `skill_name`, `skill_notes` | the generated agent skill |
+| `skill_name` | what the generated skill is called; defaults to the repo's name plus `-board` |
+| `skill_notes` | a file appended verbatim to the generated skill |
 
 Config is read from `.boardkit.toml`, `boardkit.toml` or a `[tool.boardkit]`
 table in `pyproject.toml`, in that order — a dedicated file wins, because
@@ -220,6 +221,11 @@ branch before filing the issue, and do not squash the merge.
 board install-skill          # write .claude/skills/<skill_name>/SKILL.md
 board install-skill --check  # fail if the committed copy has drifted
 ```
+
+`skill_name` defaults to the repository's own name plus `-board`
+(`agerardin/places` gives `places-board`), so a tool and the project using it
+can both be open without installing two skills under one name. Set it only to
+be called something else.
 
 The rendered file is generic text from the package's template, filled in with
 this repo's board URL, columns, fields and grouping — taken from config, and

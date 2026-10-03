@@ -12,7 +12,6 @@ project_name = "boardkit"
 # Without this the rollup groups by whichever field the board returns first,
 # which is arbitrary and was briefly effort.
 group_by = "area"
-skill_name = "boardkit-board"
 
 # Saved tabs, under [admin] because that is the only command that reads them.
 # `admin apply` creates one that is missing and never removes one;
