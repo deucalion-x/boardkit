@@ -215,3 +215,145 @@ def test_options_that_agree_are_not_reported_as_duplicates():
     from boardkit.admin import duplicates
     assert duplicates(ProjectField(name="status", data_type="SINGLE_SELECT",
                                    options=("Todo", "Done"))) == []
+
+
+# Everything above is pure. Below is the half that mutates a real board, so
+# each of these stubs the GraphQL call and asserts on the document that would
+# have been sent — the only place the never-delete promise is actually kept.
+@pytest.fixture
+def sent(monkeypatch):
+    """Every GraphQL document `admin` would send, in order."""
+    from boardkit import admin, auth
+
+    queries: list[str] = []
+
+    def run_json(args):
+        queries.append(args[-1])
+        return {"data": {"user": {"projectV2": {"views": {"nodes": []},
+                                                "field": None}},
+                         "createProjectV2View": {"projectV2View": {"id": "V_NEW"}}}}
+
+    monkeypatch.setattr(admin, "run_json", run_json)
+    monkeypatch.setattr(auth, "require", lambda config, tier: None)
+    return queries
+
+
+def test_a_new_option_is_sent_without_an_id_and_an_existing_one_with_it():
+    """`rendered` emits `id:` only when the option carries one.
+
+    Why that matters to GitHub is not recorded anywhere here and is not
+    asserted: this pins the shape the code produces, not a claim about the
+    API's behaviour on a malformed list.
+    """
+    from boardkit.admin import rendered
+    out = rendered([{"id": "O_1", "name": "Todo", "color": "GRAY", "description": ""},
+                    {"name": "New", "color": "GRAY", "description": ""}])
+    assert 'id: "O_1", name: "Todo"' in out
+    assert 'id:' not in out.split("}, {")[1]
+
+
+def test_every_option_keeps_the_colour_the_board_already_gave_it(sent, monkeypatch):
+    """The mutation carries the whole list, so a colour not read back first
+    would be repainted to the default on every apply."""
+    from boardkit import admin
+    monkeypatch.setattr(admin, "run_json", lambda args: {"data": {"user": {
+        "projectV2": {"field": {"options": [
+            {"id": "O_1", "name": "Todo", "color": "BLUE", "description": "now"}]}}}}})
+    full = admin.decorated(CONFIG, "4", ProjectField(name="status", id="F_S"),
+                           [{"id": "O_1", "name": "Todo"}])
+    assert full[0]["color"] == "BLUE" and full[0]["description"] == "now"
+
+
+def test_a_description_config_declares_wins_over_the_one_on_the_board(monkeypatch):
+    """That is the point of declaring it."""
+    from boardkit import admin
+    monkeypatch.setattr(admin, "run_json", lambda args: {"data": {"user": {
+        "projectV2": {"field": {"options": [
+            {"id": "O_1", "name": "Todo", "color": "BLUE", "description": "stale"}]}}}}})
+    field = ProjectField(name="status", id="F_S",
+                         descriptions={"Todo": "refined enough to pick up now"})
+    full = admin.decorated(CONFIG, "4", field, [{"id": "O_1", "name": "Todo"}])
+    assert full[0]["description"] == "refined enough to pick up now"
+
+
+def test_an_option_with_no_colour_anywhere_still_gets_one(monkeypatch):
+    """`updateProjectV2Field` requires a colour on every entry."""
+    from boardkit import admin
+    monkeypatch.setattr(admin, "run_json",
+                        lambda args: {"data": {"user": {"projectV2": {"field": None}}}})
+    full = admin.decorated(CONFIG, "4", ProjectField(name="status", id="F_S"),
+                           [{"name": "Todo"}])
+    assert full[0]["color"] == admin.DEFAULT_COLOR
+
+
+def test_a_view_that_already_exists_is_never_recreated(sent, monkeypatch):
+    """Matched by name and never deleted: a tab someone made in the browser
+    is not boardkit's to touch."""
+    from boardkit import admin
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {"Open": "V_1"})
+    config = CONFIG.model_copy(update={"views": (View(name="Open"),)})
+    admin.apply_views(config, "4", "PVT_1", ())
+    assert not any("createProjectV2View" in q for q in sent)
+
+
+def test_a_declared_filter_is_a_second_mutation_after_the_view_is_made(sent):
+    """`createProjectV2View` does not take one."""
+    from boardkit import admin
+    from boardkit.config import View
+    config = CONFIG.model_copy(update={
+        "views": (View(name="Open", filter="-status:Done"),)})
+    admin.apply_views(config, "4", "PVT_1", ())
+    made = [q for q in sent if "ProjectV2View" in q]
+    assert "createProjectV2View" in made[0]
+    assert "updateProjectV2View" in made[1] and "-status:Done" in made[1]
+
+
+def test_a_view_with_no_filter_sends_only_the_one_mutation(sent):
+    from boardkit import admin
+    from boardkit.config import View
+    config = CONFIG.model_copy(update={"views": (View(name="Open"),)})
+    admin.apply_views(config, "4", "PVT_1", ())
+    assert not any("updateProjectV2View" in q for q in sent)
+
+
+def test_a_repo_declaring_no_views_asks_the_board_about_none(sent):
+    from boardkit import admin
+    admin.apply_views(CONFIG, "4", "PVT_1", ())
+    assert sent == []
+
+
+def test_a_dry_run_sends_no_mutation_at_all(sent, monkeypatch, capsys):
+    """The whole point of `-n`: it is run against a board nobody wants
+    changed yet."""
+    from boardkit import admin
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
+    admin.apply(CONFIG, dry=True)
+    assert not any("mutation" in q for q in sent)
+    assert "would add" in capsys.readouterr().out
+
+
+def test_linking_without_a_project_says_to_create_one_first(monkeypatch):
+    from boardkit import admin, auth
+    monkeypatch.setattr(auth, "require", lambda config, tier: None)
+    monkeypatch.setattr(admin, "locate", lambda config: "")
+    with pytest.raises(BoardError, match="no project to link"):
+        admin.link(CONFIG)
+
+
+def test_applying_is_gated_on_admin_rather_than_on_write(monkeypatch):
+    """`apply` asks for the `admin` tier, not `write`.
+
+    The tier is what the code states; the reason for the split is not
+    recorded in this module, so this asserts only which one is asked for.
+    """
+    from boardkit import admin, auth
+    asked = []
+    monkeypatch.setattr(auth, "require",
+                        lambda config, tier: asked.append(tier))
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    admin.apply(CONFIG, dry=True)
+    assert asked == ["admin"]
