@@ -125,6 +125,13 @@ def dispatch(command: str, args: list[str]) -> int:
     index = {item.ref: item for item in items}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
+    if view.unknown_grouping:
+        print(f"warning: group_by names {view.unknown_grouping!r}, which this "
+              f"board has no field for. Grouping by {view.grouping!r}; the "
+              f"board carries {', '.join(view.names) or 'no fields'}.",
+              file=sys.stderr)
+        trail.note("unknown_grouping", wanted=view.unknown_grouping,
+                   used=view.grouping, fields=list(view.names))
 
     if command == "rollup":
         board_module.rollup(items, view)

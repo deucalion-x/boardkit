@@ -1,6 +1,7 @@
 import pathlib
 
 from boardkit.board import ProjectItem, Shape, normalize, rank, rollup
+from boardkit.config import Config, ProjectField
 from boardkit.config import Config
 
 # Columns are named here rather than relied on as a default: boardkit ships
@@ -199,3 +200,31 @@ def test_every_word_has_to_appear_somewhere():
 def test_searching_for_nothing_finds_nothing():
     from boardkit.board import matching
     assert matching(SEARCHABLE, "   ") == []
+
+
+FIELDS = (ProjectField(name="status", options=("Todo", "Done")),
+          ProjectField(name="effort"), ProjectField(name="area"))
+
+
+def shaped(group_by: str):
+    from boardkit.board import shape
+    return shape(Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                        group_by=group_by), FIELDS)
+
+
+def test_a_grouping_field_is_matched_without_case():
+    """The API names it `area`; a person reading the board writes `Area`."""
+    assert shaped("Area").grouping == "area"
+    assert shaped("Area").unknown_grouping == ""
+
+
+def test_a_grouping_the_board_does_not_have_is_reported():
+    """Silently it grouped everything under one `-` row, which looks like an
+    answer rather than a mistake."""
+    view = shaped("banana")
+    assert view.unknown_grouping == "banana"
+    assert view.grouping == "effort"
+
+
+def test_no_grouping_asked_for_is_not_a_miss():
+    assert shaped("").unknown_grouping == ""

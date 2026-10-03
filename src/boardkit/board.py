@@ -181,6 +181,10 @@ class Shape(BaseModel):
     columns: tuple[str, ...] = ()
     names: tuple[str, ...] = ()
     grouping: str = "status"
+    # What config asked to group by when the board carries no such field. A
+    # miss is silent otherwise: every item answers "-" and the rollup becomes
+    # one row of everything, which looks like an answer.
+    unknown_grouping: str = ""
 
 
 def shape(config: Config, fields: tuple) -> Shape:
@@ -192,10 +196,20 @@ def shape(config: Config, fields: tuple) -> Shape:
     discovered = [f.name for f in fields if f.name != config.status_field]
     names = (*config.field_names,
              *(n for n in discovered if n not in config.field_names))
+    fallback = names[0] if names else config.status_field
+    grouping, unknown = fallback, ""
+    if config.group_by:
+        # Matched without case, because a field is named `area` by the API and
+        # written `Area` by anyone reading the board in a browser.
+        known = (*names, config.status_field)
+        grouping = next((n for n in known if n.lower() == config.group_by.lower()), "")
+        if not grouping:
+            grouping, unknown = fallback, config.group_by
     return Shape(status_field=config.status_field,
                  columns=tuple(columns),
                  names=names,
-                 grouping=config.group_by or (names[0] if names else config.status_field))
+                 grouping=grouping,
+                 unknown_grouping=unknown)
 
 
 def rank(status: str, view: Shape) -> int:
