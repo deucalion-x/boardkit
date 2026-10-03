@@ -304,3 +304,69 @@ def test_an_item_that_closed_since_the_pull_drops_out_for_rejection(tmp_path, mo
     monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [])
     fresh = sync.refreshed(config, kept, [Write(number=7, field="status", value="x")])
     assert fresh.item(7) is None
+
+
+def test_the_board_is_paged_until_exhausted(monkeypatch):
+    """A snapshot missing its tail would make absent and unfetched identical."""
+    from boardkit import sync
+
+    pages = [
+        {"data": {"user": {"projectV2": {
+            "id": "PVT_1",
+            "fields": {"pageInfo": {"hasNextPage": False, "endCursor": None},
+                       "nodes": [{"id": "F_S", "name": "Status",
+                                  "dataType": "SINGLE_SELECT"}]},
+            "items": {"pageInfo": {"hasNextPage": True, "endCursor": "CUR1"},
+                      "nodes": [{"id": "I_1", "content": {"number": 1}}]}}}}},
+        {"data": {"user": {"projectV2": {"items": {
+            "pageInfo": {"hasNextPage": True, "endCursor": "CUR2"},
+            "nodes": [{"id": "I_2", "content": {"number": 2}}]}}}}},
+        {"data": {"user": {"projectV2": {"items": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "nodes": [{"id": "I_3", "content": {"number": 3}}]}}}}},
+    ]
+    asked = []
+
+    def paged(args):
+        asked.append(args[-1])
+        return pages[len(asked) - 1]
+
+    monkeypatch.setattr(sync, "run_json", paged)
+    board = sync.fetch_board(CONFIG, "4")
+    assert [row["content"]["number"] for row in board["items"]] == [1, 2, 3]
+    assert 'after: "CUR1"' in asked[1] and 'after: "CUR2"' in asked[2]
+    # The fields come with the first page and are not re-fetched per page.
+    assert board["fields"][0]["name"] == "Status"
+
+
+def test_a_truncated_label_list_is_reported_not_passed_off_as_complete():
+    from boardkit.sync import truncated
+    rows = [{"content": {"number": 7,
+                         "labels": {"pageInfo": {"hasNextPage": True},
+                                    "nodes": [{"name": "a"}]}}},
+            {"content": {"number": 8,
+                         "labels": {"pageInfo": {"hasNextPage": False},
+                                    "nodes": []}}}]
+    assert truncated(rows) == ["#7 has more than 100 labels"]
+
+
+def test_a_failed_page_aborts_the_pull_and_keeps_the_previous_snapshot(tmp_path, monkeypatch):
+    """Stitching pages from different moments would be inconsistent, which is
+    worse than stale."""
+    from boardkit import sync
+    from boardkit.store import Store
+
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets", project="4")
+    kept = Store(config)
+    before = Snapshot(project_id="PVT_1", synced_at="earlier",
+                      items=(ProjectItem(number=1, id="I_1"),))
+    kept.save_state(before)
+
+    def dies(config, number):
+        raise BoardError("API rate limit exceeded")
+
+    monkeypatch.setattr(sync, "fetch_board", dies)
+    with pytest.raises(BoardError):
+        sync.pull(config, kept)
+    assert kept.state().synced_at == "earlier"
+    assert kept.state().item(1) is not None

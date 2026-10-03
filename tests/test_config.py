@@ -140,8 +140,15 @@ def test_a_dedicated_file_wins_over_a_table_in_pyproject(tmp_path):
     assert load(tmp_path).owner == "dedicated"
 
 
-def test_the_fetch_sizes_are_modest_because_graphql_charges_for_them(tmp_path):
-    """Points are charged for nodes requested, not requests made."""
+def test_the_page_size_is_a_page_not_a_cap(tmp_path):
+    """A pull pages until the board is exhausted; a truncated snapshot would
+    make an absent item indistinguishable from an unfetched one."""
     write(tmp_path, "pyproject.toml", BARE)
-    config = load(tmp_path)
-    assert (config.item_limit, config.field_limit) == (100, 30)
+    assert load(tmp_path).page_size == 100
+
+
+def test_a_page_larger_than_github_allows_is_refused(tmp_path):
+    """`first: 150` is rejected outright with EXCESSIVE_PAGINATION."""
+    write(tmp_path, "pyproject.toml", BARE + "page_size = 150\n")
+    with pytest.raises(BoardError, match="page_size"):
+        load(tmp_path)

@@ -88,6 +88,7 @@ def run(args: list[str]) -> str:
         return result.stdout
     detail = (result.stderr or result.stdout).strip()
     if not LIMITED.search(detail):
+        note("failed", command=" ".join(args[:3]), said=detail[:400])
         raise BoardError(f"{' '.join(args)} failed: {detail}")
     found = budget()
     record(args, detail, found)

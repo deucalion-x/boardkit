@@ -16,8 +16,10 @@ Nothing here talks to GitHub. The sync does that; this module only persists.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
+import os
 import pathlib
 import uuid
 
@@ -25,11 +27,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import trail
 from .board import ProjectItem
-from .trail import note
 from .config import Config, ProjectField
+from .gh import BoardError
+from .trail import note
 
 DIRECTORY = ".boardkit"
 STATE, PENDING, REJECTED = "state.json", "pending.json", "rejected.json"
+
+
+def _now() -> float:
+    return datetime.datetime.now(datetime.UTC).timestamp()
 
 
 def now() -> str:
@@ -111,6 +118,15 @@ class Rejection(BaseModel):
     reason: str = ""
 
 
+# A lock held longer than this is assumed to belong to a process that died.
+# Generous, because a slow pull of a large board is minutes of legitimate work.
+STALE_LOCK = 15 * 60
+
+
+class Busy(BoardError):
+    """Another boardkit process holds the lock."""
+
+
 class Store:
     """Reads and writes the three files. Creates nothing until first written."""
 
@@ -142,6 +158,34 @@ class Store:
     def save_state(self, snapshot: Snapshot) -> None:
         self._write(STATE, snapshot.model_dump(mode="json"))
 
+    @contextlib.contextmanager
+    def held(self):
+        """Exclusive access for the length of a change.
+
+        Agents are the intended caller, so two processes at once is the normal
+        case rather than the exotic one — and `pending.json` is read, extended
+        and written back, which interleaves badly. A lock file created with
+        O_EXCL is enough: it is one machine and one directory.
+        """
+        lock = directory(self.config) / "lock"
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            age = _now() - lock.stat().st_mtime if lock.exists() else 0
+            if age < STALE_LOCK:
+                raise Busy(
+                    f"another boardkit process is working (lock held {int(age)}s). "
+                    f"If nothing else is running, delete {lock}.") from None
+            # Older than any real run: whoever held it is gone.
+            lock.unlink(missing_ok=True)
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(handle, str(os.getpid()).encode())
+            os.close(handle)
+            yield
+        finally:
+            lock.unlink(missing_ok=True)
+
     # pending -------------------------------------------------------------
     def pending(self) -> list[Write]:
         return [Write.model_validate(row) for row in self._read(PENDING, "[]")]
@@ -155,7 +199,8 @@ class Store:
         item = self.state().item(number)
         write = Write(number=number, field=field, value=value,
                       was=item.field(field) if item else "")
-        self.save_pending([*self.pending(), write])
+        with self.held():
+            self.save_pending([*self.pending(), write])
         note("queued", id=write.id, number=number, field=field,
                 value=value, was=write.was)
         return write
@@ -168,8 +213,14 @@ class Store:
         self._write(REJECTED, [row.model_dump(mode="json") for row in rejections])
 
     def reject(self, write: Write, remote: str, reason: str = "") -> Rejection:
+        """Record a loss. Recording the same write twice is a no-op, so a crash
+        between writing rejections and clearing the queue costs a repeat of the
+        work and not a duplicate entry."""
         rejection = Rejection(write=write, remote=remote, reason=reason)
-        self.save_rejected([*self.rejected(), rejection])
+        standing = self.rejected()
+        if any(kept.write.id == write.id for kept in standing):
+            return rejection
+        self.save_rejected([*standing, rejection])
         note("rejected", id=write.id, number=write.number, field=write.field,
              wanted=write.value, was=write.was, remote=remote, reason=reason)
         return rejection

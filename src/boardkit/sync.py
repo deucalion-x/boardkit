@@ -87,8 +87,36 @@ VALUE_FRAGMENTS = """
 """
 
 
+CONTENT = (
+    # `body` is a scalar on a node already being fetched, so it costs no points
+    # — only bytes. Worth it: deciding what to work on means reading the
+    # acceptance criteria, and without it that is an API call. Labels,
+    # assignees and milestone are connections and so the expensive shape in
+    # principle; measured, they cost nothing worth saving, and an agent
+    # choosing work reads them.
+    # 100 is GitHub's maximum for a connection. These are not paged — doing so
+    # would mean a follow-up query per item — so instead the page info is read
+    # back and truncation is reported rather than passed off as the whole list.
+    "content { ... on Issue { number title url state body "
+    "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
+    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
+    "    milestone { title } } "
+    "  ... on PullRequest { number title url state body "
+    "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
+    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } } } ")
+
+
+def items_block(config: Config, after: str | None) -> str:
+    cursor = f', after: "{after}"' if after else ""
+    return (f"items(first: {config.page_size}{cursor}) {{ "
+            "pageInfo { hasNextPage endCursor } nodes { id type "
+            + CONTENT
+            + f"fieldValues(first: {config.page_size}) "
+              f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} ")
+
+
 def fetch_board(config: Config, number: str) -> dict:
-    """The project, its fields and its items — in one request.
+    """The project, its fields and all of its items.
 
     Through GraphQL rather than `gh project ...` because `gh` cannot serialise
     a multi-select: both the field and every value of it come back empty, so
@@ -97,44 +125,78 @@ def fetch_board(config: Config, number: str) -> dict:
     which `item-list` returns, and the project's own node id, which used to be
     a third call to `gh project view`.
 
-    One request rather than three because they are one node. The saving is
-    small — a query costs at least a point whatever it asks for — but the
-    latency is three round trips becoming one.
+    Paged until the board is exhausted, because a snapshot that is quietly
+    missing its tail is worse than a slow one: an agent cannot tell an item
+    that is absent from one that was never fetched, and would report the
+    second as the first. The whole board, or nothing.
+
+    A full pull is the one-time cost. It is three points on a board of this
+    size and would be a couple of hundred on a very large one, against five
+    thousand an hour — not worth trading completeness for.
     """
     kind = "organization" if config.owner_type == "org" else "user"
-    query = (
+    head = (
         "fragment fieldName on ProjectV2FieldCommon { name } "
         f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
         "id "
-        f"fields(first: {config.field_limit}) {{ nodes {{ "
-        "... on ProjectV2FieldCommon { id name dataType } "
-        "... on ProjectV2SingleSelectField { options { id name } } "
-        "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
-        "} } "
-        f"items(first: {config.item_limit}) {{ nodes {{ id type "
-        # `body` is a scalar on a node already being fetched, so it costs no
-        # points — only bytes. Worth it: deciding what to work on means reading
-        # the acceptance criteria, and without it that is an API call.
-        # Labels, assignees and milestone are connections, so they are the
-        # expensive shape in principle. Measured here they cost nothing worth
-        # saving, and an agent deciding what to work on reads them — this repo
-        # carries kind and cross-cutting concept in labels.
-        "content { ... on Issue { number title url state body "
-        "    labels(first: 20) { nodes { name } } "
-        "    assignees(first: 10) { nodes { login } } "
-        "    milestone { title } } "
-        "  ... on PullRequest { number title url state body "
-        "    labels(first: 20) { nodes { name } } "
-        "    assignees(first: 10) { nodes { login } } } } "
-        f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
-        "} } } } }")
-    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+        f"{fields_block(config, None)}")
+    payload = run_json(["gh", "api", "graphql", "-f",
+                        f"query={head}{items_block(config, None)}}} }} }}"])
     project = payload["data"][kind]["projectV2"]
-    return {
-        "id": project.get("id", ""),
-        "fields": [node for node in project["fields"]["nodes"] if node],
-        "items": [flatten(node) for node in project["items"]["nodes"] if node],
-    }
+    items = [flatten(node) for node in project["items"]["nodes"] if node]
+    page, pages = project["items"]["pageInfo"], 1
+    fields = [node for node in project["fields"]["nodes"] if node]
+    field_page = project["fields"]["pageInfo"]
+
+    while field_page.get("hasNextPage"):
+        more = run_json(["gh", "api", "graphql", "-f", "query="
+                         f'{{ {kind}(login: "{config.owner}") '
+                         f"{{ projectV2(number: {number}) {{ "
+                         f"{fields_block(config, field_page['endCursor'])}}} }} }}"])
+        block = more["data"][kind]["projectV2"]["fields"]
+        fields += [node for node in block["nodes"] if node]
+        field_page = block["pageInfo"]
+
+    while page.get("hasNextPage"):
+        pages += 1
+        note("pulling", page=pages, so_far=len(items))
+        more = run_json(["gh", "api", "graphql", "-f", f"query="
+                         "fragment fieldName on ProjectV2FieldCommon { name } "
+                         f'{{ {kind}(login: "{config.owner}") '
+                         f"{{ projectV2(number: {number}) {{ "
+                         f"{items_block(config, page['endCursor'])}}} }} }}"])
+        block = more["data"][kind]["projectV2"]["items"]
+        items += [flatten(node) for node in block["nodes"] if node]
+        page = block["pageInfo"]
+
+    return {"id": project.get("id", ""), "fields": fields, "items": items}
+
+
+def truncated(rows: list[dict]) -> list[str]:
+    """Items whose labels or assignees ran past what one request can hold.
+
+    These are the one place boardkit cannot page: doing so would mean a
+    follow-up query per item. So the cut is reported rather than passed off as
+    the whole list — an agent that cannot tell a short list from a truncated
+    one will read the truncated one as complete.
+    """
+    cut = []
+    for row in rows:
+        content = row.get("content") or {}
+        for part in ("labels", "assignees"):
+            if ((content.get(part) or {}).get("pageInfo") or {}).get("hasNextPage"):
+                cut.append(f'#{content.get("number")} has more than 100 {part}')
+    return cut
+
+
+def fields_block(config: Config, after: str | None) -> str:
+    cursor = f', after: "{after}"' if after else ""
+    return (f"fields(first: {config.page_size}{cursor}) {{ "
+            "pageInfo { hasNextPage endCursor } nodes { "
+            "... on ProjectV2FieldCommon { id name dataType } "
+            "... on ProjectV2SingleSelectField { options { id name } } "
+            "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
+            "} } ")
 
 
 def flatten(node: dict) -> dict:
@@ -180,7 +242,7 @@ def fetch_some(config: Config, ids: list[str]) -> list[dict]:
         f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
         "content { ... on Issue { number state } "
         "          ... on PullRequest { number state } } "
-        f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
+        f"fieldValues(first: {config.page_size}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
         "} } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     return [flatten(node) for node in payload["data"]["nodes"] if node]
@@ -249,8 +311,9 @@ def pull(config: Config, store: Store) -> Snapshot:
     store.ignore_file()
     note("pulled", project=target, items=len(snapshot.items),
             fields=len(snapshot.fields))
-    for warning in drift(snapshot, config):
+    for warning in [*truncated(rows), *drift(snapshot, config)]:
         print(f"warning: {warning}")
+        note("warned", about=warning)
     return snapshot
 
 
@@ -440,13 +503,17 @@ def push(config: Config, store: Store) -> tuple[int, int]:
         return 0, 0
     remote = refreshed(config, store, writes)
     applies, lost = plan(writes, remote)
+    # Rejections are written before the queue is cleared, so a crash between
+    # them repeats work rather than losing it, and recording one twice is a
+    # no-op.
     for write, current, why in lost:
         store.reject(write, remote=current, reason=why)
     for write in applies:
         apply(write, remote, config)
         note("pushed", id=write.id, number=write.number, field=write.field,
-                value=write.value, was=write.was)
-    store.save_pending([])
+             value=write.value, was=write.was)
+    with store.held():
+        store.save_pending([])
     if applies:
         store.save_state(patched(remote, applies))
     return len(applies), len(lost)

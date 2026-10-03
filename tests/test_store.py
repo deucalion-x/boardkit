@@ -106,3 +106,48 @@ def test_the_trail_rotates_rather_than_growing_without_bound(tmp_path):
     here = tmp_path / ".boardkit"
     assert (here / "log.jsonl").stat().st_size < 8192
     assert (here / "log.jsonl.1").exists()
+
+
+def test_a_second_process_is_refused_rather_than_interleaved(tmp_path):
+    """Agents are the intended caller, so two at once is the normal case."""
+    from boardkit.store import Busy
+    kept = store(tmp_path)
+    with kept.held():
+        try:
+            with kept.held():
+                raise AssertionError("the lock let a second holder in")
+        except Busy as busy:
+            assert "another boardkit process" in str(busy)
+
+
+def test_the_lock_is_released_even_when_the_work_fails(tmp_path):
+    kept = store(tmp_path)
+    try:
+        with kept.held():
+            raise ValueError("the work went wrong")
+    except ValueError:
+        pass
+    with kept.held():
+        pass          # free again
+
+
+def test_a_lock_left_by_a_dead_process_is_broken(tmp_path):
+    import os
+    import time
+
+    from boardkit.store import directory
+    kept = store(tmp_path)
+    lock = directory(kept.config) / "lock"
+    lock.write_text("999999")
+    old = time.time() - (16 * 60)
+    os.utime(lock, (old, old))
+    with kept.held():
+        pass
+
+
+def test_recording_the_same_rejection_twice_changes_nothing(tmp_path):
+    kept = seeded(tmp_path)
+    write = kept.queue(7, "status", "In progress")
+    kept.reject(write, remote="Blocked", reason="moved")
+    kept.reject(write, remote="Blocked", reason="moved")
+    assert len(kept.rejected()) == 1
