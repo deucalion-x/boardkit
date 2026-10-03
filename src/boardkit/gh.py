@@ -60,8 +60,20 @@ def quoted(value: object) -> str:
 def once(args: list[str]) -> subprocess.CompletedProcess:
     # `check=False` throughout: a non-zero exit from `gh` is a result to
     # read, not a crash. The callers turn it into a message.
-    return subprocess.run(args, capture_output=True, text=True, check=False,
-                          timeout=TIMEOUT)
+    try:
+        return subprocess.run(args, capture_output=True, text=True, check=False,
+                              timeout=TIMEOUT)
+    except subprocess.TimeoutExpired as expired:
+        # Converted here because this is the one place every call goes
+        # through. A timeout is a kind of unreachability — waiting is the
+        # fix — and the queue is durable, so it costs nothing to stop. Left
+        # to propagate it was the one failure that printed a traceback
+        # instead of advice.
+        note("unreachable", command=" ".join(args[:3]),
+             said=f"no response in {TIMEOUT}s")
+        raise Unreachable(
+            f"{args[0]} did not respond within {TIMEOUT}s. Queued changes are "
+            f"kept; run this again when GitHub is answering.") from expired
 
 
 REMAINING = re.compile(r"^x-ratelimit-remaining:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
@@ -83,7 +95,12 @@ def budget() -> tuple[int, int] | None:
     touches, so `item-list --limit 200` against a small board is expensive and
     a day of syncing can exhaust 5000 without ever making many requests.
     """
-    result = once(PROBE)
+    try:
+        result = once(PROBE)
+    except Unreachable:
+        # The budget is a detail on top of another failure's message. Losing
+        # it must not replace that failure with this one.
+        return None
     headers = (result.stdout or "") + (result.stderr or "")
     left, reset = REMAINING.search(headers), RESET_AT.search(headers)
     if not left or not reset:
@@ -158,12 +175,25 @@ def probe(args: list[str]) -> tuple[bool, str]:
     """
     if shutil.which(args[0]) is None:
         return False, f"{args[0]} is not installed or not on PATH"
-    result = subprocess.run(args, capture_output=True, text=True,
-                            check=False, timeout=TIMEOUT)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True,
+                                check=False, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Failure being an answer here extends to this one: a probe that never
+        # came back has not established what it was asked to establish.
+        return False, f"{args[0]} did not respond within {TIMEOUT}s"
     return result.returncode == 0, (result.stdout or "") + (result.stderr or "")
 
 
 def git_ok(*args: str) -> bool:
-    """True when the command exits zero. For probes, where failure is an answer."""
-    return subprocess.run(["git", *args], capture_output=True,
-                          check=False, timeout=TIMEOUT).returncode == 0
+    """True when the command exits zero. For probes, where failure is an answer.
+
+    A timeout is one of those answers rather than an exception, for the same
+    reason as `probe`: the caller asked whether something holds, and a command
+    that never returned has not shown that it does.
+    """
+    try:
+        return subprocess.run(["git", *args], capture_output=True,
+                              check=False, timeout=TIMEOUT).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False

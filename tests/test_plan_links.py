@@ -177,3 +177,44 @@ def test_a_path_in_no_pushed_commit_at_all_is_none(monkeypatch):
     from boardkit.plan_links import sha_for
     monkeypatch.setattr(plan_links, "git", lambda *args: "")
     assert sha_for("docs/a.md", CONFIG) is None
+
+
+def test_both_issue_commands_look_past_the_first_hundred(monkeypatch, capsys):
+    """`page_size` is a per-request page for the Project API, capped at
+    GitHub's own ceiling of 100. `gh issue list --limit` is a total. Passing
+    one as the other made "every open issue" mean "the first hundred", with
+    nothing said about the rest."""
+    from boardkit import issue_mirror, plan_links
+
+    asked = []
+
+    def listing(*args):
+        asked.append(args)
+        return [{"number": n, "body": ""} for n in range(1, 251)]
+
+    monkeypatch.setattr(issue_mirror, "gh_json", listing)
+    plan_links.issues(CONFIG)
+    limit = asked[0][asked[0].index("--limit") + 1]
+    assert int(limit) > 100
+    # 250 came back, so the old limit would have silently dropped 150.
+    assert len(plan_links.issues(CONFIG)) == 250
+
+
+def test_a_listing_that_hits_the_limit_says_so(monkeypatch, capsys):
+    """On the same grounds as the pageInfo warnings in `sync`: a caller that
+    cannot tell a short list from a cut one reads the cut one as complete."""
+    from boardkit import issue_mirror
+
+    monkeypatch.setattr(issue_mirror, "gh_json", lambda *args: [
+        {"number": n, "body": ""} for n in range(issue_mirror.ISSUE_LIMIT)])
+    issue_mirror.open_issues(CONFIG, "number,body")
+    assert "were not looked at" in capsys.readouterr().out
+
+
+def test_a_listing_well_under_the_limit_says_nothing(monkeypatch, capsys):
+    from boardkit import issue_mirror
+
+    monkeypatch.setattr(issue_mirror, "gh_json",
+                        lambda *args: [{"number": 1, "body": ""}])
+    issue_mirror.open_issues(CONFIG, "number,body")
+    assert capsys.readouterr().out == ""

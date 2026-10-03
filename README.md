@@ -117,11 +117,15 @@ Reads answer from the local snapshot and touch nothing:
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| `board ready` | The `Todo` column, minus anything with `blocked` set. |
-| `board group <value>` | Items carrying that field value (`ws` is an alias). |
 | `board item <ref>` | One item: fields, labels, full text, sub-issues. |
 | `board find <terms>` | Titles, bodies and labels holding every word given. |
 | `board json` | Normalized work items, for jq or python. |
+| `board views` | The saved tabs the board has. |
+
+One exception: a board does not record which issue is a sub-issue of which, so
+the sub-issue list in `board item` is the single read that asks GitHub. It is
+skipped with a note when GitHub cannot be reached — the rest of the item has
+already answered from the snapshot.
 
 The snapshot holds open items only: closed issues stay on a Project board, and
 a pull joins against open issues and drops the rest. For closed work, or for

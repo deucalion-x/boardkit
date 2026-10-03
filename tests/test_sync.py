@@ -607,3 +607,98 @@ def test_a_number_write_matching_the_board_is_settled_rather_than_resent():
     applies, lost = plan([Write(ref="7", field="effort", value="3", was="3")],
                          remote)
     assert applies == [] and lost == []
+
+
+def pushable(tmp_path, fields, items):
+    """A store holding one snapshot, ready for `push`."""
+    from boardkit.store import Store
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets", project="4")
+    kept = Store(config)
+    kept.save_state(Snapshot(project_id="PVT_1", project_number="4",
+                             synced_at="2026-10-03T00:00:00+00:00",
+                             fields=fields, items=items))
+    return config, kept
+
+
+def test_a_field_added_in_the_browser_is_looked_up_rather_than_failing(
+        tmp_path, monkeypatch):
+    """`check` lets a write to an unknown field be queued, on the grounds that
+    only GitHub can say whether it exists. So the push has to ask."""
+    from boardkit import sync
+
+    config, kept = pushable(
+        tmp_path, (ProjectField(name="status", id="F_S",
+                                option_ids={"Ready": "O_R"}),),
+        (ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),))
+    kept.queue("7", "effort", "3")
+    monkeypatch.setattr(sync, "fetch_fields", lambda config, number: [
+        {"id": "F_S", "name": "Status", "dataType": "SINGLE_SELECT",
+         "options": [{"id": "O_R", "name": "Ready"}]},
+        {"id": "F_E", "name": "Effort", "dataType": "NUMBER"}])
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [
+        {"id": "I_7", "content": {"number": 7, "state": "OPEN"},
+         "status": "Ready"}])
+    sent = {}
+
+    def record(args):
+        sent["document"] = args[-1]
+        return {"data": {}}
+
+    monkeypatch.setattr(sync, "run_json", record)
+    landed, lost = sync.push(config, kept)
+    assert (landed, lost) == (1, 0)
+    assert "F_E" in sent["document"]
+    assert kept.pending() == []
+
+
+def test_one_write_to_a_field_the_board_lacks_no_longer_strands_the_others(
+        tmp_path, monkeypatch):
+    """`apply_all` raises on a field with no id, and raises before the document
+    is built — so one such write used to take the whole push down with it and
+    every other queued change went nowhere."""
+    from boardkit import sync
+
+    config, kept = pushable(
+        tmp_path, (ProjectField(name="status", id="F_S",
+                                option_ids={"Ready": "O_R", "Done": "O_D"}),),
+        (ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),))
+    kept.queue("7", "ghost", "whatever")
+    kept.queue("7", "status", "Done")
+    # GitHub confirms the field really does not exist.
+    monkeypatch.setattr(sync, "fetch_fields", lambda config, number: [
+        {"id": "F_S", "name": "Status", "dataType": "SINGLE_SELECT",
+         "options": [{"id": "O_R", "name": "Ready"}, {"id": "O_D", "name": "Done"}]}])
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [
+        {"id": "I_7", "content": {"number": 7, "state": "OPEN"},
+         "status": "Ready"}])
+    monkeypatch.setattr(sync, "run_json", lambda args: {"data": {}})
+    landed, lost = sync.push(config, kept)
+    # The good write landed; the impossible one was rejected rather than
+    # raising, so the queue is empty and the loss is on the record.
+    assert (landed, lost) == (1, 1)
+    assert kept.pending() == []
+    rejected = kept.rejected()
+    assert len(rejected) == 1
+    assert rejected[0].write.field == "ghost"
+    assert "no field `ghost`" in rejected[0].reason
+
+
+def test_an_ordinary_push_asks_for_no_extra_field_read(tmp_path, monkeypatch):
+    """The lookup is the exception, not a cost added to every push."""
+    from boardkit import sync
+
+    config, kept = pushable(
+        tmp_path, (ProjectField(name="status", id="F_S",
+                                option_ids={"Ready": "O_R", "Done": "O_D"}),),
+        (ProjectItem(number=7, id="I_7", fields={"status": "Ready"}),))
+    kept.queue("7", "status", "Done")
+
+    def refuse(config, number):
+        raise AssertionError("fields were re-read for a push that did not need it")
+
+    monkeypatch.setattr(sync, "fetch_fields", refuse)
+    monkeypatch.setattr(sync, "fetch_some", lambda config, ids: [
+        {"id": "I_7", "content": {"number": 7, "state": "OPEN"},
+         "status": "Ready"}])
+    monkeypatch.setattr(sync, "run_json", lambda args: {"data": {}})
+    assert sync.push(config, kept) == (1, 0)

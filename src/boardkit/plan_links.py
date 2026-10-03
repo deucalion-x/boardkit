@@ -11,7 +11,7 @@ import re
 
 from . import issue_mirror
 from .config import Config
-from .gh import gh, gh_json, git, git_ok
+from .gh import gh, git, git_ok
 
 
 def patterns(config: Config) -> tuple[re.Pattern, re.Pattern, re.Pattern, str]:
@@ -31,8 +31,7 @@ def patterns(config: Config) -> tuple[re.Pattern, re.Pattern, re.Pattern, str]:
 
 
 def issues(config: Config) -> list[dict]:
-    return gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                   "--limit", str(config.page_size), "--json", "number,body")
+    return issue_mirror.open_issues(config, "number,body")
 
 
 def sha_for(path: str, config: Config) -> str | None:

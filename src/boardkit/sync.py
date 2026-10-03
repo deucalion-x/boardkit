@@ -606,6 +606,33 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
     return snapshot.model_copy(update={"items": items})
 
 
+def unresolved(snapshot: Snapshot, writes: list[Write]) -> list[Write]:
+    """Writes whose target field the snapshot cannot name an id for."""
+    return [write for write in writes
+            if (field := snapshot.field(write.field)) is None or not field.id]
+
+
+def with_fields(config: Config, store: Store, writes: list[Write]) -> None:
+    """Re-read field definitions if some write targets a field without an id.
+
+    `check` deliberately lets a write to an unknown field be queued: boards
+    are edited in the browser, so a field the snapshot has not seen may well
+    exist, and only GitHub can say. Honouring that means asking. Without it
+    the write reached `apply_all`, which has no id to send and raises — and
+    because it raises before the document is built, one such write took the
+    whole push down with it, stranding every other queued change.
+
+    Only when some write needs it, and only the fields: items are re-read
+    separately, and an ordinary push asks for nothing extra here.
+    """
+    snapshot = store.state()
+    if not unresolved(snapshot, writes):
+        return
+    fields = parse_fields(fetch_fields(config, number(config, store)), config)
+    if fields:
+        store.save_state(snapshot.model_copy(update={"fields": fields}))
+
+
 def refreshed(config: Config, store: Store, writes: list[Write]) -> Snapshot:
     """The snapshot with current values for the items about to be written.
 
@@ -658,8 +685,17 @@ def push(config: Config, store: Store) -> tuple[int, int]:
     writes = store.pending()
     if not writes:
         return 0, 0
+    with_fields(config, store, writes)
     remote = refreshed(config, store, writes)
     applies, lost = plan(writes, remote)
+    # A field GitHub turned out not to have after all. `apply_all` would raise
+    # on it, and raises before the document is built, so one of these used to
+    # strand every other queued write. Rejecting it clears the queue and leaves
+    # the change recorded for whoever has to re-decide it.
+    missing = {write.id for write in unresolved(remote, applies)}
+    lost += [(write, "", f"the board has no field `{write.field}`")
+             for write in applies if write.id in missing]
+    applies = [write for write in applies if write.id not in missing]
     # Rejections are written before the queue is cleared, so a crash between
     # them repeats work rather than losing it, and recording one twice is a
     # no-op.

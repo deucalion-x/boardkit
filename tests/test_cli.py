@@ -213,3 +213,31 @@ def test_a_field_can_be_cleared(seeded, monkeypatch, capsys):
     monkeypatch.setattr(sync, "push_now", lambda config, store: (1, 0, ""))
     assert cli.main(["set", "7", "workstream", ""]) == 0
     assert "workstream = " in capsys.readouterr().out
+
+
+def test_an_item_still_reads_when_github_cannot_be_reached(seeded, monkeypatch,
+                                                           capsys):
+    """`board item` is the one read that needs GitHub, for the child list only.
+    It used to print the whole item and then die on that footnote — so the
+    offline test above had to use a draft to dodge it.
+    """
+    from boardkit import board as board_module
+
+    def offline(number, config):
+        raise gh.Unreachable("GitHub could not be reached: no such host")
+
+    monkeypatch.setattr(board_module, "children", offline)
+    assert cli.main(["item", "7"]) == 0
+    printed = capsys.readouterr().out
+    assert "Corridor" in printed                  # the item answered locally
+    assert "children: not listed" in printed      # and said what it could not do
+
+
+def test_an_item_that_can_reach_github_still_lists_its_children(seeded,
+                                                                monkeypatch,
+                                                                capsys):
+    from boardkit import board as board_module
+
+    monkeypatch.setattr(board_module, "children", lambda number, config: [8])
+    assert cli.main(["item", "7"]) == 0
+    assert "children:" in capsys.readouterr().out

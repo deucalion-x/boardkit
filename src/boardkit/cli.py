@@ -3,7 +3,9 @@
 Reads answer from the local store; only the sync verbs touch GitHub.
 
   board                      every open item, by status
-  board item <n>             one item with its text and children
+  board item <n>             one item with its text and children (the child
+                             list is the one read that needs GitHub; it is
+                             skipped, not fatal, when it cannot be reached)
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
   board views                the saved tabs the board has
@@ -34,7 +36,7 @@ import sys
 from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync, trail
 from . import board as board_module
 from .config import load
-from .gh import BoardError
+from .gh import BoardError, RateLimited, Unreachable
 from .store import Store, Write
 
 BOARD_COMMANDS = {"list", "item", "find", "json", "views"}
@@ -150,9 +152,20 @@ def dispatch(command: str, args: list[str]) -> int:
             print()
         # Parent links are not in the snapshot, so children cost a call. A
         # draft cannot have any: nothing can name it as a parent.
-        kids = ([] if found is None or found.draft else
-                [index[str(n)] for n in board_module.children(found.number, config)
-                 if str(n) in index])
+        #
+        # Being unable to make that call is not a failure of this command. The
+        # item, its text and its fields have already printed from the snapshot,
+        # which is what `board item` promises; the children are the one part
+        # that was never local. Raising here printed the whole answer and then
+        # died on the footnote.
+        kids = []
+        if found is not None and not found.draft:
+            try:
+                kids = [index[str(n)] for n
+                        in board_module.children(found.number, config)
+                        if str(n) in index]
+            except (Unreachable, RateLimited) as why:
+                print(f"  children: not listed ({why.__class__.__name__.lower()})")
         if kids:
             print("  children:")
             board_module.show(kids, view)

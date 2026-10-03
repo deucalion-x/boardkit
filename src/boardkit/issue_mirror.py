@@ -21,9 +21,32 @@ BANNER = (
 )
 
 
-def render(config: Config) -> str:
+# How many open issues these two commands will look at. Not `page_size`, which
+# is a per-request page size for the Project API and tops out at GitHub's own
+# ceiling of 100; `gh issue list --limit` is a *total*, paged internally. The
+# two were the same number and that silently made "every open issue" mean "the
+# first hundred".
+ISSUE_LIMIT = 1000
+
+
+def open_issues(config: Config, fields: str) -> list[dict]:
+    """Every open issue in the repo, or as many as one listing will hold.
+
+    Truncation is reported rather than passed off as the whole list, on the
+    same grounds as the pageInfo warnings in `sync`: a caller that cannot tell
+    a short list from a cut one will read the cut one as complete, and both
+    callers here claim to cover every open issue.
+    """
     issues = gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                     "--limit", str(config.page_size), "--json", "number,title,body,labels")
+                     "--limit", str(ISSUE_LIMIT), "--json", fields)
+    if len(issues) >= ISSUE_LIMIT:
+        print(f"warning: stopped at {ISSUE_LIMIT} open issues; {config.repo} has "
+              f"more, and they were not looked at")
+    return issues
+
+
+def render(config: Config) -> str:
+    issues = open_issues(config, "number,title,body,labels")
     issues.sort(key=lambda issue: issue["number"])
     # Markdown, one line per line of body, so a reworded sentence shows up as a
     # one-line diff instead of one enormous escaped string.

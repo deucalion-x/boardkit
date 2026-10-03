@@ -99,3 +99,49 @@ def test_every_external_process_carries_a_timeout(monkeypatch):
     gh.probe(["git", "--version"])
     gh.git_ok("--version")
     assert seen == [gh.TIMEOUT] * 3 and all(seen)
+
+
+def timing_out(args, **kwargs):
+    raise subprocess.TimeoutExpired(args, kwargs.get("timeout"))
+
+
+def test_a_wedged_process_becomes_advice_rather_than_a_traceback(monkeypatch):
+    """The timeout existed; nothing caught what it raises. So the one failure
+    the timeout was added to handle was also the only one that printed a
+    traceback instead of a message."""
+    from boardkit import gh
+
+    monkeypatch.setattr(subprocess, "run", timing_out)
+    with pytest.raises(gh.Unreachable) as refused:
+        gh.once(["gh", "--version"])
+    assert str(gh.TIMEOUT) in str(refused.value)
+
+
+def test_a_timeout_is_unreachable_and_not_a_plain_failure(monkeypatch):
+    """Unreachable is what the callers already treat as "later": `push_now`
+    reports offline and keeps the queue, rather than reporting an error."""
+    from boardkit import gh
+
+    monkeypatch.setattr(subprocess, "run", timing_out)
+    with pytest.raises(gh.Unreachable):
+        gh.run(["gh", "--version"])
+
+
+def test_a_probe_that_never_returns_answers_no(monkeypatch):
+    """`probe` and `git_ok` document failure as an answer, so a timeout is one
+    too — raising out of them would be a different contract."""
+    from boardkit import gh
+
+    monkeypatch.setattr(subprocess, "run", timing_out)
+    answered, said = gh.probe(["gh", "auth", "status"])
+    assert answered is False and str(gh.TIMEOUT) in said
+    assert gh.git_ok("--version") is False
+
+
+def test_a_timed_out_budget_probe_does_not_replace_the_real_failure(monkeypatch):
+    """`budget` decorates another failure's message. Letting its own timeout
+    escape would report a timeout where GitHub had actually said something."""
+    from boardkit import gh
+
+    monkeypatch.setattr(subprocess, "run", timing_out)
+    assert gh.budget() is None
