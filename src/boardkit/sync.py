@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from .board import MISSING, normalize
 from .config import Config, DataType, ProjectField
-from .gh import BoardError, RateLimited, Unreachable, gh_json, run_json
+from .gh import BoardError, RateLimited, Unreachable, gh_json, quoted, run_json
 from .store import Snapshot, Store, Write, now
 from .trail import note
 
@@ -145,7 +145,8 @@ def fetch_board(config: Config, number: str) -> dict:
     kind = "organization" if config.owner_type == "org" else "user"
     head = (
         "fragment fieldName on ProjectV2FieldCommon { name } "
-        f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
+        f"{{ {kind}(login: {quoted(config.owner)}) "
+        f"{{ projectV2(number: {number}) {{ "
         "id "
         # Names only: enough to tell a declared tab that is gone from one
         # that is there, which is all `apply` would act on.
@@ -162,7 +163,7 @@ def fetch_board(config: Config, number: str) -> dict:
     while field_page.get("hasNextPage"):
         more = run_json(["gh", "api", "graphql", "-f",
                          ("query="
-                          f'{{ {kind}(login: "{config.owner}") '
+                          f"{{ {kind}(login: {quoted(config.owner)}) "
                           f"{{ projectV2(number: {number}) {{ "
                           f"{fields_block(config, field_page['endCursor'])}}} }} }}")])
         block = more["data"][kind]["projectV2"]["fields"]
@@ -175,7 +176,7 @@ def fetch_board(config: Config, number: str) -> dict:
         more = run_json(["gh", "api", "graphql", "-f",
                          ("query="
                           "fragment fieldName on ProjectV2FieldCommon { name } "
-                          f'{{ {kind}(login: "{config.owner}") '
+                          f"{{ {kind}(login: {quoted(config.owner)}) "
                           f"{{ projectV2(number: {number}) {{ "
                           f"{items_block(config, page['endCursor'])}}} }} }}")])
         block = more["data"][kind]["projectV2"]["items"]
@@ -469,7 +470,7 @@ def multi_select_query(write: Write, snapshot: Snapshot) -> str:
         raise BoardError(f"#{write.ref} is not in the snapshot; pull first")
     if field is None or not field.id:
         raise BoardError(f"field `{write.field}` has no id in the snapshot; pull first")
-    ids = ", ".join(f'"{option}"' for option in chosen(write, field))
+    ids = ", ".join(quoted(option) for option in chosen(write, field))
     return ("mutation { updateProjectV2ItemFieldValue(input: {"
             f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
             f' fieldId: "{field.id}", value: {{ multiSelectOptionIds: [{ids}] }}'
@@ -485,15 +486,14 @@ def value_literal(write: Write, field: ProjectField) -> str:
                 raise BoardError(
                     f"`{write.field}` takes one value, not {len(ids)}")
             return f'{{singleSelectOptionId: "{ids[0]}"}}'
-        listed = ", ".join(f'"{identity}"' for identity in ids)
+        listed = ", ".join(quoted(identity) for identity in ids)
         return f"{{multiSelectOptionIds: [{listed}]}}"
     if field.data_type == "NUMBER":
         return f"{{number: {float(write.value)}}}"
     if field.data_type == "DATE":
-        return f'{{date: "{write.value}"}}'
+        return f"{{date: {quoted(write.value)}}}"
     if field.data_type == "TEXT":
-        escaped = write.value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'{{text: "{escaped}"}}'
+        return f"{{text: {quoted(write.value)}}}"
     raise BoardError(f"boardkit cannot write a {field.data_type} field yet")
 
 

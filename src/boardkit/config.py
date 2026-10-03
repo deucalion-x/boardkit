@@ -296,7 +296,21 @@ class Config(BaseModel):
         return f"https://github.com/{kind}/{self.owner}/projects/{self.project}"
 
     def path(self, relative: str) -> pathlib.Path:
-        return self.root / relative
+        """A configured path, resolved and confined to the repository.
+
+        `mirror_path` and its kind come from a file in the repo, so they are
+        as trusted as the repo is — but a `../` in one would have boardkit
+        write outside it, which no setting here is for. Refused rather than
+        clipped: a path that does not mean what it says should be corrected,
+        not silently reinterpreted.
+        """
+        root = self.root.resolve()
+        full = (root / relative).resolve()
+        if full != root and root not in full.parents:
+            raise BoardError(
+                f"{relative!r} resolves outside the repository ({full}); "
+                f"paths in {self.where} have to stay under {root}")
+        return full
 
     def require(self, setting: str) -> str:
         value = getattr(self, setting)
