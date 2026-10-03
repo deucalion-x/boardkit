@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Query a GitHub Project board, and keep its issues reviewable from git."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
-dependencies = []
+dependencies = ["pydantic>=2.7,<3.0"]
 
 [project.scripts]
 board = "boardkit.cli:main"
@@ -18,6 +18,27 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/boardkit"]
+
+# boardkit tracks its own work on a board boardkit created. There is no
+# `project` number here on purpose: it is resolved from `project_name` and
+# remembered in `.boardkit/state.json`, so nothing hand-maintained holds a
+# value only GitHub can produce. Set `project` only to pin an ambiguous title.
+[tool.boardkit]
+owner = "agerardin"
+owner_type = "user"
+repo = "agerardin/boardkit"
+project_name = "boardkit"
+status_order = ["Ready", "In progress", "Blocked", "Inbox", "Done"]
+group_by = "area"
+skill_name = "boardkit-board"
+
+[tool.boardkit.fields.area]
+data_type = "SINGLE_SELECT"
+options = ["sync", "auth", "admin", "config", "docs", "tests"]
+
+[tool.boardkit.fields.effort]
+data_type = "SINGLE_SELECT"
+options = ["S", "M", "L"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
