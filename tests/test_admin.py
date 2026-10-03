@@ -136,3 +136,34 @@ def test_a_count_of_iterations_becomes_consecutive_dated_periods():
     assert 'startDate: "2026-10-05", duration: 7, title: "Sprint 1"' in text
     assert 'startDate: "2026-10-12", duration: 7, title: "Sprint 2"' in text
     assert 'startDate: "2026-10-19", duration: 7, title: "Sprint 3"' in text
+
+
+def test_a_view_names_its_visible_fields_by_id():
+    from boardkit.admin import make_view
+    from boardkit.config import View
+    sent = []
+
+    import boardkit.admin as admin
+    original = admin.run_json
+    admin.run_json = lambda args: (sent.append(args[-1]), {
+        "data": {"createProjectV2View": {"projectV2View": {"id": "V_1"}}}})[1]
+    try:
+        made = make_view("PVT_1", View(name="Board", layout="BOARD",
+                                       fields=("status", "area")),
+                         {"status": "F_S", "area": "F_A", "effort": "F_E"})
+    finally:
+        admin.run_json = original
+    assert made == "V_1"
+    assert "layout: BOARD_LAYOUT" in sent[0]
+    assert 'visibleFieldIds: ["F_S", "F_A"]' in sent[0]   # not F_E
+    assert 'name: "Board"' in sent[0]
+
+
+def test_a_view_that_already_exists_is_left_alone(monkeypatch):
+    from boardkit import admin
+    from boardkit.config import View
+    config = CONFIG.model_copy(update={"views": (View(name="Board"),)})
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {"Board": "V_1"})
+    monkeypatch.setattr(admin, "make_view",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("made again")))
+    admin.apply_views(config, "5", "PVT_1", ())

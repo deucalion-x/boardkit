@@ -221,7 +221,11 @@ def apply(config: Config, dry: bool = False) -> int:
         for field in missing:
             detail = f" ({', '.join(field.options)})" if field.options else ""
             print(f"  would add {field.display} [{field.data_type}]{detail}")
-        if not missing:
+        standing = existing_views(config, number) if number else {}
+        for view in config.views:
+            if view.name not in standing:
+                print(f"  would add view {view.name} [{view.layout}]")
+        if not missing and all(v.name in standing for v in config.views):
             print("  nothing missing.")
         return 0
 
@@ -256,7 +260,68 @@ def apply(config: Config, dry: bool = False) -> int:
 
     if not missing:
         print("  every configured field already exists.")
+    apply_views(config, number, project_id or (found[0] if found else ""),
+                parse_fields(fetch_fields(config, number), config))
     return 0
+
+
+def existing_views(config: Config, number: str) -> dict[str, str]:
+    """Saved tabs by name, so `apply` adds what is missing and nothing else."""
+    kind = "organization" if config.owner_type == "org" else "user"
+    query = (f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) '
+             f"{{ views(first: {config.page_size}) {{ nodes {{ id name }} }} }} }} }}")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    nodes = payload["data"][kind]["projectV2"]["views"]["nodes"]
+    return {node["name"]: node["id"] for node in nodes if node}
+
+
+def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
+    """Create one saved tab and return its id.
+
+    `createProjectV2View` takes the name, the layout and which fields are
+    visible. It does not take a filter — that is a second mutation — and it
+    takes no grouping at all, which stays a thing to set in the web UI.
+    """
+    visible = ""
+    chosen = [field_ids[name] for name in view.fields if name in field_ids]
+    if chosen:
+        listed = ", ".join(f'"{identity}"' for identity in chosen)
+        visible = f", configuration: {{visibleFieldIds: [{listed}]}}"
+    query = ("mutation { createProjectV2View(input: {"
+             f' projectId: "{project_id}", name: "{view.name}",'
+             f" layout: {view.layout}_LAYOUT{visible}"
+             " }) { projectV2View { id } } }")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    return payload["data"]["createProjectV2View"]["projectV2View"]["id"]
+
+
+def filter_view(view_id: str, expression: str) -> None:
+    query = ("mutation { updateProjectV2View(input: {"
+             f' viewId: "{view_id}", filter: "{expression}"'
+             " }) { projectV2View { id } } }")
+    run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+
+
+def apply_views(config: Config, number: str, project_id: str,
+                fields: tuple[ProjectField, ...]) -> None:
+    """Create the views config declares and does not already have.
+
+    Matched by name and never deleted, like fields: a view someone made in the
+    browser is not boardkit's to remove.
+    """
+    if not config.views:
+        return
+    standing = existing_views(config, number)
+    field_ids = {field.name: field.id for field in fields if field.id}
+    for view in config.views:
+        if view.name in standing:
+            continue
+        made = make_view(project_id, view, field_ids)
+        if view.filter:
+            filter_view(made, view.filter)
+        print(f"  added view {view.name} [{view.layout}]")
+        note("created_view", name=view.name, layout=view.layout,
+             filter=view.filter or None)
 
 
 def link(config: Config) -> int:

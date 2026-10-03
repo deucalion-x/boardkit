@@ -10,3 +10,18 @@
 owner = "agerardin"
 repo = "agerardin/boardkit"
 project_name = "boardkit"
+
+# Saved tabs. `admin apply` creates one that is missing and never removes one;
+# a view made in the browser is not boardkit's to delete. Grouping is not in
+# the API, so a board view groups by Status on its own and anything else is a
+# UI setting.
+[[views]]
+name = "Open work"
+layout = "BOARD"
+fields = ["status", "area", "effort"]
+filter = "-status:Done"
+
+[[views]]
+name = "Everything"
+layout = "TABLE"
+fields = ["status", "area", "effort", "sprint"]

@@ -81,6 +81,32 @@ class ProjectField(BaseModel):
         return self.title or self.name.replace("_", " ").title()
 
 
+Layout = Literal["BOARD", "TABLE", "ROADMAP"]
+
+
+class View(BaseModel):
+    """A saved tab on the board.
+
+    `createProjectV2View` takes a name, a layout and which fields are visible;
+    `updateProjectV2View` adds a filter. Neither takes a grouping, so which
+    field a board view groups by is still a thing to set in the web UI — a
+    board layout groups by Status on its own, which covers the usual case.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    layout: Layout = "TABLE"
+    # Field names as config spells them; resolved to ids when the view is made.
+    fields: tuple[str, ...] = ()
+    # GitHub's Projects filter syntax, e.g. "-status:Done".
+    filter: str = ""
+
+    @field_validator("layout", mode="before")
+    @classmethod
+    def _accept_either_case(cls, value):
+        return value.upper() if isinstance(value, str) else value
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, coerce_numbers_to_str=True)
 
@@ -103,6 +129,9 @@ class Config(BaseModel):
     # first groups the rollup unless `group_by` says otherwise.
     fields: tuple[ProjectField, ...] = ()
     group_by: str = ""
+    # Saved tabs. Declared for the same reason a field is: `admin apply` has to
+    # create them, and nothing else needs them stated.
+    views: tuple[View, ...] = ()
     # `mirror` and `links` are optional; a repo may want the board reader alone.
     # Records per request, not a cap: a pull pages until the board is
     # exhausted. 100 is GitHub's own ceiling — `first: 150` is refused with
@@ -115,6 +144,14 @@ class Config(BaseModel):
     skill_name: str = "github-board"
     skill_notes: str = ""
     project_url: str = ""
+
+    @field_validator("views", mode="before")
+    @classmethod
+    def _views_either_form(cls, value):
+        """A table per view, or a bare list of names taking the defaults."""
+        if isinstance(value, dict):
+            return [{"name": name, **spec} for name, spec in value.items()]
+        return [{"name": item} if isinstance(item, str) else item for item in value]
 
     @field_validator("fields", mode="before")
     @classmethod
