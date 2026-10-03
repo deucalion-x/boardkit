@@ -28,3 +28,19 @@ filter = "-status:Done"
 name = "Everything"
 layout = "TABLE"
 fields = ["status", "area", "effort", "sprint"]
+
+# To create the board rather than reach one that exists, uncomment and edit,
+# then run `board admin apply`. Everything under [admin] is read by that verb
+# alone; a board that already exists needs none of it.
+# [admin]
+# status_order = ["Inbox", "Todo", "In progress", "Done"]
+#
+# [admin.fields.area]
+# data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
+# options = ["Maps", "Planning", "Infra"]
+#
+# [[admin.views]]
+# name = "Open work"
+# layout = "BOARD"
+# fields = ["status", "area"]
+# filter = "-status:Done"
