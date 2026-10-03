@@ -3,8 +3,6 @@
 Reads answer from the local store; only the sync verbs touch GitHub.
 
   board                      every open item, by status
-  board ready                startable items only
-  board group <value>        items carrying that field value (alias: ws)
   board item <n>             one item with its text and children
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
@@ -35,11 +33,11 @@ import sys
 from . import board as board_module
 from . import trail
 from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync
-from .config import READY_STATUS, load
+from .config import load
 from .gh import BoardError
 from .store import Store
 
-BOARD_COMMANDS = {"list", "ready", "group", "ws", "item", "find", "json"}
+BOARD_COMMANDS = {"list", "item", "find", "json"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
@@ -127,20 +125,6 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "list":
         board_module.show(items, view)
         report_queue(store)
-    elif command == "ready":
-        # Startable means the Todo column with nothing in the way: a blocked
-        # card stays where it is, so the column alone does not say it can move.
-        board_module.show(
-            [i for i in items
-             if i.field(view.status_field).lower() == READY_STATUS.lower()
-             and i.field(config.blocked_field) in ("", "-")],
-            view)
-    elif command in {"group", "ws"}:
-        # Matched against every field, because a value like `auth` or `L` says
-        # which field it belongs to without being told.
-        name = " ".join(args).lower()
-        board_module.show([i for i in items if any(
-            name in i.field(field).lower() for field in view.names)], view)
     elif command == "item":
         ref = args[0].lstrip("#")
         board_module.show([index[ref]] if ref in index else [], view)

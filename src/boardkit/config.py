@@ -37,8 +37,6 @@ SKILL_NAME = "board"
 # not one of these.
 # GitHub carries the description on the option itself, so the meaning is
 # visible on the board.
-# The one column that means startable, in the model every board gets.
-READY_STATUS = "Todo"
 # Being blocked is not a stage: it can happen at any of them, and the card
 # does not move when it does. So it is a field holding why, empty when the
 # card can move, and `board ready` leaves out whatever carries one.

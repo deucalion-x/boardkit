@@ -70,12 +70,6 @@ def test_the_listing_answers_from_the_snapshot(seeded, capsys):
     assert "Maps" in out and "#7" in out
 
 
-def test_ready_is_the_startable_column_of_the_one_model(seeded, capsys):
-    assert cli.main(["ready"]) == 0
-    out = capsys.readouterr().out
-    assert "#7" in out and "#8" not in out
-
-
 def test_json_stays_flat_for_a_jq_pipeline(seeded, capsys):
     assert cli.main(["json"]) == 0
     rows = json.loads(capsys.readouterr().out)
@@ -182,15 +176,3 @@ def test_an_existing_board_gets_the_columns_commented_out(tmp_path):
     settings = {"owner": "octo", "repo": "octo/places", "project_name": "Places"}
     (tmp_path / "boardkit.toml").write_text(rendered(settings, exists=True), encoding="utf-8")
     assert load(tmp_path).status_order == ()
-
-
-
-
-def test_ready_leaves_out_what_is_blocked(seeded, capsys):
-    """Blocked is not a column: the card stays in Todo and still cannot move."""
-    state = seeded.state()
-    stuck = state.items[0].model_copy(update={
-        "fields": {**state.items[0].fields, "blocked": "waiting on the API key"}})
-    seeded.save_state(state.model_copy(update={"items": (stuck, state.items[1])}))
-    assert cli.main(["ready"]) == 0
-    assert "No matching items." in capsys.readouterr().out

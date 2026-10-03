@@ -21,8 +21,7 @@ your reasoning.
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| `board ready` | What is actually startable now. |
-| `board group <value>` | Items carrying that field value. |
+| | Startable work is the `Todo` column with nothing in `blocked`. |
 | `board item <ref>` | One item: its fields, labels, full text, and children. |
 | `board find <terms>` | Titles, bodies and labels containing every word. |
 | `board json` | Every item as one row, for jq or python. |
