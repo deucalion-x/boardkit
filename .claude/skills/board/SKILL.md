@@ -19,9 +19,10 @@ not yet refined enough to start. Ask the board.
 `board` answers from a snapshot on disk. No network, no rate limit, no reason
 to ration questions. The one exception is the child list in `board item`,
 which has to ask GitHub and is skipped with a note when it cannot — the rest
-of the item still answers from disk. Calling `gh project` or `gh api` yourself is a wrong
-answer here: it costs a round trip and sees a different copy than the rest of
-your reasoning.
+of the item still answers from disk.
+
+Calling `gh project` or `gh api` yourself is a wrong answer here: it costs a
+round trip and sees a different copy than the rest of your reasoning.
 
 | Command | Answers |
 |---|---|
