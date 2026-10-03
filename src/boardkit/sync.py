@@ -87,19 +87,30 @@ VALUE_FRAGMENTS = """
 """
 
 
-def fetch_items(config: Config, number: str) -> list[dict]:
-    """The board's items, flattened to the shape `normalize` already reads.
+def fetch_board(config: Config, number: str) -> dict:
+    """The project, its fields and its items — in one request.
 
-    Through GraphQL rather than `gh project item-list` for the same reason as
-    the fields: `gh` cannot serialise a multi-select, so its value is simply
-    absent from the output and every item looks unset. The same query carries
-    the issue's open/closed state, which `item-list` does not — that used to
-    cost a second call to `gh issue list` on every pull.
+    Through GraphQL rather than `gh project ...` because `gh` cannot serialise
+    a multi-select: both the field and every value of it come back empty, so
+    the field is invisible and any write to it fails for want of an id. The
+    same query carries each issue's open/closed state and its body, neither of
+    which `item-list` returns, and the project's own node id, which used to be
+    a third call to `gh project view`.
+
+    One request rather than three because they are one node. The saving is
+    small — a query costs at least a point whatever it asks for — but the
+    latency is three round trips becoming one.
     """
     kind = "organization" if config.owner_type == "org" else "user"
     query = (
         "fragment fieldName on ProjectV2FieldCommon { name } "
         f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
+        "id "
+        f"fields(first: {config.field_limit}) {{ nodes {{ "
+        "... on ProjectV2FieldCommon { id name dataType } "
+        "... on ProjectV2SingleSelectField { options { id name } } "
+        "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
+        "} } "
         f"items(first: {config.item_limit}) {{ nodes {{ id type "
         # `body` is a scalar on a node already being fetched, so it costs no
         # points — only bytes. Worth it: deciding what to work on means reading
@@ -109,8 +120,12 @@ def fetch_items(config: Config, number: str) -> list[dict]:
         f"fieldValues(first: {config.field_limit}) {{ nodes {{{VALUE_FRAGMENTS}}} }} "
         "} } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
-    nodes = payload["data"][kind]["projectV2"]["items"]["nodes"]
-    return [flatten(node) for node in nodes if node]
+    project = payload["data"][kind]["projectV2"]
+    return {
+        "id": project.get("id", ""),
+        "fields": [node for node in project["fields"]["nodes"] if node],
+        "items": [flatten(node) for node in project["items"]["nodes"] if node],
+    }
 
 
 def flatten(node: dict) -> dict:
@@ -138,25 +153,8 @@ def value_of(value: dict):
 
 
 def fetch_fields(config: Config, number: str) -> list[dict]:
-    """The project's fields, read through GraphQL rather than `gh`.
-
-    `gh project field-list` cannot serialise a multi-select field: it reports
-    one as `{"id": "", "name": "", "type": "ProjectV2MultiSelectField"}`, so
-    the field is invisible and any write to it fails for want of an id. The
-    same query also carries `dataType` outright, which `field-list` leaves to
-    be guessed from a GraphQL type name.
-    """
-    kind = "organization" if config.owner_type == "org" else "user"
-    query = (
-        f'{{ {kind}(login: "{config.owner}") {{ projectV2(number: {number}) {{ '
-        f"fields(first: {config.field_limit}) {{ nodes {{ "
-        "... on ProjectV2FieldCommon { id name dataType } "
-        "... on ProjectV2SingleSelectField { options { id name } } "
-        "... on ProjectV2MultiSelectField { multiSelectOptions { id name } } "
-        "} } } } }")
-    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
-    nodes = payload["data"][kind]["projectV2"]["fields"]["nodes"]
-    return [node for node in nodes if node]
+    """Just the fields, for `admin apply`, which asks before any item matters."""
+    return fetch_board(config, number)["fields"]
 
 
 def find_project(payload: list[dict], config: Config) -> str:
@@ -196,19 +194,18 @@ def number(config: Config, store: Store) -> str:
 def pull(config: Config, store: Store) -> Snapshot:
     """Replace the snapshot with what GitHub currently holds."""
     target = number(config, store)
-    project = gh_json("project", "view", target, "--owner", config.owner,
-                      "--format", "json")
-    rows = fetch_items(config, target)
+    board = fetch_board(config, target)
+    rows = board["items"]
     # Fields are parsed first: when config declares none, they are what says
     # which keys an item carries.
-    fields = parse_fields(fetch_fields(config, target), config)
+    fields = parse_fields(board["fields"], config)
     names = config.synced_names or tuple(field.name for field in fields)
-    # The state arrives with each item now, so a closed one is dropped without
-    # the separate `gh issue list` call this used to need.
+    # The state arrives with each item, so a closed one is dropped without the
+    # separate `gh issue list` call this used to need.
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
     snapshot = Snapshot(
-        project_id=project.get("id", ""),
+        project_id=board["id"],
         project_number=target,
         synced_at=now(),
         fields=fields,
