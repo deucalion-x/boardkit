@@ -198,3 +198,18 @@ def test_an_item_with_no_description_says_so(seeded, capsys):
     A draft, because looking up an issue's children needs the network."""
     assert cli.main(["item", "~I_D1"]) == 0
     assert "(no description)" in capsys.readouterr().out
+
+
+def test_a_refused_value_never_reaches_the_queue(seeded, capsys):
+    """It would stay there forever: a refusal on push is not a rejection, so
+    `board rejected --clear` does not touch it and every later push retries."""
+    assert cli.main(["set", "7", "status", "Nonsense"]) == 1
+    assert "not an option" in capsys.readouterr().err
+    assert seeded.pending() == []
+
+
+def test_a_field_can_be_cleared(seeded, monkeypatch, capsys):
+    from boardkit import sync
+    monkeypatch.setattr(sync, "push_now", lambda config, store: (1, 0, ""))
+    assert cli.main(["set", "7", "workstream", ""]) == 0
+    assert "workstream = " in capsys.readouterr().out
