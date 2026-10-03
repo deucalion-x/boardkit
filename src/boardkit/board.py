@@ -108,14 +108,6 @@ class ProjectItem(BaseModel):
         return row
 
 
-def open_numbers(config: Config) -> set[int]:
-    """Issue numbers still open. `gh project item-list` does not carry state,
-    so a closed issue stays on the board and would be counted as work."""
-    issues = gh_json("issue", "list", "--repo", config.repo, "--state", "open",
-                     "--limit", str(config.page_size), "--json", "number")
-    return {issue["number"] for issue in issues}
-
-
 def named(connection, key: str) -> tuple[str, ...]:
     """The names out of a GraphQL connection, which arrives as {"nodes": [...]}."""
     nodes = (connection or {}).get("nodes") or []
@@ -259,60 +251,3 @@ def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
     return found
 
 
-def rank(status: str, view: Shape) -> int:
-    order = view.columns
-    return order.index(status) if status in order else len(order)
-
-
-def show(items: list[ProjectItem], view: Shape) -> None:
-    if not items:
-        # The listing is the only place the board's shape appears, so an empty
-        # one used to say nothing at all — leaving a first card to be filed
-        # against guessed column and field names.
-        print("No matching items.")
-        if view.columns:
-            print(f"  columns: {', '.join(view.columns)}")
-        if view.names:
-            print(f"  fields:  {', '.join(view.names)}")
-        return
-    extras = [f for f in view.names if f != view.status_field]
-    widths = {field: max(len(field), *(len(i.field(field)) for i in items))
-              for field in extras}
-    names = max((len(item.ref) for item in items), default=4)
-    # Named, because the extra columns are a board's own fields: without a
-    # header the third column of `Core  -` is anybody's guess.
-    if extras:
-        heads = "  ".join(f"{field:{widths[field]}}" for field in extras)
-        print(f'{view.status_field:12} {"ref":<{names + 1}} {"title":50} {heads}')
-    for item in sorted(items, key=lambda i: (rank(i.field(view.status_field), view),
-                                             i.number, i.ref)):
-        extra = "  ".join(f'{item.field(f):{widths[f]}}' for f in extras)
-        marker = "" if item.number else " (draft)"
-        print(f'{item.field(view.status_field):12} #{item.ref:<{names}} '
-              f'{item.title[:50]:50} {extra}  {item.url}{marker}')
-
-
-def children(number: int, config: Config) -> list[int]:
-    found = gh_json("issue", "list", "--repo", config.repo,
-                    "--search", f"parent-issue:{config.repo}#{number}",
-                    "--json", "number", "--limit", "50")
-    return [found_item["number"] for found_item in found]
-
-
-def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
-    """Items whose title or body contains every word given.
-
-    Local, because the snapshot carries the text now. It is a substring match
-    and not GitHub's search syntax — `gh issue list --search` is still what
-    answers a question about closed work or history, which the snapshot does
-    not hold.
-    """
-    words = [word.lower() for word in terms.split() if word]
-    if not words:
-        return []
-    found = []
-    for item in items:
-        haystack = f"{item.title}\n{item.body}\n{' '.join(item.labels)}".lower()
-        if all(word in haystack for word in words):
-            found.append(item)
-    return found
