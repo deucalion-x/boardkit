@@ -10,6 +10,8 @@ deletes, so nothing it does touches the real board.
     uv run python scripts/contract.py             # create, exercise, clean up
     uv run python scripts/contract.py --keep      # leave the project for a look
     uv run python scripts/contract.py --no-issue  # drafts only, no repo residue
+    uv run python scripts/contract.py --project 18  # reuse a standing board
+    uv run python scripts/contract.py --seed 20     # stock it with dummy cards
 
 It is deliberately not a pytest test. It needs a token that can create and
 delete projects, it costs rate-limit points, and an unmocked run against a
@@ -31,6 +33,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+
+from boardkit.setup import rendered
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The checkout's own code, not whatever `board` resolves to on PATH — which on
@@ -38,22 +43,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # point of this run is to exercise what is about to be released.
 BOARD = [sys.executable, "-m", "boardkit"]
 
-# One field of every type `board admin apply` can create, named as config
-# spells them. The status field comes from `status_order`, so SINGLE_SELECT is
-# covered twice over — once by the columns and once by `area`, which is the
-# shape a repo actually declares.
-DECLARED = """\
-owner = "{owner}"
-repo = "{repo}"
-project_name = "{title}"
-
-[board]
-status_order = ["Inbox", "Todo", "Done"]
-
+# The canonical starter template supplies the board itself: columns and views.
+# These additional fields make its live acceptance run cover every type
+# `board admin apply` can create. The status field from the template covers
+# SINGLE_SELECT once already; `area` covers its explicit field form too.
+CONTRACT_FIELDS = """\
 [board.fields.area]
 data_type = "SINGLE_SELECT"
 options = [
-    {{ name = "core", description = "the library itself" }},
+    { name = "core", description = "the library itself" },
     "docs",
 ]
 
@@ -72,20 +70,7 @@ data_type = "DATE"
 
 [board.fields.sprint]
 data_type = "ITERATION"
-
-[[board.views]]
-name = "Open work"
-layout = "BOARD"
-fields = ["status", "area"]
-filter = "-status:Done"
 """
-
-# The columns `DECLARED` asks for, and what GitHub seeds a new project with
-# anyway. `Todo` and `Done` are in both, so the run covers an option matched
-# by name and kept, one created, and one the board had that config does not
-# name — which `align` keeps rather than deleting the items in it.
-COLUMNS = ["Inbox", "Todo", "Done"]
-SEEDED = ["Todo", "In Progress", "Done"]
 
 # Field -> the value to write, and the value to expect back. A single select
 # and a multi select are written by option name, the rest by value. The text
@@ -118,13 +103,23 @@ UNSET = "-"
 CLEARABLE = ("note", "size", "due", "area", "tags")
 
 
-def declaration(owner: str, repo: str, title: str) -> str:
-    """The config the throwaway board is built from.
+def declaration(owner: str, repo: str, title: str, project: str = "") -> str:
+    """The canonical starter config, extended only with contract fields.
 
     Pure, so a unit test can parse it and check it still declares one field of
     every creatable type without creating anything.
+
+    `project` names a board that already exists, so a run can be pointed at a
+    standing acceptance board instead of creating another one. It goes in
+    beside the other top-level keys, which in TOML means before `[board]`.
     """
-    return DECLARED.format(owner=owner, repo=repo, title=title)
+    settings = {"owner": owner, "repo": repo, "project_name": title}
+    config = rendered(settings, exists=False) + "\n" + CONTRACT_FIELDS
+    if project:
+        marker = f'project_name = "{title}"'
+        assert marker in config, "the template stopped naming the project"
+        config = config.replace(marker, f'{marker}\nproject = "{project}"', 1)
+    return config
 
 
 class Failed(RuntimeError):
@@ -223,38 +218,56 @@ def check_shape(where: pathlib.Path) -> None:
          "a second `admin apply` finds every field, option and view present")
 
     state = snapshot(where)
+    declaration = tomllib.loads(
+        (where / "boardkit.toml").read_text(encoding="utf-8"))
+    wanted_columns = declaration["board"]["status_order"]
+    declared_views = declaration["board"]["views"]
+    wanted_views = [view["name"] for view in declared_views]
     fields = {field["name"]: field for field in state["fields"]}
     for name in ("status", "area", "tags", "note", "size", "due", "sprint",
                  "blocked"):
         held(name in fields and bool(fields[name]["id"]),
              f"`{name}` exists on the board with an id")
-    # `align` never deletes an option, so a brand-new project keeps the ones
-    # GitHub seeds it with that config does not name — they keep their place
-    # at the end. The declared columns are therefore a prefix of what the
-    # board carries, and asserting equality would assert that boardkit
-    # deletes a column with items potentially sitting in it.
+    # GitHub seeds Todo, In Progress and Done. The template reuses those
+    # options by name (case-insensitively) and adds Inbox and In review, so the
+    # resulting order should exactly match the template without duplicate
+    # spellings.
     columns = list(fields["status"]["options"])
     held(fields["status"]["data_type"] == "SINGLE_SELECT"
-         and columns[:len(COLUMNS)] == COLUMNS,
-         f"the declared columns arrived in order, first: {columns}")
-    held(set(columns) >= set(SEEDED),
-         f"the options GitHub seeded and config does not name are kept, "
-         f"at the end: {columns[len(COLUMNS):]}")
+         and columns == wanted_columns,
+         f"the template columns arrived in order: {columns}")
     held(fields["tags"]["data_type"] == "MULTI_SELECT"
          and len(fields["tags"]["option_ids"]) == 3,
          "the multi select arrived with all three options and their ids")
     held(fields["sprint"]["data_type"] == "ITERATION",
          "the iteration field arrived as an iteration")
-    held("Open work" in state["views"], "the declared view arrived")
+    held(state["views"] == wanted_views,
+         f"only the template views arrived: {wanted_views}")
+    kind = "organization" if declaration.get("owner_type") == "org" else "user"
+    query = (f"{{ {kind}(login: {json.dumps(declaration['owner'])}) "
+             f"{{ projectV2(number: {state['project_number']}) "
+             "{ views(first: 100) { nodes { name layout filter } } } } }")
+    payload = json.loads(gh("api", "graphql", "-f", f"query={query}"))
+    live_views = [(node["name"], node["layout"], node.get("filter") or "")
+                  for node in payload["data"][kind]["projectV2"]["views"]["nodes"]]
+    wanted_live_views = [
+        (view["name"], f"{view.get('layout', 'TABLE').upper()}_LAYOUT",
+         view.get("filter", ""))
+        for view in declared_views]
+    held(live_views == wanted_live_views,
+         f"the template view layouts arrived: {wanted_live_views}")
 
 
-def round_trip(where: pathlib.Path, ref: str, what: str) -> None:
+def round_trip(where: pathlib.Path, ref: str, what: str,
+               skip: tuple[str, ...] = ()) -> None:
     """Write one value of every writable type, then read each one back."""
-    for field, (written, _) in ROUND_TRIP.items():
+    fields = {name: pair for name, pair in ROUND_TRIP.items()
+              if name not in skip}
+    for field, (written, _) in fields.items():
         board(where, "set", ref, field, written)
     board(where, "sync")
     state = snapshot(where)
-    for field, (_, wanted) in ROUND_TRIP.items():
+    for field, (_, wanted) in fields.items():
         found = value(state, ref, field)
         held(found == wanted,
              f"{what} {field} reads back as {wanted!r}"
@@ -262,7 +275,7 @@ def round_trip(where: pathlib.Path, ref: str, what: str) -> None:
     check_queue(where, f"writing every field type on {ref}")
     # Writing the same values again: every one is already true remotely, so
     # `plan` has nothing to send and the queue has to empty all the same.
-    for field, (written, _) in ROUND_TRIP.items():
+    for field, (written, _) in fields.items():
         board(where, "set", ref, field, written)
     check_queue(where, "re-writing values that were already true")
 
@@ -281,6 +294,67 @@ def check_clearing(where: pathlib.Path, ref: str) -> None:
     check_queue(where, "clearing every value")
 
 
+# What a seeded card carries, cycled so the board has variety to look at:
+# every column occupied, both areas, a spread of sizes and some empties.
+SEED_AREAS = ("core", "docs", "")
+SEED_SIZES = ("1", "2", "3", "5", "")
+SEED_TAGS = ("red", "red, blue", "")
+
+
+def seed(where: pathlib.Path, count: int, columns: tuple[str, ...]) -> None:
+    """Fill the board with dummy drafts, spread across every column.
+
+    Drafts rather than issues, so a board stocked for eyeballing leaves no
+    residue in the repository. Drafts are held in the intake column by policy,
+    so each one is moved with `--anyway` — the same documented way through the
+    policy that `check_draft_policy` asserts.
+    """
+    # Every card is created first and the board read once, before a single
+    # field is written. GitHub puts a new draft in its own default column, so
+    # a write decided against a snapshot taken before the card existed is
+    # rejected as a concurrent change — correctly. One sync here is what makes
+    # the writes below decide against what the board actually holds.
+    refs = []
+    for index in range(count):
+        column = columns[index % len(columns)]
+        said = board(where, "add", "--draft",
+                     f"Dummy {index + 1:02d} — {column.lower()} card")
+        ref = next((word for word in said.split()
+                    if word.startswith("~")), "")
+        held(bool(ref), f"dummy {index + 1} is on the board as {ref}")
+        refs.append((ref, column))
+    board(where, "sync")
+    for index, (ref, column) in enumerate(refs):
+        board(where, "set", ref, "status", column, "--anyway")
+        board(where, "set", ref, "area", SEED_AREAS[index % len(SEED_AREAS)])
+        board(where, "set", ref, "size", SEED_SIZES[index % len(SEED_SIZES)])
+        board(where, "set", ref, "tags", SEED_TAGS[index % len(SEED_TAGS)])
+    board(where, "sync")
+    state = snapshot(where)
+    held(len(state["items"]) >= count,
+         f"the board carries the {count} seeded cards")
+    check_queue(where, f"seeding {count} dummy cards")
+
+
+def check_draft_policy(where: pathlib.Path, ref: str) -> None:
+    """A draft stays in the intake column until it is promoted or forced.
+
+    `status` is therefore left out of the draft's round trip and written here
+    instead: once to be refused with the guidance that names `promote`, then
+    with `--anyway`, which is the documented way through. That keeps every
+    writable type covered on the draft and records the policy at the same time.
+    """
+    written, wanted = ROUND_TRIP["status"]
+    said = board(where, "set", ref, "status", written, expect_code=1)
+    held("drafts stay in" in said and "promote" in said,
+         "setting a column on a draft is refused, pointing at `promote`")
+    board(where, "set", ref, "status", written, "--anyway")
+    board(where, "sync")
+    held(value(snapshot(where), ref, "status") == wanted,
+         f"`--anyway` writes the draft's status, which reads back as {wanted!r}")
+    check_queue(where, f"forcing a column onto the draft {ref}")
+
+
 def check_refusal(where: pathlib.Path, ref: str) -> None:
     """Writing the one type boardkit does not write is refused, with a reason.
 
@@ -293,32 +367,58 @@ def check_refusal(where: pathlib.Path, ref: str) -> None:
          f"a write to the {UNWRITABLE} field is refused with a reason")
 
 
-def run(owner: str, repo: str, keep: bool, with_issue: bool) -> int:
+def titled(owner: str, number: str) -> str:
+    """The name the standing board already carries."""
+    seen = json.loads(gh("project", "view", number, "--owner", owner,
+                         "--format", "json"))
+    return str(seen.get("title", ""))
+
+
+def run(owner: str, repo: str, keep: bool, with_issue: bool,
+        standing: str = "", stock: int = 0) -> int:
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    title = f"boardkit contract {stamp}"
+    title = titled(owner, standing) if standing else f"boardkit contract {stamp}"
     where = pathlib.Path(tempfile.mkdtemp(prefix="boardkit-contract-"))
-    (where / "boardkit.toml").write_text(declaration(owner, repo, title),
-                                         encoding="utf-8")
-    number, issue = "", ""
+    (where / "boardkit.toml").write_text(
+        declaration(owner, repo, title, project=standing), encoding="utf-8")
+    number, issue = standing, ""
     try:
-        print(f"\n== a board from nothing ({title})")
-        made = board(where, "admin", "apply")
-        number = next((line.split()[2].rstrip(":")
-                       for line in made.splitlines()
-                       if line.startswith("Created project ")), "")
-        held(bool(number), f"the project was created (number {number})")
+        if standing:
+            # A board that already exists is brought to the template rather
+            # than built from it: `--reconcile` is what makes the declared
+            # views win, which is the point of pointing a run at a board an
+            # earlier run already shaped.
+            print(f"\n== the standing board ({title}, project {standing})")
+            board(where, "admin", "apply", "--reconcile")
+            held(True, f"the project was reused (number {number})")
+        else:
+            print(f"\n== a board from nothing ({title})")
+            made = board(where, "admin", "apply")
+            number = next((line.split()[2].rstrip(":")
+                           for line in made.splitlines()
+                           if line.startswith("Created project ")), "")
+            held(bool(number), f"the project was created (number {number})")
         board(where, "admin", "link")
         board(where, "sync")
 
         print("\n== what arrived, read back from GitHub")
         check_shape(where)
 
+        if stock:
+            print(f"\n== stocking the board with {stock} dummy cards")
+            declared = tomllib.loads(
+                (where / "boardkit.toml").read_text(encoding="utf-8"))
+            seed(where, stock, tuple(declared["board"]["status_order"]))
+
         print("\n== a draft card, every writable field type")
         said = board(where, "add", "--draft", "A card the contract run made")
         draft = next((word for word in said.split()
                       if word.startswith("~")), "")
         held(bool(draft), f"the draft is on the board as {draft}")
-        round_trip(where, draft, "the draft's")
+        round_trip(where, draft, "the draft's", skip=("status",))
+
+        print("\n== a draft asked to leave the intake column")
+        check_draft_policy(where, draft)
 
         print("\n== clearing a value")
         check_clearing(where, draft)
@@ -340,7 +440,9 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool) -> int:
                  "the field set at creation reads back from the board")
             round_trip(where, issue, f"#{issue}")
 
-        print(f"\nPASS  created a project, read its shape back, wrote and read "
+        built = f"reused project {number}" if standing else "created a project"
+        stocked = f", stocked {stock} dummy cards" if stock else ""
+        print(f"\nPASS  {built}, read its shape back{stocked}, wrote and read "
               f"{len(ROUND_TRIP)} field types ({', '.join(sorted(ROUND_TRIP))}), "
               f"cleared {len(CLEARABLE)}, and had {UNWRITABLE} refused"
               f"{', with one issue created and placed' if with_issue else ''}.")
@@ -353,9 +455,13 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool) -> int:
         print(f"\nFAIL  {stopped}")
         return 1
     finally:
-        if keep:
+        if keep or standing:
             print(f"\nKept project {number} and {where}."
                   + (f" Kept issue #{issue}." if issue else ""))
+            if standing and not keep:
+                # The board outlives the run, so only the run's own residue
+                # goes: the issue it filed and the temporary checkout.
+                cleanup(owner, repo, "", issue, where)
         else:
             cleanup(owner, repo, number, issue, where)
 
@@ -396,8 +502,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="leave the project, issue and temp directory behind")
     parser.add_argument("--no-issue", action="store_true",
                         help="drafts only; creates nothing in the repository")
+    parser.add_argument("--project", default="", metavar="NUMBER",
+                        help="reconcile this standing board instead of "
+                             "creating one; it is never deleted")
+    parser.add_argument("--seed", type=int, default=0, metavar="COUNT",
+                        help="stock the board with this many dummy drafts, "
+                             "spread across every column")
     args = parser.parse_args(argv)
-    return run(args.owner, args.repo, args.keep, not args.no_issue)
+    return run(args.owner, args.repo, args.keep, not args.no_issue,
+               standing=args.project, stock=args.seed)
 
 
 if __name__ == "__main__":
