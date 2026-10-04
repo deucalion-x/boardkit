@@ -15,10 +15,10 @@ queued locally if it cannot be. GitHub stays the real store; `.boardkit/` is a
 working copy, and on a conflict the remote value wins.
 
 This file is the manual. [docs/overview.md](docs/overview.md) is why it works
-this way, [docs/pull-cost.md](docs/pull-cost.md) is what talking to GitHub
-costs and what follows from it, and [docs/local-first.md](docs/local-first.md)
-is the design of the
-store and the sync loop in detail.
+this way, and [docs/pull-cost.md](docs/pull-cost.md) is what talking to GitHub
+costs and what follows from it. The reasoning behind a particular decision is
+in the docstring of whatever implements it, where it cannot drift from the code
+it constrains.
 
 Requires `gh`, authenticated. One dependency: pydantic, which is
 the configuration schema rather than a validation layer bolted onto it.

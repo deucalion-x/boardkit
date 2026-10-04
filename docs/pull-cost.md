@@ -9,9 +9,13 @@ be disagreed with rather than rediscovered.
 ## The short answer
 
 A full pull of a board that fits in one page costs **2 rate-limit points and
-2.3 seconds**. The budget is 5000 points an hour. Quota does not bind at any
-board size boardkit will meet; wall clock is the only cost worth designing
-around.
+2.3 seconds**. The budget is 5000 points an hour. For reads, quota does not
+bind at any board size boardkit will meet — the read floor caps them at a dozen
+pulls an hour — and wall clock is the only cost worth designing around.
+
+Not a licence to stop counting elsewhere. Cost tracks nodes touched, not
+requests made, so admin runs, bulk writes and several agents against one board
+can spend 5000 without ever looking like many calls.
 
 So: pull everything, pull it in one query, pull it when a read needs it.
 
@@ -26,6 +30,7 @@ page, with `rateLimit { cost }` inside the query being measured.
 | **L1** the board as a board | + number, title, url, open/closed, every field value | 1 | ~1s | everything `board` prints. Not text search, not acceptance criteria |
 | **L2** + classification | + labels, assignees, milestone | 3 | ~1.5s | grouping by label, who holds what |
 | **L3** + text | + issue and draft bodies | 3 | 2.3s | `board item` and `board find` without a network call |
+| included in L1 | + each issue's `parent` | 0 | — | the sub-issue tree, inverted locally. A scalar on a node already fetched, which is why it replaced a search per `board item` |
 | head, once per pull | project ids, field definitions with option ids, view names | 1 | — | required for any write: a single-select push needs the field id and the option id |
 
 Boardkit pulls **head + L3**, and the measured end-to-end is **2 points** — less
@@ -79,9 +84,9 @@ it is not.
 **Pull on a read, not on a clock.** Work is not continuous: a session asks the
 board several questions while picking up a card, then nothing for an hour.
 A read-driven pull therefore fires a handful of times a day where a 30-second
-poll fires 2,880 times, most of them for a board nobody is asking about. See
-[local-first.md](local-first.md#why-reads-are-local) for the freshness floor
-this pays for.
+poll fires 2,880 times, most of them for a board nobody is asking about. The
+floor this pays for is `max_read_age_seconds`, and `cli.freshen` is where it
+is applied.
 
 **Do not build a conflict check out of a cheap probe.** A single item by node
 id is 1 point and 0.7s, flat regardless of board size, which makes it right for
