@@ -5,6 +5,38 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+- Make the starter board expose one unfiltered `All` view, so moving work
+  between statuses never makes its card disappear from the working view.
+
+## 0.1.1 — 2026-10-04
+
+- Bound how stale a read may be: a read refreshes a snapshot older than
+  `max_read_age_seconds` (300 by default) before answering, so freshness is a
+  guarantee rather than something an agent has to remember. `--offline`
+  answers whatever the age, 0 disables it, and a refresh that cannot reach
+  GitHub answers from disk and says so.
+- Take the sub-issue list from the snapshot. Each item now carries its own
+  parent, picked up by the pull it was already making, and children are that
+  relation inverted locally — removing the one read that always spent API
+  quota, grew with how many cards were opened, and could not work offline.
+- Retry the queue on the refresh a read was already paying for, pushing before
+  it pulls. A write left behind by an offline run no longer waits for someone
+  to remember `board sync push`.
+- Show queued writes in reads, marked as queued. Setting a field and reading it
+  back no longer reports the old value, which was worst offline.
+- Make a standing rejection guard its field: the next write to a field whose
+  last write lost is refused once, naming both values, and the refusal is
+  consumed so a deliberate repeat stands. Stops a blind overwrite, not a
+  determined one.
+- Read any single-value setting from `BOARDKIT_<SETTING>`, which wins over the
+  config file.
+- License under MIT, and ship the file in both distributions.
+- Derive the version from the git tag with hatch-vcs, so no written-down
+  version can disagree with it.
+- Fix the saved-view lookup sending an extra closing brace in its GraphQL
+  document, which stopped `board admin apply` after fields were created.
+- Build the live acceptance board from the same canonical template as
+  `board init`, then add only the fields needed to exercise every data type.
 - Install the generated `board` and `board-admin` skills for both Claude Code
   and Codex, and check both copies for drift.
 - Define the work-item lifecycle in the `board` skill while keeping board
