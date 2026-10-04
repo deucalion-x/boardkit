@@ -10,9 +10,73 @@ local copy is a working copy.
 ## Why reads are local
 
 An agent may ask ten questions while planning one change. Fetching the board for
-every question would add latency and spend API quota without making the answer
-materially fresher. Boardkit fetches once, answers reads from the snapshot, and
-names its sync time so callers can decide when they need a new pull.
+every question would add latency without making the answer materially fresher.
+Boardkit fetches once and answers the rest from the snapshot.
+
+What it does not do is let the snapshot age without limit. Being told to sync
+does not work: a stale answer looks exactly like a current one, so the agent
+has no way to notice that the instruction applies. A session once opened
+against a 16-hour-old snapshot and came within one command of reporting that
+board to a person as current.
+
+So a read pulls first when the snapshot is older than `max_read_age_seconds`
+(60 by default; 0 to disable), and answers from the snapshot otherwise. The
+first read of a session pays for the pull and the rest are free, which makes
+the promise an age rather than a request to remember: no read is more than a
+minute out of date. `--offline` answers from the snapshot whatever its age, and
+a pull that cannot reach GitHub says so and answers from disk rather than
+failing the question.
+
+Nothing polls and nothing is supervised. A background syncer would fetch for a
+board nobody is looking at and bring a lifecycle with it — start, stop, crash,
+stale lock, orphans after a reboot, two repositories contending for one
+database.
+
+The insight that makes the floor cheap rather than expensive: **a pull driven
+by a read happens less often than a pull driven by a clock**, because work is
+not continuous. A session reads the board in bursts — several questions while
+picking up a card, then nothing for an hour while the work is done — so the
+floor is reached a handful of times a day, where a 30-second poll fires 2,880
+times whether anyone asked or not. Tying the pull to a question also puts it
+where it is useful: the one read that mattered is the one that paid for it, and
+a board nobody is asking about is never fetched at all.
+
+## What a pull costs
+
+Measured against a 37-item board, with `rateLimit { cost }` on the queries
+themselves:
+
+| | points | wall clock |
+|---|---|---|
+| one item by node id | 1 | 0.7s |
+| 100 item ids, nothing else | 1 | 0.8s |
+| a full `board sync` — items, bodies, labels, fields, views | **2** | 2.3s |
+| the same board at `page_size = 10` (4 pages) | 4 | — |
+| the same board at `page_size = 5` (8 pages) | 10 | — |
+
+The budget is 5000 points an hour, so a full pull is 0.04% of it and a 60s
+read floor spends at most 2.4% — and in practice far less, for the reason
+above. Those last two rows are why `page_size` stays at GitHub's maximum:
+smaller pages buy nothing and cost a point each. Cost tracks pages rather than board size, so a
+1000-item board is about ten pages and twenty points — still 250 full pulls an
+hour. **Quota does not bind at any board size this tool will meet.** Wall clock
+is the only real cost, which is what the read floor is measured in.
+
+What a pull brings back, per card: the project item's id, type and every field
+value; and for an issue, its number, title, url, open/closed state, body,
+labels, assignees and milestone. Once per pull, board-level: the project's ids,
+every field definition with its options and their ids — a push needs all three
+to write a single select — and the saved view names. One combined query covers
+the board head and the first hundred items; each further hundred is another
+page at about a point.
+
+The rule behind those numbers is worth knowing before extending a query:
+GraphQL cost counts the nodes a query could return, not the bytes it does.
+A scalar on a node already being fetched is therefore free — which is why every
+issue body comes down in the same pass, at 76% of the payload and none of the
+quota. Fetching bodies lazily instead would cost a query per card read and lose
+offline `board find`, which searches them. Add a scalar freely; weigh a
+connection.
 
 ## The store
 

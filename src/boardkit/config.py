@@ -195,6 +195,12 @@ class Config(BaseModel):
     # EXCESSIVE_PAGINATION — so this is the largest page there is, and lower
     # only trades more requests for nothing.
     page_size: int = Field(default=100, ge=1, le=100)
+    # The oldest a snapshot may be and still answer a read. Past it, the read
+    # pulls first, so freshness is a property of the read rather than
+    # something an agent has to remember. Measured at 2 rate-limit points and
+    # ~2.3s a pull, 60s costs at most 2.4% of an hour's budget; a burst of
+    # reads in one turn pays once. 0 never syncs on read.
+    max_read_age_seconds: int = Field(default=60, ge=0)
     mirror_path: str = ""
     docs_prefix: str = "docs/"
     project_name: str = ""

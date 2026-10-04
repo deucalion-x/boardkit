@@ -6,7 +6,7 @@ import pytest
 from boardkit import cli, gh
 from boardkit.board import ProjectItem
 from boardkit.config import Config, ProjectField
-from boardkit.store import Snapshot, Store
+from boardkit.store import Snapshot, Store, now
 
 TABLE = ('[tool.boardkit]\nowner = "octo"\nproject = "4"\nrepo = "octo/widgets"\n'
          'fields = ["workstream"]\nstatus_order = ["Ready", "In progress", "Done"]\n')
@@ -26,7 +26,9 @@ def seeded(repo):
     store = Store(Config(root=repo, owner="octo", project="4", repo="octo/widgets",
                          fields=("workstream",)))
     store.save_state(Snapshot(
-        project_id="PVT_1", synced_at="2026-10-03T00:00:00+00:00",
+        # Stamped now, not with a fixed date: a read refreshes a snapshot
+        # older than the floor, and these tests assert that reads are local.
+        project_id="PVT_1", synced_at=now(),
         fields=(ProjectField(name="status", id="F_S",
                              options=("Inbox", "Todo", "In progress", "Done"),
                              option_ids={"Todo": "O_R", "In progress": "O_P"}),
@@ -241,3 +243,74 @@ def test_an_item_that_can_reach_github_still_lists_its_children(seeded,
     monkeypatch.setattr(board_module, "children", lambda number, config: [8])
     assert cli.main(["item", "7"]) == 0
     assert "children:" in capsys.readouterr().out
+
+
+# --- A read may not answer from a snapshot of any age -----------------------
+
+@pytest.fixture
+def aged(seeded, monkeypatch):
+    """The seeded board, stamped old enough that a read must refresh it."""
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={
+        "synced_at": "2026-10-03T00:00:00+00:00"}))
+    pulls = []
+
+    def pulled(config, store):
+        pulls.append(config.repo)
+        return state.model_copy(update={"synced_at": now()})
+
+    monkeypatch.setattr(cli.auth, "require", lambda config, tier: None)
+    monkeypatch.setattr(cli.sync, "pull", pulled)
+    return pulls
+
+
+def test_a_read_refreshes_a_snapshot_older_than_the_floor(aged, capsys):
+    assert cli.main(["list"]) == 0
+    assert aged == ["octo/widgets"], "the read should have pulled first"
+    assert "#7" in capsys.readouterr().out
+
+
+def test_a_fresh_snapshot_is_answered_from_without_asking_github(seeded, aged,
+                                                                 capsys):
+    seeded.save_state(seeded.state().model_copy(update={"synced_at": now()}))
+    assert cli.main(["list"]) == 0
+    assert aged == [], "a snapshot inside the floor must not pull"
+
+
+def test_offline_answers_from_the_snapshot_whatever_its_age(aged, capsys):
+    assert cli.main(["list", "--offline"]) == 0
+    assert aged == []
+    assert "#7" in capsys.readouterr().out
+
+
+def test_offline_is_not_taken_for_a_search_term(aged, capsys):
+    assert cli.main(["find", "--offline", "Corridor"]) == 0
+    assert aged == []
+    assert "#7" in capsys.readouterr().out
+
+
+def test_a_floor_of_zero_never_syncs_on_read(aged, repo, capsys):
+    (repo / "pyproject.toml").write_text(
+        TABLE + "max_read_age_seconds = 0\n", encoding="utf-8")
+    assert cli.main(["list"]) == 0
+    assert aged == []
+
+
+def test_a_read_that_cannot_refresh_still_answers_and_says_so(aged, monkeypatch,
+                                                              capsys):
+    def refused(config, store):
+        raise gh.Unreachable("no network")
+
+    monkeypatch.setattr(cli.sync, "pull", refused)
+    assert cli.main(["list"]) == 0
+    caught = capsys.readouterr()
+    assert "#7" in caught.out, "the question is answered from disk"
+    assert "could not refresh" in caught.err
+
+
+def test_no_snapshot_at_all_is_not_staleness(repo, monkeypatch, capsys):
+    """A first read says to sync rather than fetching one unasked."""
+    monkeypatch.setattr(cli.sync, "pull",
+                        lambda c, s: pytest.fail("pulled behind the caller"))
+    assert cli.main(["list"]) == 1
+    assert "Run `board sync`" in capsys.readouterr().out

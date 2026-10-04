@@ -18,6 +18,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board rejected [--clear]   local changes that lost to a remote change
   board log [n]              what boardkit did, for audit and debugging
   board sync [push|status]   pull, drain the queue, or report
+  --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     what this gh login is allowed to do
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
@@ -37,7 +38,7 @@ from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync,
 from . import board as board_module
 from .config import load
 from .gh import BoardError, RateLimited, Unreachable
-from .store import Store, Write
+from .store import Snapshot, Store, Write
 
 BOARD_COMMANDS = {"list", "item", "find", "json", "views"}
 STALE = "No local snapshot. Run `board sync` first."
@@ -113,10 +114,13 @@ def dispatch(command: str, args: list[str]) -> int:
         return usage()
     if command not in BOARD_COMMANDS:
         return usage()
-    if command == "item" and not args:
+    if command == "item" and not [a for a in args if a != "--offline"]:
         return usage()
 
-    snapshot = store.state()
+    snapshot = freshen(config, store, offline="--offline" in args)
+    # Stripped after the freshness decision so `find` does not search for it
+    # and `item` does not take it for a reference.
+    args = [a for a in args if a != "--offline"]
     if snapshot.empty:
         print(STALE)
         return 1
@@ -180,6 +184,34 @@ def dispatch(command: str, args: list[str]) -> int:
     return 0
 
 
+def freshen(config, store: Store, offline: bool = False) -> Snapshot:
+    """The snapshot a read may answer from, pulled first if it is too old.
+
+    Being told to sync does not work: the agent has no way to notice that the
+    instruction applies, and a stale answer looks exactly like a current one.
+    So the read spends the pull itself, and the skill can promise an age
+    instead of asking anyone to remember.
+
+    Nothing is supervised and nothing polls. A pull that cannot reach GitHub
+    leaves the snapshot alone and says so, because answering from a known-old
+    copy beats failing the question.
+    """
+    snapshot = store.state()
+    floor = config.max_read_age_seconds
+    # No snapshot is not staleness. A first read says to sync rather than
+    # fetching one behind the caller's back, so that setting a repo up is
+    # something they did and not something that happened to them.
+    if snapshot.empty or offline or not floor or snapshot.age <= floor:
+        return snapshot
+    try:
+        auth.require(config, "read")
+        return sync.pull(config, store)
+    except (BoardError, RateLimited, Unreachable) as why:
+        print(f"note: answering from a snapshot {int(snapshot.age)}s old; "
+              f"could not refresh it ({why})", file=sys.stderr)
+        return snapshot
+
+
 def run_sync(config, store: Store, verb: str) -> int:
     if verb == "pull":
         # Gated before the call, so a missing scope reads as advice rather
@@ -197,6 +229,12 @@ def run_sync(config, store: Store, verb: str) -> int:
         snapshot = store.state()
         when = snapshot.synced_at or "never"
         print(f"Snapshot: {len(snapshot.items)} items, synced {when}")
+        floor = config.max_read_age_seconds
+        if not floor:
+            print("Reads answer from it whatever its age "
+                  "(max_read_age_seconds = 0)")
+        elif not snapshot.empty:
+            print(f"{int(snapshot.age)}s old; a read refreshes it past {floor}s")
         return report_queue(store)
     return usage()
 

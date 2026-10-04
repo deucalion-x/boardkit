@@ -92,6 +92,26 @@ class Snapshot(BaseModel):
     def empty(self) -> bool:
         return not self.synced_at
 
+    @property
+    def age(self) -> float:
+        """Seconds since the board last confirmed this, or `inf` if never.
+
+        One number for the whole snapshot, because one pull is what produced
+        it. Refreshing a single item into it would make this a half-truth, so
+        nothing does.
+        """
+        if not self.synced_at:
+            return float("inf")
+        try:
+            stamped = datetime.datetime.fromisoformat(self.synced_at)
+        except ValueError:
+            # A hand-edited or older file should go stale, not crash a read.
+            return float("inf")
+        if stamped.tzinfo is None:
+            stamped = stamped.replace(tzinfo=datetime.UTC)
+        return max(0.0, datetime.datetime.now(datetime.UTC).timestamp()
+                   - stamped.timestamp())
+
 
 class Write(BaseModel):
     """One local change, waiting to be pushed.

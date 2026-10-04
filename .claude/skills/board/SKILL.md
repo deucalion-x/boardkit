@@ -14,12 +14,18 @@ and they stay approved long after their work is finished — so ranking work
 from plans alone reliably proposes something already done, already blocked, or
 not yet refined enough to start. Ask the board.
 
-## Reads are free, so ask as many as you need
+## Reads are free after the first, so ask as many as you need
 
-`board` answers from a snapshot on disk. No network, no rate limit, no reason
-to ration questions. The one exception is the child list in `board item`,
-which has to ask GitHub and is skipped with a note when it cannot — the rest
-of the item still answers from disk.
+`board` answers from a snapshot on disk, so there is no reason to ration
+questions. The snapshot is never more than a minute out of date: a read older
+than that refreshes it first and then answers, which costs a couple of seconds
+once and nothing for the reads that follow. `--offline` answers from the
+snapshot as it stands.
+
+So you do not have to remember to sync before reporting status to someone —
+the read has already done it. The one exception is the child list in
+`board item`, which has to ask GitHub and is skipped with a note when it
+cannot; the rest of the item still answers from disk.
 
 Calling `gh project` or `gh api` yourself is a wrong answer here: it costs a
 round trip and sees a different copy than the rest of your reasoning.
@@ -78,10 +84,11 @@ in the way, it is queued and `board sync push` sends it later. Nothing is lost.
 
 ## When the snapshot is stale
 
-`board sync status` reports its age; `board sync` refreshes it. Pull when the
-answer has to be current — before reporting status to a person, or after
-someone says they changed something. A read against no snapshot says so rather
-than fetching one behind your back.
+Reads keep it fresh on their own, so this is rarely yours to do. `board sync
+status` reports its age and the floor it is measured against; `board sync`
+refreshes it now — worth it right after someone says they changed something,
+rather than waiting out the floor. A read against no snapshot at all says so
+instead of fetching one behind your back.
 
 ## What still needs GitHub
 

@@ -5,8 +5,10 @@ from git. Extracted from the Places repository, where the same three scripts
 had the project number, the custom field names and the docs path edited into
 them.
 
-A pull snapshots the project once; every read answers from that snapshot, so
-reads cost no network and no API quota. A change is sent as it is made, and
+A pull snapshots the project once and reads answer from that snapshot, so they
+cost no network and no API quota — bar the first of a session, because a read
+refreshes a snapshot older than a minute before answering. A change is sent as
+it is made, and
 queued locally if it cannot be. GitHub stays the real store; `.boardkit/` is a
 working copy, and on a conflict the remote value wins.
 
