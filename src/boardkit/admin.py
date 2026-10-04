@@ -276,17 +276,22 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
         for view in config.views:
             if view.name not in saved:
                 print(f"  would add view {view.name} [{view.layout}]")
-            elif reconcile and saved[view.name].filter != view.filter:
-                print(f"  would set view {view.name} filter to {view.filter!r}")
+            elif reconcile and (saved[view.name].filter != view.filter or
+                                saved[view.name].layout != view.layout):
+                print(f"  would reconcile view {view.name} "
+                      f"[{view.layout}] filter {view.filter!r}")
         views_match = all(
             view.name in saved and (
-                not reconcile or saved[view.name].filter == view.filter)
+                not reconcile or (
+                    saved[view.name].filter == view.filter and
+                    saved[view.name].layout == view.layout))
             for view in config.views)
         if not missing and views_match:
             print("  nothing missing.")
         return 0
 
-    if not found:
+    created = not found
+    if created:
         made = gh_json("project", "create", "--owner", config.owner,
                        "--title", config.name, "--format", "json")
         number = str(made.get("number", ""))
@@ -328,7 +333,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
         print("  every configured field already exists.")
     apply_views(config, number, project_id or (found[0] if found else ""),
                 parse_fields(fetch_fields(config, number), config),
-                reconcile=reconcile)
+                reconcile=reconcile, created=created)
     return 0
 
 
@@ -336,6 +341,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
 class ExistingView:
     id: str
     filter: str = ""
+    layout: str = ""
 
 
 def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
@@ -344,10 +350,12 @@ def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
     query = (f"{{ {kind}(login: {quoted(config.owner)}) "
              f"{{ projectV2(number: {number}) "
              f"{{ views(first: {config.page_size}) "
-             "{ nodes { id name filter } } } } } }")
+             "{ nodes { id name filter layout } } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     nodes = payload["data"][kind]["projectV2"]["views"]["nodes"]
-    return {node["name"]: ExistingView(node["id"], node.get("filter") or "")
+    return {node["name"]: ExistingView(
+                node["id"], node.get("filter") or "",
+                (node.get("layout") or "").removesuffix("_LAYOUT"))
             for node in nodes if node}
 
 
@@ -378,10 +386,28 @@ def filter_view(view_id: str, expression: str) -> None:
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
 
+def configure_view(view_id: str, view, field_ids: dict[str, str]) -> None:
+    """Turn GitHub's empty starter view into the template's first view."""
+    chosen = [field_ids[name] for name in view.fields if name in field_ids]
+    visible = ""
+    if chosen:
+        listed = ", ".join(f'"{identity}"' for identity in chosen)
+        visible = f", configuration: {{visibleFieldIds: [{listed}]}}"
+    query = ("mutation { updateProjectV2View(input: {"
+             f" viewId: {quoted(view_id)}, name: {quoted(view.name)},"
+             f" layout: {view.layout}_LAYOUT, filter: {quoted(view.filter)}"
+             f"{visible}"
+             " }) { projectV2View { id } } }")
+    run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+
+
 def apply_views(config: Config, number: str, project_id: str,
-                fields: tuple[ProjectField, ...], reconcile: bool = False) -> None:
+                fields: tuple[ProjectField, ...], reconcile: bool = False,
+                created: bool = False) -> None:
     """Create declared views; explicitly reconcile their filters when asked.
 
+    A project created in this call has one empty GitHub-seeded `View 1`; turn
+    it into the first declared view instead of leaving a duplicate tab.
     Default application leaves an existing view alone, because a deployed
     board's live shape belongs to GitHub. Reconciliation is an explicit choice
     to make config win for declared filters. Neither mode deletes a view.
@@ -390,13 +416,24 @@ def apply_views(config: Config, number: str, project_id: str,
         return
     standing = existing_views(config, number)
     field_ids = {field.name: field.id for field in fields if field.id}
+    first = config.views[0]
+    seeded = standing.get("View 1")
+    if created and seeded and first.name not in standing:
+        configure_view(seeded.id, first, field_ids)
+        standing = {name: current for name, current in standing.items()
+                    if name != "View 1"}
+        standing[first.name] = ExistingView(seeded.id, first.filter, first.layout)
+        print(f"  configured starter view {first.name} [{first.layout}]")
+        note("configured_starter_view", name=first.name, layout=first.layout,
+             filter=first.filter or None)
     for view in config.views:
         if view.name in standing:
             current = standing[view.name]
-            if reconcile and current.filter != view.filter:
-                filter_view(current.id, view.filter)
-                print(f"  reconciled view {view.name} filter")
-                note("reconciled_view_filter", name=view.name,
+            if reconcile and (current.filter != view.filter or
+                              current.layout != view.layout):
+                configure_view(current.id, view, field_ids)
+                print(f"  reconciled view {view.name} [{view.layout}]")
+                note("reconciled_view", name=view.name, layout=view.layout,
                      filter=view.filter or None)
             continue
         made = make_view(project_id, view, field_ids)

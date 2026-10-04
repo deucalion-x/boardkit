@@ -1,6 +1,6 @@
 ---
 name: board-admin
-description: Change the shape of this repository's GitHub Project board itself — add or rename a column, add a field or one of its options, add a saved tab or reconcile its filter — by editing the `[board]` section of this repo's boardkit config and running `board admin apply`. Use when the vocabulary or view a work item needs does not exist yet. Triggers on "add a column", "new status", "add a field", "add an option", "rename a column", "add a view", "change a view filter", "set up the board", "create the project", and "the board has no".
+description: Change the shape of this repository's GitHub Project board itself — add or rename a column, add a field or one of its options, add a saved tab or reconcile its layout and filter — by editing the `[board]` section of this repo's boardkit config and running `board admin apply`. Use when the vocabulary or view a work item needs does not exist yet. Triggers on "add a column", "new status", "add a field", "add an option", "rename a column", "add a view", "change a view", "set up the board", "create the project", and "the board has no".
 ---
 
 # Changing the board
@@ -29,17 +29,21 @@ data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
 options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]
 
 [[board.views]]
-name = "Open work"
-layout = "BOARD"             # or TABLE
+name = "Current"
+layout = "BOARD"
 fields = ["status", "area"]
-filter = "-status:Done"
+
+[[board.views]]
+name = "All"
+layout = "TABLE"
+fields = ["status", "area"]
 ```
 
 ```bash
 board admin apply -n                  # preview missing shape
 board admin apply                     # add it; preserve existing views
-board admin apply --reconcile -n      # preview declared filter updates
-board admin apply --reconcile         # make declared view filters win
+board admin apply --reconcile -n      # preview declared view updates
+board admin apply --reconcile         # make declared layouts and filters win
 board sync                            # pull the new shape into the snapshot
 ```
 
@@ -49,8 +53,8 @@ It adds: a missing field, a missing option, a missing view. It renames an
 option that differs from config only in case, keeping the items in it.
 
 By default, an existing view stays as GitHub holds it. `--reconcile` also
-updates filters on declared views. Use it only when the board's shape is
-deliberately managed from config; preview it with `-n` first.
+updates layouts and filters on declared views. Use it only when the board's
+shape is deliberately managed from config; preview it with `-n` first.
 
 ## Native GitHub workflows
 

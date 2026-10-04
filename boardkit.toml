@@ -14,15 +14,14 @@ project_name = "boardkit"
 # This board was made in the browser, so its columns carry GitHub's spelling.
 status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
 
-# Saved tabs. `admin apply` creates a missing one and never deletes any.
+# The same unfiltered work in two layouts, as the starter template declares.
 [[board.views]]
-name = "Open work"
+name = "Current"
 layout = "BOARD"
 fields = ["status", "area", "effort"]
-filter = "-status:Done"
 
 [[board.views]]
-name = "Everything"
+name = "All"
 layout = "TABLE"
 fields = ["status", "area", "effort"]
 

@@ -171,6 +171,27 @@ def test_a_view_that_already_exists_is_left_alone(monkeypatch):
     admin.apply_views(config, "5", "PVT_1", ())
 
 
+def test_existing_views_sends_a_balanced_graphql_document(monkeypatch):
+    from boardkit import admin
+    sent = []
+    monkeypatch.setattr(admin, "run_json", lambda args: (
+        sent.append(args[-1]),
+        {"data": {"user": {"projectV2": {"views": {"nodes": [
+            {"id": "V_1", "name": "Open", "filter": "-status:Done",
+             "layout": "TABLE_LAYOUT"}
+        ]}}}}}
+    )[1])
+
+    found = admin.existing_views(CONFIG, "4")
+
+    assert found["Open"].filter == "-status:Done"
+    assert found["Open"].layout == "TABLE"
+    assert sent == [
+        ('query={ user(login: "octo") { projectV2(number: 4) '
+         '{ views(first: 100) { nodes { id name filter layout } } } } }')
+    ]
+
+
 def test_an_option_differing_only_in_case_is_renamed_not_duplicated():
     """GitHub seeds `In Progress`; a config asking for `In progress` was
     getting both, with the items split between two columns."""
@@ -301,12 +322,48 @@ def test_a_view_that_already_exists_is_never_recreated(sent, monkeypatch):
     assert not any("createProjectV2View" in q for q in sent)
 
 
+def test_a_new_board_reuses_githubs_starter_view(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "View 1": ExistingView("V_SEEDED")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="All", layout="TABLE", fields=("status",)),)})
+
+    admin.apply_views(config, "4", "PVT_1",
+                      (ProjectField(name="status", id="F_STATUS"),),
+                      created=True)
+
+    changed = [q for q in sent if "updateProjectV2View" in q]
+    assert len(changed) == 1
+    assert 'viewId: "V_SEEDED", name: "All"' in changed[0]
+    assert "layout: TABLE_LAYOUT" in changed[0]
+    assert 'visibleFieldIds: ["F_STATUS"]' in changed[0]
+    assert not any("createProjectV2View" in q for q in sent)
+
+
+def test_an_existing_board_keeps_githubs_starter_view(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "View 1": ExistingView("V_SEEDED")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="All", layout="TABLE"),)})
+
+    admin.apply_views(config, "4", "PVT_1", ())
+
+    assert any("createProjectV2View" in q for q in sent)
+    assert not any("updateProjectV2View" in q for q in sent)
+
+
 def test_reconcile_updates_an_existing_view_filter(sent, monkeypatch):
     from boardkit import admin
     from boardkit.admin import ExistingView
     from boardkit.config import View
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {
-        "Open": ExistingView("V_1", "is:open")})
+        "Open": ExistingView("V_1", "is:open", "TABLE")})
     config = CONFIG.model_copy(update={
         "views": (View(name="Open", filter="-status:Done"),)})
     admin.apply_views(config, "4", "PVT_1", (), reconcile=True)
@@ -332,11 +389,29 @@ def test_reconcile_does_nothing_when_the_filter_matches(sent, monkeypatch):
     from boardkit.admin import ExistingView
     from boardkit.config import View
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {
-        "Open": ExistingView("V_1", "-status:Done")})
+        "Open": ExistingView("V_1", "-status:Done", "TABLE")})
     config = CONFIG.model_copy(update={
         "views": (View(name="Open", filter="-status:Done"),)})
     admin.apply_views(config, "4", "PVT_1", (), reconcile=True)
     assert not any("mutation" in q for q in sent)
+
+
+def test_reconcile_updates_an_existing_view_layout(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "All": ExistingView("V_1", "", "BOARD")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="All", layout="TABLE", fields=("status",)),)})
+
+    admin.apply_views(config, "4", "PVT_1",
+                      (ProjectField(name="status", id="F_STATUS"),),
+                      reconcile=True)
+
+    changed = [q for q in sent if "updateProjectV2View" in q]
+    assert len(changed) == 1 and "layout: TABLE_LAYOUT" in changed[0]
+    assert 'visibleFieldIds: ["F_STATUS"]' in changed[0]
 
 
 def test_a_declared_filter_is_a_second_mutation_after_the_view_is_made(sent):
@@ -386,10 +461,11 @@ def test_a_reconcile_dry_run_reports_filter_drift_without_mutating(
     monkeypatch.setattr(admin, "locate", lambda config: "4")
     monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {
-        "Open": ExistingView("V_1", "is:open")})
+        "Open": ExistingView("V_1", "is:open", "TABLE")})
     admin.apply(config, dry=True, reconcile=True)
     assert not any("mutation" in q for q in sent)
-    assert "would set view Open filter to '-status:Done'" in capsys.readouterr().out
+    assert "would reconcile view Open [TABLE] filter '-status:Done'" in \
+        capsys.readouterr().out
 
 
 def test_linking_without_a_project_says_to_create_one_first(monkeypatch):
