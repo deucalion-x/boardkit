@@ -491,3 +491,61 @@ def test_applying_is_gated_on_admin_rather_than_on_write(monkeypatch):
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
     admin.apply(CONFIG, dry=True)
     assert asked == ["admin"]
+
+
+def test_prune_deletes_only_the_views_config_does_not_name(sent, monkeypatch):
+    """The one deletion boardkit will do, and only when asked for it."""
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "View 1": ExistingView("V_SEEDED", "", "TABLE"),
+        "Current": ExistingView("V_1", "", "BOARD"),
+        "Someone's tab": ExistingView("V_2", "is:open", "TABLE")})
+    config = CONFIG.model_copy(update={"views": (View(name="Current"),)})
+
+    admin.apply_views(config, "4", "PVT_1", (), prune=True)
+
+    gone = [q for q in sent if "deleteProjectV2View" in q]
+    assert len(gone) == 2
+    assert any('"V_SEEDED"' in q for q in gone)
+    assert any('"V_2"' in q for q in gone)
+    assert not any('"V_1"' in q for q in gone)
+
+
+def test_default_apply_never_deletes_a_view(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Current": ExistingView("V_1", "", "BOARD"),
+        "View 1": ExistingView("V_SEEDED", "", "TABLE")})
+    config = CONFIG.model_copy(update={"views": (View(name="Current"),)})
+
+    admin.apply_views(config, "4", "PVT_1", ())
+    admin.apply_views(config, "4", "PVT_1", (), reconcile=True)
+
+    assert not any("deleteProjectV2View" in q for q in sent)
+
+
+def test_a_view_created_in_this_run_is_never_pruned(sent, monkeypatch):
+    """Create-then-prune, in that order: a board must keep at least one view,
+    so a tab this run just added is not a stray."""
+    from boardkit import admin
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    config = CONFIG.model_copy(update={"views": (View(name="Current"),)})
+
+    admin.apply_views(config, "4", "PVT_1", (), prune=True)
+
+    assert any("createProjectV2View" in q for q in sent)
+    assert not any("deleteProjectV2View" in q for q in sent)
+
+
+def test_pruning_declares_nothing_when_config_names_no_views(monkeypatch):
+    """An empty `views` means "whatever the board has", so there is no basis
+    for calling any tab a stray."""
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    config = CONFIG.model_copy(update={"views": ()})
+    assert admin.undeclared(config, {"Anything": ExistingView("V_1")}) == []

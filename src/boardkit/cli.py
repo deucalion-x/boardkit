@@ -22,7 +22,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth [--refresh]     what this gh login is allowed to do
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
-  board admin apply [-n] [--reconcile]
+  board admin apply [-n] [--reconcile] [--prune-views]
                              add missing shape; optionally update view filters
   board admin link           attach the project to the repository
 
@@ -80,7 +80,8 @@ def dispatch(command: str, args: list[str]) -> int:
         verb = args[0] if args else "apply"
         if verb == "apply":
             return admin.apply(config, dry="-n" in args,
-                               reconcile="--reconcile" in args)
+                               reconcile="--reconcile" in args,
+                               prune="--prune-views" in args)
         if verb == "link":
             return admin.link(config)
         return usage()

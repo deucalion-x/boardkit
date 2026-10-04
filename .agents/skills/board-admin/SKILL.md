@@ -47,6 +47,8 @@ board admin apply -n                  # preview missing shape
 board admin apply                     # add it; preserve existing views
 board admin apply --reconcile -n      # preview declared view updates
 board admin apply --reconcile         # make declared layouts and filters win
+board admin apply --prune-views -n    # preview which stray tabs would go
+board admin apply --prune-views       # delete tabs config does not name
 board sync                            # pull the new shape into the snapshot
 ```
 
@@ -58,6 +60,14 @@ option that differs from config only in case, keeping the items in it.
 By default, an existing view stays as GitHub holds it. `--reconcile` also
 updates layouts and filters on declared views. Use it only when the board's
 shape is deliberately managed from config; preview it with `-n` first.
+
+`--prune-views` deletes the saved tabs config does not name, and is the only
+deletion boardkit performs — a view holds no items and no field values, so
+what is lost is the grouping and sorting config cannot express. It is a
+separate flag from `--reconcile` and is never implied by it. A field, an
+option and a column are never deleted. Ask before pruning a board you do not
+own: a tab you did not declare may be someone's working filter, and GitHub has
+no undo. Preview with `-n` and say which tabs would go.
 
 ## Native GitHub workflows
 

@@ -104,7 +104,14 @@ Ordinary `board admin apply` is additive: it creates a missing declared view
 but preserves one that already exists. On a development board deliberately
 managed from config, `board admin apply --reconcile` also updates the layout
 and filter of declared views. Add `-n` to preview either mode. Neither mode
-deletes a view.
+deletes anything.
+
+`board admin apply --prune-views` is a separate opt-in that deletes the saved
+tabs config does not name — the only deletion boardkit performs. It is offered
+for views alone: a view holds no items and no field values, so losing one
+costs the grouping and sorting that config cannot express, which is real but
+is not data. A field or a column is never deleted, because the values and the
+items in them would go too. Preview it with `-n` first; GitHub has no undo.
 
 `board schema` prints the full shape as JSON Schema — every setting, its type
 and its default — so an agent can fill it in rather than guess.
@@ -176,6 +183,7 @@ The rest:
 | `board schema` | The configuration's shape, as JSON Schema. |
 | `board admin apply` / `-n` | Add missing declared board shape without overwriting existing views. |
 | `board admin apply --reconcile` | Also make declared view layouts and filters win; combine with `-n` to preview. |
+| `board admin apply --prune-views` | Delete saved tabs config does not name. The only deletion; preview with `-n`. |
 | `board admin link` | Attach the project to the repository. |
 | `board auth` / `--refresh` | What this `gh` login is allowed to do. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |

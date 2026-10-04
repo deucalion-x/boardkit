@@ -61,10 +61,22 @@ def test_admin_reconcile_flag_reaches_apply(repo, monkeypatch):
     from boardkit import admin
     called = []
     monkeypatch.setattr(admin, "apply",
-                        lambda config, dry=False, reconcile=False:
-                        called.append((dry, reconcile)) or 0)
+                        lambda config, dry=False, reconcile=False, prune=False:
+                        called.append((dry, reconcile, prune)) or 0)
     assert cli.main(["admin", "apply", "-n", "--reconcile"]) == 0
-    assert called == [(True, True)]
+    assert called == [(True, True, False)]
+
+
+def test_prune_views_flag_reaches_apply_and_is_off_by_default(repo, monkeypatch):
+    """Deleting a tab is opt-in per invocation, never implied by --reconcile."""
+    from boardkit import admin
+    called = []
+    monkeypatch.setattr(admin, "apply",
+                        lambda config, dry=False, reconcile=False, prune=False:
+                        called.append(prune) or 0)
+    assert cli.main(["admin", "apply", "--reconcile"]) == 0
+    assert cli.main(["admin", "apply", "--prune-views"]) == 0
+    assert called == [False, True]
 
 
 def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, capsys):

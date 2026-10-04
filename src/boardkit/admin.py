@@ -250,13 +250,18 @@ def apply_options(config: Config, number: str, field: ProjectField,
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
 
-def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
+def apply(config: Config, dry: bool = False, reconcile: bool = False,
+          prune: bool = False) -> int:
     """Bring the board into line with what this repo declares.
 
     Named for what it does rather than for the first time it runs: it creates
     the project when there is none, and on every run after that it adds the
-    fields and options that are missing. It never deletes. `reconcile` also
-    makes declared view filters win over an existing view for this run.
+    fields and options that are missing. `reconcile` also makes declared view
+    filters and layouts win over an existing view for this run.
+
+    The one thing it deletes, and only when `prune` asks for it, is a saved
+    tab config does not name. Fields, options and columns are never deleted:
+    see `apply_views` for why a view is the only safe exception.
     """
     auth.require(config, "admin")
     number = locate(config)
@@ -280,7 +285,10 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
                                 saved[view.name].layout != view.layout):
                 print(f"  would reconcile view {view.name} "
                       f"[{view.layout}] filter {view.filter!r}")
-        views_match = all(
+        stray = undeclared(config, saved) if prune else []
+        for name in stray:
+            print(f"  would delete view {name}, which config does not name")
+        views_match = not stray and all(
             view.name in saved and (
                 not reconcile or (
                     saved[view.name].filter == view.filter and
@@ -333,7 +341,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
         print("  every configured field already exists.")
     apply_views(config, number, project_id or (found[0] if found else ""),
                 parse_fields(fetch_fields(config, number), config),
-                reconcile=reconcile, created=created)
+                reconcile=reconcile, created=created, prune=prune)
     return 0
 
 
@@ -401,16 +409,43 @@ def configure_view(view_id: str, view, field_ids: dict[str, str]) -> None:
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
 
+def delete_view(view_id: str) -> None:
+    """Remove one saved tab. One way: GitHub has no undo for this."""
+    query = ("mutation { deleteProjectV2View(input: {"
+             f" viewId: {quoted(view_id)}"
+             " }) { clientMutationId } }")
+    run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+
+
+def undeclared(config: Config, standing: dict[str, ExistingView]) -> list[str]:
+    """The saved tabs config does not name, in the order the board holds them.
+
+    A board has to keep at least one view, and config is what says which are
+    wanted, so pruning is only ever offered when config declares some.
+    """
+    if not config.views:
+        return []
+    declared = {view.name for view in config.views}
+    return [name for name in standing if name not in declared]
+
+
 def apply_views(config: Config, number: str, project_id: str,
                 fields: tuple[ProjectField, ...], reconcile: bool = False,
-                created: bool = False) -> None:
-    """Create declared views; explicitly reconcile their filters when asked.
+                created: bool = False, prune: bool = False) -> None:
+    """Create declared views; explicitly reconcile and prune when asked.
 
     A project created in this call has one empty GitHub-seeded `View 1`; turn
     it into the first declared view instead of leaving a duplicate tab.
     Default application leaves an existing view alone, because a deployed
     board's live shape belongs to GitHub. Reconciliation is an explicit choice
-    to make config win for declared filters. Neither mode deletes a view.
+    to make config win for declared filters and layouts.
+
+    `prune` is a second, separate choice: delete the saved tabs config does
+    not name. It is offered for views and for nothing else, because a view
+    holds no items and no field values — losing one costs the grouping and
+    sorting that boardkit cannot express in config, which is real but is not
+    data. A field or a column is never deleted at all: the values in them, and
+    the items in them, would go with them.
     """
     if not config.views:
         return
@@ -440,8 +475,17 @@ def apply_views(config: Config, number: str, project_id: str,
         if view.filter:
             filter_view(made, view.filter)
         print(f"  added view {view.name} [{view.layout}]")
+        standing[view.name] = ExistingView(made, view.filter, view.layout)
         note("created_view", name=view.name, layout=view.layout,
              filter=view.filter or None)
+    if not prune:
+        return
+    # Last, so every declared view already exists: a board must keep one, and
+    # deleting before creating could momentarily leave it with none.
+    for name in undeclared(config, standing):
+        delete_view(standing[name].id)
+        print(f"  deleted view {name}, which config does not name")
+        note("deleted_view", name=name)
 
 
 def link(config: Config) -> int:
