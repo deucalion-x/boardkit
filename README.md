@@ -97,6 +97,11 @@ nothing can fill. Tracked as
 Declaring a field does not hide the others: every field the board owns is
 still carried, with declared ones printed first.
 
+Ordinary `board admin apply` is additive: it creates a missing declared view
+but preserves one that already exists. On a development board deliberately
+managed from config, `board admin apply --reconcile` also updates filters on
+declared views. Add `-n` to preview either mode. Neither mode deletes a view.
+
 `board schema` prints the full shape as JSON Schema — every setting, its type
 and its default — so an agent can fill it in rather than guess.
 
@@ -165,7 +170,8 @@ The rest:
 |---|---|
 | `board init` | Write the three settings a repo must decide. |
 | `board schema` | The configuration's shape, as JSON Schema. |
-| `board admin apply` / `-n` | Make the board match what this repo declares. |
+| `board admin apply` / `-n` | Add missing declared board shape without overwriting existing views. |
+| `board admin apply --reconcile` | Also make declared view filters win; combine with `-n` to preview. |
 | `board admin link` | Attach the project to the repository. |
 | `board auth` / `--refresh` | What this `gh` login is allowed to do. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |

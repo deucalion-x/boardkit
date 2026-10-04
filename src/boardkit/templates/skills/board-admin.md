@@ -1,6 +1,6 @@
 ---
 name: board-admin
-description: Change the shape of this repository's GitHub Project board itself — add or rename a column, add a field or one of its options, add a saved tab — by editing the `[board]` section of this repo's boardkit config and running `board admin apply`. Use when the vocabulary a work item needs does not exist yet: a status to move something into, a field to classify it by, an option that is missing from one. Triggers on "add a column", "new status", "add a field", "add an option", "rename a column", "set up the board", "create the project", "the board has no", plus any request to classify work in a way the board cannot express today.
+description: Change the shape of this repository's GitHub Project board itself — add or rename a column, add a field or one of its options, add a saved tab or reconcile its filter — by editing the `[board]` section of this repo's boardkit config and running `board admin apply`. Use when the vocabulary or view a work item needs does not exist yet. Triggers on "add a column", "new status", "add a field", "add an option", "rename a column", "add a view", "change a view filter", "set up the board", "create the project", and "the board has no".
 ---
 
 # Changing the board
@@ -36,15 +36,32 @@ filter = "-status:Done"
 ```
 
 ```bash
-board admin apply -n     # what would change, without changing it
-board admin apply        # make it so
-board sync               # pull the new shape into the snapshot
+board admin apply -n                  # preview missing shape
+board admin apply                     # add it; preserve existing views
+board admin apply --reconcile -n      # preview declared filter updates
+board admin apply --reconcile         # make declared view filters win
+board sync                            # pull the new shape into the snapshot
 ```
 
 ## What apply will and will not do
 
 It adds: a missing field, a missing option, a missing view. It renames an
 option that differs from config only in case, keeping the items in it.
+
+By default, an existing view stays as GitHub holds it. `--reconcile` also
+updates filters on declared views. Use it only when the board's shape is
+deliberately managed from config; preview it with `-n` first.
+
+## Native GitHub workflows
+
+GitHub does not expose supported create or update operations for Project
+workflows. Configure these once in the Project's **Workflows** settings:
+
+- When Status becomes `Done`, close the issue.
+- Auto-archive items matching `is:closed reason:"not planned"`.
+
+These are mechanical consequences of the board shape. Work-item acceptance
+still belongs to the `board` skill.
 
 It never deletes. A field, option or view the board has and config does not is
 left alone, because deleting an option discards the value every item holds in

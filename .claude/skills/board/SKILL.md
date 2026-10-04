@@ -66,6 +66,37 @@ Create an **issue** for work that carries a plan or acceptance criteria — it
 can be reviewed, linked from a commit, and closed by one. Create a **draft**
 for an idea that has not earned that yet.
 
+## Work-item lifecycle
+
+The normal path is:
+
+```text
+draft in Inbox
+  → issue in Inbox
+  → Todo
+  → In progress
+  → In review
+  → Done and closed
+```
+
+1. Draft cards are ideas and are allowed only in `Inbox`.
+2. When an idea is selected for refinement or execution, convert it to an
+   issue. Only issues move beyond `Inbox`.
+3. Move a refined, unblocked issue to `Todo`.
+4. Move it to `In progress` before starting work.
+5. Record the result and verification on the issue, then move it to `In
+   review`. This means ready for judgement, not done.
+6. Only a human accepts work. After explicit acceptance, record `Done`; the
+   Project automation closes the issue.
+
+Close rejected, duplicate, or abandoned issues as `not planned`. Never move
+them through `Done`; the Project automation archives them.
+
+An agent may record `Done` after a human accepts the work. It must not make the
+acceptance decision.
+
+A parent needs its own review. Accepted children do not accept the parent.
+
 ## When a change does not land
 
 GitHub is the source of truth. If someone changed the same field there after

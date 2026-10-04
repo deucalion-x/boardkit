@@ -1,7 +1,7 @@
 import pathlib
 
 from boardkit.config import Config
-from boardkit.skill import SKILLS, install, render
+from boardkit.skill import SKILL_ROOTS, SKILLS, install, render
 
 
 def config(tmp_path: pathlib.Path, **overrides) -> Config:
@@ -46,23 +46,40 @@ def test_the_skill_explains_how_a_draft_is_named():
     assert "~g-ST5Q" in render("board")
 
 
-def test_install_writes_both_and_check_reports_drift(tmp_path):
+def test_the_work_skill_carries_the_lifecycle_policy():
+    work, admin = flat(render("board")), flat(render("board-admin"))
+    for rule in (
+        "Draft cards are ideas and are allowed only in `Inbox`.",
+        "Only issues move beyond `Inbox`.",
+        "Move it to `In progress` before starting work.",
+        "Only a human accepts work.",
+        "Never move them through `Done`",
+    ):
+        assert rule in work
+        assert rule not in admin
+
+
+def test_install_writes_both_skills_for_both_agents_and_check_reports_drift(tmp_path):
     settings = config(tmp_path)
     assert install(settings) == 0
-    written = [tmp_path / ".claude/skills" / name / "SKILL.md" for name in SKILLS]
+    written = [tmp_path / root / name / "SKILL.md"
+               for root in SKILL_ROOTS for name in SKILLS]
     assert all(path.exists() for path in written)
+    assert len({path.read_text(encoding="utf-8") for path in written}) == len(SKILLS)
     assert install(settings, check=True) == 0
     written[0].write_text("hand edited\n", encoding="utf-8")
     assert install(settings, check=True) == 1
 
 
-def test_a_skill_left_by_an_earlier_name_is_reported(tmp_path, capsys):
+def test_a_skill_left_by_an_earlier_name_is_reported_in_each_root(tmp_path, capsys):
     """Skills were once named per repo; one left from then still loads."""
-    old = tmp_path / ".claude/skills" / "places-github" / "SKILL.md"
-    old.parent.mkdir(parents=True)
-    old.write_text(render("board"), encoding="utf-8")
+    for root in SKILL_ROOTS:
+        old = tmp_path / root / "places-github" / "SKILL.md"
+        old.parent.mkdir(parents=True)
+        old.write_text(render("board"), encoding="utf-8")
     install(config(tmp_path))
-    assert "places-github/SKILL.md is left over" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert output.count("places-github/SKILL.md is left over") == len(SKILL_ROOTS)
     assert install(config(tmp_path), check=True) == 1
 
 

@@ -13,9 +13,10 @@ project_name = "$project_name"
 # being blocked is not a stage, so it is a field holding what is in the way.
 status_order = ["Inbox", "Todo", "In progress", "In review", "Done"]
 
-# Saved tabs. `admin apply` creates a missing one and never deletes any. They
-# show `status` alone, because it is the one field every board has; add your
-# own to a view once the field exists.
+# Saved tabs. `admin apply` creates a missing one and never deletes any.
+# Existing tabs stay as GitHub holds them unless `admin apply --reconcile` is
+# explicitly used; that mode makes declared filters win. These tabs show
+# `status` alone because it is the one field every board has.
 [[board.views]]
 name = "Open work"
 layout = "BOARD"

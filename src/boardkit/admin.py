@@ -16,6 +16,7 @@ and multi-select fields work here because the limit was the wrapper's.
 from __future__ import annotations
 
 import datetime
+from dataclasses import dataclass
 
 from . import auth
 from .config import CREATABLE, Config, ProjectField
@@ -249,12 +250,13 @@ def apply_options(config: Config, number: str, field: ProjectField,
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
 
-def apply(config: Config, dry: bool = False) -> int:
+def apply(config: Config, dry: bool = False, reconcile: bool = False) -> int:
     """Bring the board into line with what this repo declares.
 
     Named for what it does rather than for the first time it runs: it creates
     the project when there is none, and on every run after that it adds the
-    fields and options that are missing. It never deletes.
+    fields and options that are missing. It never deletes. `reconcile` also
+    makes declared view filters win over an existing view for this run.
     """
     auth.require(config, "admin")
     number = locate(config)
@@ -274,7 +276,13 @@ def apply(config: Config, dry: bool = False) -> int:
         for view in config.views:
             if view.name not in saved:
                 print(f"  would add view {view.name} [{view.layout}]")
-        if not missing and all(v.name in saved for v in config.views):
+            elif reconcile and saved[view.name].filter != view.filter:
+                print(f"  would set view {view.name} filter to {view.filter!r}")
+        views_match = all(
+            view.name in saved and (
+                not reconcile or saved[view.name].filter == view.filter)
+            for view in config.views)
+        if not missing and views_match:
             print("  nothing missing.")
         return 0
 
@@ -319,19 +327,28 @@ def apply(config: Config, dry: bool = False) -> int:
     if not missing:
         print("  every configured field already exists.")
     apply_views(config, number, project_id or (found[0] if found else ""),
-                parse_fields(fetch_fields(config, number), config))
+                parse_fields(fetch_fields(config, number), config),
+                reconcile=reconcile)
     return 0
 
 
-def existing_views(config: Config, number: str) -> dict[str, str]:
-    """Saved tabs by name, so `apply` adds what is missing and nothing else."""
+@dataclass(frozen=True)
+class ExistingView:
+    id: str
+    filter: str = ""
+
+
+def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
+    """Saved tabs by name, with the filter explicit reconciliation needs."""
     kind = "organization" if config.owner_type == "org" else "user"
     query = (f"{{ {kind}(login: {quoted(config.owner)}) "
              f"{{ projectV2(number: {number}) "
-             f"{{ views(first: {config.page_size}) {{ nodes {{ id name }} }} }} }} }}")
+             f"{{ views(first: {config.page_size}) "
+             "{ nodes { id name filter } } } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     nodes = payload["data"][kind]["projectV2"]["views"]["nodes"]
-    return {node["name"]: node["id"] for node in nodes if node}
+    return {node["name"]: ExistingView(node["id"], node.get("filter") or "")
+            for node in nodes if node}
 
 
 def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
@@ -362,11 +379,12 @@ def filter_view(view_id: str, expression: str) -> None:
 
 
 def apply_views(config: Config, number: str, project_id: str,
-                fields: tuple[ProjectField, ...]) -> None:
-    """Create the views config declares and does not already have.
+                fields: tuple[ProjectField, ...], reconcile: bool = False) -> None:
+    """Create declared views; explicitly reconcile their filters when asked.
 
-    Matched by name and never deleted, like fields: a view someone made in the
-    browser is not boardkit's to remove.
+    Default application leaves an existing view alone, because a deployed
+    board's live shape belongs to GitHub. Reconciliation is an explicit choice
+    to make config win for declared filters. Neither mode deletes a view.
     """
     if not config.views:
         return
@@ -374,6 +392,12 @@ def apply_views(config: Config, number: str, project_id: str,
     field_ids = {field.name: field.id for field in fields if field.id}
     for view in config.views:
         if view.name in standing:
+            current = standing[view.name]
+            if reconcile and current.filter != view.filter:
+                filter_view(current.id, view.filter)
+                print(f"  reconciled view {view.name} filter")
+                note("reconciled_view_filter", name=view.name,
+                     filter=view.filter or None)
             continue
         made = make_view(project_id, view, field_ids)
         if view.filter:

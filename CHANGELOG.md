@@ -5,7 +5,12 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
-Nothing yet.
+- Install the generated `board` and `board-admin` skills for both Claude Code
+  and Codex, and check both copies for drift.
+- Define the work-item lifecycle in the `board` skill while keeping board
+  shape and setup in `board-admin` and `AGENTS.md`.
+- Add `board admin apply --reconcile` to update declared view filters
+  explicitly. Ordinary apply remains additive and preserves existing views.
 
 ## 0.1.0 — 2026-10-03
 

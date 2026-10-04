@@ -161,9 +161,11 @@ def test_a_view_names_its_visible_fields_by_id():
 
 def test_a_view_that_already_exists_is_left_alone(monkeypatch):
     from boardkit import admin
+    from boardkit.admin import ExistingView
     from boardkit.config import View
     config = CONFIG.model_copy(update={"views": (View(name="Board"),)})
-    monkeypatch.setattr(admin, "existing_views", lambda config, number: {"Board": "V_1"})
+    monkeypatch.setattr(admin, "existing_views",
+                        lambda config, number: {"Board": ExistingView("V_1")})
     monkeypatch.setattr(admin, "make_view",
                         lambda *a: (_ for _ in ()).throw(AssertionError("made again")))
     admin.apply_views(config, "5", "PVT_1", ())
@@ -290,11 +292,51 @@ def test_a_view_that_already_exists_is_never_recreated(sent, monkeypatch):
     """Matched by name and never deleted: a tab someone made in the browser
     is not boardkit's to touch."""
     from boardkit import admin
+    from boardkit.admin import ExistingView
     from boardkit.config import View
-    monkeypatch.setattr(admin, "existing_views", lambda config, number: {"Open": "V_1"})
+    monkeypatch.setattr(admin, "existing_views",
+                        lambda config, number: {"Open": ExistingView("V_1")})
     config = CONFIG.model_copy(update={"views": (View(name="Open"),)})
     admin.apply_views(config, "4", "PVT_1", ())
     assert not any("createProjectV2View" in q for q in sent)
+
+
+def test_reconcile_updates_an_existing_view_filter(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Open": ExistingView("V_1", "is:open")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="Open", filter="-status:Done"),)})
+    admin.apply_views(config, "4", "PVT_1", (), reconcile=True)
+    assert not any("createProjectV2View" in q for q in sent)
+    changed = [q for q in sent if "updateProjectV2View" in q]
+    assert len(changed) == 1 and 'filter: "-status:Done"' in changed[0]
+
+
+def test_default_apply_preserves_an_existing_view_filter(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Open": ExistingView("V_1", "is:open")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="Open", filter="-status:Done"),)})
+    admin.apply_views(config, "4", "PVT_1", ())
+    assert not any("mutation" in q for q in sent)
+
+
+def test_reconcile_does_nothing_when_the_filter_matches(sent, monkeypatch):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Open": ExistingView("V_1", "-status:Done")})
+    config = CONFIG.model_copy(update={
+        "views": (View(name="Open", filter="-status:Done"),)})
+    admin.apply_views(config, "4", "PVT_1", (), reconcile=True)
+    assert not any("mutation" in q for q in sent)
 
 
 def test_a_declared_filter_is_a_second_mutation_after_the_view_is_made(sent):
@@ -332,6 +374,22 @@ def test_a_dry_run_sends_no_mutation_at_all(sent, monkeypatch, capsys):
     admin.apply(CONFIG, dry=True)
     assert not any("mutation" in q for q in sent)
     assert "would add" in capsys.readouterr().out
+
+
+def test_a_reconcile_dry_run_reports_filter_drift_without_mutating(
+        sent, monkeypatch, capsys):
+    from boardkit import admin
+    from boardkit.admin import ExistingView
+    from boardkit.config import View
+    config = CONFIG.model_copy(update={
+        "views": (View(name="Open", filter="-status:Done"),)})
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Open": ExistingView("V_1", "is:open")})
+    admin.apply(config, dry=True, reconcile=True)
+    assert not any("mutation" in q for q in sent)
+    assert "would set view Open filter to '-status:Done'" in capsys.readouterr().out
 
 
 def test_linking_without_a_project_says_to_create_one_first(monkeypatch):

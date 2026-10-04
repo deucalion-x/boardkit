@@ -20,7 +20,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth [--refresh]     what this gh login is allowed to do
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
-  board admin apply [-n]     make the board match what this repo declares
+  board admin apply [-n] [--reconcile]
+                             add missing shape; optionally update view filters
   board admin link           attach the project to the repository
 
   board mirror write|check   the issue-text mirror in git
@@ -76,7 +77,8 @@ def dispatch(command: str, args: list[str]) -> int:
     if command == "admin":
         verb = args[0] if args else "apply"
         if verb == "apply":
-            return admin.apply(config, dry="-n" in args)
+            return admin.apply(config, dry="-n" in args,
+                               reconcile="--reconcile" in args)
         if verb == "link":
             return admin.link(config)
         return usage()

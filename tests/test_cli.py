@@ -57,6 +57,16 @@ def test_help_exits_clean(repo):
     assert cli.main(["--help"]) == 0
 
 
+def test_admin_reconcile_flag_reaches_apply(repo, monkeypatch):
+    from boardkit import admin
+    called = []
+    monkeypatch.setattr(admin, "apply",
+                        lambda config, dry=False, reconcile=False:
+                        called.append((dry, reconcile)) or 0)
+    assert cli.main(["admin", "apply", "-n", "--reconcile"]) == 0
+    assert called == [(True, True)]
+
+
 def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert cli.main(["list"]) == 1

@@ -1,7 +1,7 @@
 [project]
 name = "boardkit"
 version = "0.1.0"
-description = "Query a GitHub Project board, and keep its issues reviewable from git."
+description = "Create github project boards, manage them locally with agents."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 authors = [
