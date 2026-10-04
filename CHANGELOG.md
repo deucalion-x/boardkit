@@ -5,6 +5,11 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+- Give the starter board an unfiltered `Current` board and an unfiltered `All`
+  table, showing the same tasks in two layouts.
+
+## 0.1.2 — 2026-10-04
+
 - Add `board promote <ref>`, which converts a draft card into an issue in
   place — keeping every field value and its column — so the lifecycle step the
   skill describes has a command behind it. Moving a draft past the intake
@@ -12,8 +17,6 @@ All notable changes to boardkit are recorded here. Releases follow
   and a repo declaring no `status_order` is not second-guessed at all.
 - Start every listing with the board's URL, so an answer about work says which
   board it came from. Not on `board json`, which feeds jq.
-- Give the starter board an unfiltered `Current` board and an unfiltered `All`
-  table, showing the same tasks in two layouts.
 
 ## 0.1.1 — 2026-10-04
 
