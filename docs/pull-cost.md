@@ -95,41 +95,23 @@ see a card that was created, and a card moved between columns leaves the id set
 identical. Membership and field staleness are different questions and L0
 answers only the first.
 
-## How often a read actually pulls
+## Where the read floor comes from
 
-The objection worth taking seriously is that a read which pulls is barely a
-local board at all. Measured over one session's trail — 33 reads, 32 gaps
-between them — the answer is that read gaps are bimodal:
+The default is 300 seconds. It was picked from one session's read gaps, which
+is thin evidence and was a session unusually full of board poking — so treat
+the number as a starting point, not a measurement.
 
-| gap between consecutive reads | count |
-|---|---|
-| 0-17s | 18 |
-| 44-199s | 5 |
-| 415-5100s | 8 |
-| 16 hours | 1 |
+What the exercise did establish is the shape worth looking for: read gaps are
+bursty rather than spread out. A session asks several questions while picking
+up a card, then nothing for an hour. So the floor wants to sit in the empty
+band *above* the burst, where it keeps a burst local without letting the
+snapshot age into the next hour.
 
-Median 14s, and **nothing at all between 17s and 44s**. The bursts are where a
-snapshot earns its keep: those eighteen reads inside seventeen seconds would
-otherwise be eighteen API calls, which is what having no board would really
-cost.
-
-The floor is therefore chosen to land in the empty band above the second
-cluster, not the first:
-
-| floor | reads answered from disk | pulls in that session |
-|---|---|---|
-| 60s | 19/32 | 13 |
-| 300s | 24/32 | 8 |
-
-300 is the default. It keeps three reads in four local while bounding staleness
-two orders of magnitude below the 16-hour snapshot that once came within one
-command of being reported as current. Raising it further buys little: the next
-gap up is already 415s, and past that the distribution is hours.
-
-One session is thin evidence and it was a session unusually full of board
-poking. Re-derive it from `.boardkit/log.jsonl` before moving the number: the
-trail records every command with its timestamp, so the distribution above is a
-few lines of jq away.
+Measure it rather than argue about it. Every command is a line in
+`.boardkit/log.jsonl` with its timestamp, so the real distribution — from real
+sessions, across real work — is a few lines of jq away. Derive the gaps, find
+the empty band, and move the number if the band moved. That is also the only
+way to find out whether the shape above survives more than one session.
 
 ## When this answer changes
 
@@ -164,3 +146,17 @@ echo "cost: $(( before - after - 1 ))"   # less one for the probe itself
 Both probes cost a point each, so subtract them. `remaining` also refills over
 the hour, which shows up as a negative cost on a cheap command — that is the
 refill, not a free lunch.
+
+For how often reads actually happen — the question the floor answers — the
+trail is the instrument, not a stopwatch:
+
+```bash
+jq -r 'select(.action == "configured") | .at' .boardkit/log.jsonl \
+  | sort | uniq \
+  | python3 -c 'import sys,datetime as d; t=[d.datetime.fromisoformat(l.strip()) for l in sys.stdin]; print(*[int((b-a).total_seconds()) for a,b in zip(t,t[1:])], sep="\n")' \
+  | sort -n | uniq -c
+```
+
+Gaps, smallest first. Look for the empty band: the floor belongs above the
+burst and below the long waits. Run it over weeks rather than a session, and
+over someone else's sessions too — one agent's habits are not the distribution.
