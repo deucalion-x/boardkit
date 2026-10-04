@@ -57,6 +57,7 @@ board set 18 status "In progress"         # one field
 board set 18 <field> "<value>"
 board add "Title" --body "..." status=Inbox   # a new issue, fielded in one go
 board add --draft "A thought"             # a board card, no issue behind it
+board promote ~a1b2c3                     # that card becomes an issue, in place
 ```
 
 Create an **issue** for work that carries a plan or acceptance criteria — it
@@ -78,7 +79,12 @@ draft in Inbox
 
 1. Draft cards are ideas and are allowed only in `Inbox`.
 2. When an idea is selected for refinement or execution, convert it to an
-   issue. Only issues move beyond `Inbox`.
+   issue. Only issues move beyond `Inbox`. `board promote <ref>` is the
+   conversion: it happens in place, so the fields the card already carries
+   survive, and it gains a number, a URL and a place in `gh issue list`.
+   Setting a draft's status past the intake column is refused and names this
+   command; `--anyway` does it regardless, which is for when someone asks and
+   not a way around this step.
 3. Move a refined, unblocked issue to `Todo`.
 4. Move it to `In progress` before starting work.
 5. Record the result and verification on the issue, then move it to `In

@@ -11,8 +11,10 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board add <title> [f=v]    create an issue and put it on the board
                              --body <text> for its text
                              --draft for a board card with no issue behind it
+  board promote <ref>        turn a draft card into an issue, keeping its fields
   board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
                              --later: queue without trying
+                             --anyway: move a draft out of the intake column
   board rejected [--clear]   local changes that lost to a remote change
   board log [n]              what boardkit did, for audit and debugging
   board sync [push|status]   pull, drain the queue, or report
@@ -92,6 +94,14 @@ def dispatch(command: str, args: list[str]) -> int:
         if draft:
             return create.add_draft(config, store, title, body, values)
         return create.add(config, store, title, body, values)
+    if command == "promote":
+        if not args:
+            return usage()
+        # Gated here rather than inside: creating the issue is a repository
+        # write, and a missing scope should read as advice rather than as
+        # whatever GitHub says after the card is half-converted.
+        auth.require(config, "write")
+        return create.promote(config, store, args[0].lstrip("#"))
     if command == "set":
         return queue(config, store, args)
     if command == "log":
@@ -293,8 +303,43 @@ def run_sync(config, store: Store, verb: str) -> int:
     return usage()
 
 
+def settling(config, snapshot, write: Write, asked: bool) -> None:
+    """Refuse to walk a draft out of intake unless that is what was asked for.
+
+    GitHub allows it and so does boardkit: the board is not ours to have
+    opinions about, and a state a human made in the UI has to be readable and
+    writable here. What is worth preventing is an agent doing it *by default* —
+    which it did, because converting the card was impossible until `promote`
+    existed, so moving it was the only action available.
+
+    So this is a default and not a rule. `--anyway` does it, and the refusal
+    names both that and the command the agent probably wanted.
+
+    Repo-declared, not built in: the gate is the first column of
+    `status_order`, which is the intake column by construction. A repo that
+    declares no order gets no opinion, because boardkit would be asserting one
+    workflow for every consumer of a general tool.
+    """
+    if asked or not config.status_order:
+        return
+    item = snapshot.item(write.ref)
+    if item is None or not item.draft:
+        return
+    if write.field != config.status_field:
+        return
+    intake = config.status_order[0]
+    if not write.value or write.value == intake:
+        return
+    raise BoardError(
+        f"{write.ref} is a draft card, and drafts stay in `{intake}`. An idea "
+        f"that has earned a plan becomes an issue: `board promote "
+        f"{write.ref}` converts it in place, keeping its fields, and the "
+        f"issue can then move. `--anyway` sets `{write.value}` on the draft "
+        f"regardless.")
+
+
 def queue(config, store: Store, args: list[str]) -> int:
-    words = [a for a in args if a != "--later"]
+    words = [a for a in args if a not in ("--later", "--anyway")]
     if len(words) < 3:
         return usage()
     ref, field, value = words[0].lstrip("#"), words[1], " ".join(words[2:])
@@ -307,6 +352,8 @@ def queue(config, store: Store, args: list[str]) -> int:
         return 1
     # Before recording, not after: a write refused here must never enter the
     # queue, where nothing would ever get it out again.
+    settling(config, snapshot, Write(ref=ref, field=field, value=value),
+             asked="--anyway" in args)
     sync.check(Write(ref=ref, field=field, value=value), snapshot)
     # After `check`, not before: a write that is invalid anyway should fail on
     # its value rather than spend the rejection that was guarding the field.

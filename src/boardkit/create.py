@@ -13,7 +13,7 @@ cannot be queued for later, and it says so rather than pretending.
 from __future__ import annotations
 
 from .config import Config
-from .gh import BoardError, gh, gh_json
+from .gh import BoardError, gh, gh_json, quoted, run_json
 from .store import Store, Write
 from .trail import note
 
@@ -74,6 +74,60 @@ def add(config: Config, store: Store, title: str, body: str,
     from . import sync
     sync.pull(config, store)
     remember(store, added.get("id", ""), issue, title, body or "", values)
+    return 0
+
+
+def promote(config: Config, store: Store, ref: str) -> int:
+    """Turn a draft card into an issue, in place.
+
+    Step 2 of the lifecycle the skill describes — an idea that has earned a
+    plan becomes an issue — and until now the one step with no command behind
+    it. An agent following the policy reached it and could only move the draft
+    instead, which is why this board's only draft sat in `Done`.
+
+    In place matters: GitHub converts the card rather than replacing it, so the
+    item id survives and every field value with it. Status, effort, area and
+    whatever else the board carries are still there afterwards, and the card
+    does not jump column. What changes is that it gains a number and a URL, so
+    it can be linked from a commit, reviewed, and closed by one.
+
+    Needs the network for the same reason `add` does: only GitHub can mint the
+    number, and nothing else in boardkit addresses an issue without it.
+    """
+    snapshot = store.state()
+    item = snapshot.item(ref)
+    if item is None:
+        raise BoardError(f"{ref} is not on the board")
+    if not item.draft:
+        raise BoardError(
+            f"#{item.ref} is already an issue ({item.url or 'no url recorded'})")
+    # The repository's node id, which the mutation needs and the snapshot has
+    # no reason to carry: this is the only call that wants it.
+    owner, name = config.repo.split("/", 1)
+    ask = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+           "{ id } }")
+    found = run_json(["gh", "api", "graphql", "-f", f"query={ask}"])
+    repository = (found.get("data") or {}).get("repository") or {}
+    if not repository.get("id"):
+        raise BoardError(f"could not read the node id of {config.repo}")
+    convert = ("mutation { convertProjectV2DraftIssueItemToIssue(input: { "
+               f"itemId: {quoted(item.id)}, "
+               f"repositoryId: {quoted(repository['id'])} }}) "
+               "{ item { id content { ... on Issue { number url } } } } }")
+    done = run_json(["gh", "api", "graphql", "-f", f"query={convert}"])
+    content = (((done.get("data") or {})
+                .get("convertProjectV2DraftIssueItemToIssue") or {})
+               .get("item") or {}).get("content") or {}
+    number, url = content.get("number"), content.get("url", "")
+    if not number:
+        raise BoardError("GitHub converted the card but named no issue number")
+    print(f"Promoted {ref} to #{number} {url}")
+    print(f"  fields kept: {item.field(config.status_field)}"
+          f"{''.join(f', {name}={value}' for name, value in item.fields.items() if name != config.status_field)}")
+    note("promoted", was=ref, ref=str(number), url=url, item=item.id)
+
+    from . import sync
+    sync.pull(config, store)
     return 0
 
 

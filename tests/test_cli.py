@@ -143,7 +143,11 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     import tomllib
     board = tomllib.loads(text)["board"]
     assert board["status_order"][:2] == ["Inbox", "Todo"]
-    assert [v["name"] for v in board["views"]] == ["Open work", "Everything"]
+    assert [v["name"] for v in board["views"]] == ["Current", "All"]
+    assert board["views"][0]["layout"] == "BOARD"
+    assert "filter" not in board["views"][0]
+    assert board["views"][1]["layout"] == "TABLE"
+    assert "filter" not in board["views"][1]
 
 
 def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
@@ -184,7 +188,7 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     assert load(packaged).repo == "octo/places"
     assert load(packaged).status_order == (
         "Inbox", "Todo", "In progress", "In review", "Done")
-    assert [v.name for v in load(packaged).views] == ["Open work", "Everything"]
+    assert [v.name for v in load(packaged).views] == ["Current", "All"]
 
 
 def test_the_starter_states_the_board_it_would_build(tmp_path):
@@ -442,3 +446,58 @@ def test_an_offline_read_shows_the_queue_it_cannot_push(seeded, capsys):
     seeded.queue("7", "status", "In progress")
     assert cli.main(["list", "--offline"]) == 0
     assert "In progress" in capsys.readouterr().out
+
+
+# --- A draft stays in intake unless moving it is what was asked ------------
+
+@pytest.fixture
+def intake(seeded, repo, monkeypatch):
+    """The seeded board with an order whose first column the field really has,
+    and a push that records nothing — the gate is decided before any call."""
+    (repo / "pyproject.toml").write_text(
+        TABLE.replace('status_order = ["Ready", "In progress", "Done"]',
+                      'status_order = ["Inbox", "Todo", "In progress", "Done"]'),
+        encoding="utf-8")
+    state = seeded.state()
+    field = state.fields[0].model_copy(update={
+        "option_ids": {"Inbox": "O_I", "Todo": "O_R", "In progress": "O_P",
+                       "Done": "O_D"}})
+    seeded.save_state(state.model_copy(update={"fields": (field, *state.fields[1:])}))
+    monkeypatch.setattr(cli.sync, "push_now", lambda config, store: (1, 0, ""))
+    return next(item for item in seeded.state().items if item.draft)
+
+
+def test_moving_a_draft_out_of_intake_is_refused_with_the_way_forward(intake,
+                                                                      capsys):
+    """GitHub allows it; the point is that an agent does not do it by default."""
+    assert cli.main(["set", intake.ref, "status", "In progress"]) == 1
+    said = capsys.readouterr().err
+    assert "drafts stay in `Inbox`" in said
+    assert f"board promote {intake.ref}" in said, "name the command they wanted"
+    assert "--anyway" in said
+
+
+def test_asked_for_explicitly_the_draft_moves(intake, capsys):
+    assert cli.main(["set", intake.ref, "status", "In progress", "--anyway"]) == 0
+    assert "In progress" in capsys.readouterr().out
+
+
+def test_a_draft_may_still_be_set_within_intake(intake, capsys):
+    assert cli.main(["set", intake.ref, "status", "Inbox"]) == 0
+
+
+def test_an_issue_is_not_gated(intake, capsys):
+    assert cli.main(["set", "7", "status", "In progress"]) == 0
+
+
+def test_a_drafts_other_fields_are_not_gated(intake, capsys):
+    """The rule is about leaving intake, not about drafts being read-only."""
+    assert cli.main(["set", intake.ref, "workstream", "Maps"]) == 0
+
+
+def test_a_repo_declaring_no_order_gets_no_opinion(intake, repo, capsys):
+    """boardkit must not assert one workflow for every consumer of it."""
+    (repo / "pyproject.toml").write_text(
+        TABLE.replace('status_order = ["Ready", "In progress", "Done"]\n', ""),
+        encoding="utf-8")
+    assert cli.main(["set", intake.ref, "status", "In progress"]) == 0
