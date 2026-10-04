@@ -105,6 +105,12 @@ CONTENT = (
     "content { ... on Issue { number title url state body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
+    # One scalar, on a node already being fetched, and it replaces a live
+    # search per `board item`. Only the parent is asked for: children are the
+    # same relation read the other way, and every item on the board is in this
+    # download, so inverting it locally is the whole answer rather than an
+    # approximation of it. See `board.children`.
+    "    parent { number } "
     "    milestone { title } } "
     "  ... on PullRequest { number title url state body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
@@ -514,6 +520,47 @@ def check(write: Write, snapshot: Snapshot) -> None:
     if field is None or not field.id:
         return
     value_literal(write, field)
+
+
+def contested(write: Write, store: Store) -> None:
+    """Refuse a write to a field whose last write lost — once.
+
+    A rejection records that the board moved under a decision. An agent in a
+    loop does not read it: it sets the field again, the conflict check compares
+    against `was`, which is still the value that lost, and the remote change
+    nobody looked at is overwritten. So a standing rejection is a gate and not
+    only a log.
+
+    Per field and not per item, because that is what the conflict was about.
+    Thirty-nine writes in a batch with one conflict stay thirty-nine landed and
+    one recorded; this refuses only the next write to the field that lost.
+
+    One-shot, because refusing forever leaves no way to say "I have seen it and
+    I still mean it" without inventing a second verb for it. The refusal
+    consumes the rejection, so the same command repeated stands.
+
+    The limit is worth stating plainly: this stops a blind overwrite, not a
+    determined one. An agent that mechanically retries the command gets
+    through on the second attempt, by design — knowing whether the remote
+    value was actually read would need acknowledgement state, and a gate that
+    cheap is worth more than a gate that heavy.
+    """
+    standing = store.rejected()
+    found = next((kept for kept in standing
+                  if kept.write.ref == write.ref
+                  and kept.write.field == write.field), None)
+    if found is None:
+        return
+    store.save_rejected([kept for kept in standing
+                         if kept.write.id != found.write.id])
+    note("contested", id=write.id, ref=write.ref, field=write.field,
+         value=write.value, remote=found.remote)
+    raise BoardError(
+        f"#{write.ref} {write.field}: the last write here lost — "
+        f"`{found.write.value}` was wanted, the board holds `{found.remote}`"
+        f"{f' ({found.reason})' if found.reason else ''}. Nothing was written. "
+        f"Read the item and decide again, or repeat this command to set "
+        f"`{write.value}` anyway.")
 
 
 def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:

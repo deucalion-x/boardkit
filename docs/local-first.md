@@ -78,10 +78,25 @@ until an agent reads it.
 
 ## Who reads what
 
-Reads answer from `state`. Changes append to `pending` and then land in
-`state` or `rejected`. The exception is the child list in `board item`, which
-has to ask GitHub because a board does not record which issue is a sub-issue
-of which; it is skipped with a note when GitHub cannot be reached.
+Reads answer from `state`, with `pending` folded in — a write that has not
+landed is still a decision this repository made, and an agent that sets a
+field and reads it back must not be told the old value. The fold happens on the
+way out (`cli.showing`) and is never saved: the file goes on meaning "what
+GitHub last held", which is what keeps the conflict check honest and what lets
+a pull replace it without consulting anyone. A read says how many queued
+changes it is showing, because a value that is not on the board yet must not
+look like one that is.
+
+Changes append to `pending` and then land in `state` or `rejected`.
+
+Nothing is exempt. The child list in `board item` was, because a board does not
+record which issue is a sub-issue of which — so it asked GitHub on every
+invocation, which the read-age window could not bound: there was no stored
+value whose age it could check, and the cost grew with how many cards an agent
+opened rather than with time. Each item now carries its own `parent`, one
+scalar on nodes the pull already fetches, and `board.children` inverts it over
+the snapshot. The direction stored is the one GitHub will give in bulk; the
+direction asked is the other one, and having all the items makes it free.
 
 ## Conflict rule
 
@@ -95,6 +110,31 @@ told. Otherwise it is pushed.
 The agent's recourse is to re-decide against reality, not to retry blindly.
 A human's edit in the web UI therefore always wins, which is the behaviour we
 want: the human saw the board, the agent saw a copy.
+
+A conflict costs one field and nothing else. Writes are judged one at a time,
+so a batch of forty with one conflict is thirty-nine landed and one recorded —
+a single mismatch must never strand the rest, and once did.
+
+### The rejection is also a gate
+
+Re-deciding is what we want and not what a loop does. Left as a log, a
+rejection changes nothing about the next write to that field: the comparison
+value is still the one that lost, so the second attempt passes the conflict
+check and overwrites the remote change nobody looked at.
+
+So a standing rejection refuses the next write to that same item and field
+(`sync.contested`), naming both values. It refuses once: the refusal consumes
+the rejection, and the same command repeated stands. That is how an agent says
+"I have seen it and I still mean it" without a second verb existing for it.
+
+**The limitation, stated rather than implied.** This stops a blind overwrite,
+not a determined one. An agent that mechanically retries the same command gets
+through on the second attempt, and that is the intended trade: knowing whether
+the remote value was actually *read* would need acknowledgement state, carried
+per field and invalidated on every pull, and the gate is not worth that. What
+it buys is that the overwrite can no longer happen without the reason being
+printed first. Human edits still win every first time; the second time is on
+whoever repeated the command.
 
 ## Why writes queue at all
 
@@ -112,8 +152,13 @@ The queue earns its place twice over instead:
   one. The saving is in the pull, not the writes.
 
 Boardkit attempts to drain the queue as part of each ordinary change. `--later`
-deliberately skips that attempt, and `board sync push` retries whatever remains
-after an offline or rate-limited run. There is no background daemon.
+deliberately skips that attempt. Whatever remains after an offline or
+rate-limited run is retried by the next refresh past the read-age window, which
+pushes before it pulls: a landed change is then in the snapshot the pull
+returns, instead of being compared against values that had already moved.
+`board sync push` is asking for that sooner. There is no background daemon —
+the retry is a step inside a command someone ran, so a queue is only ever
+retried by work that was happening anyway.
 
 ## Sync loop
 

@@ -3,9 +3,7 @@
 Reads answer from the local store; only the sync verbs touch GitHub.
 
   board                      every open item, by status
-  board item <n>             one item with its text and children (the child
-                             list is the one read that needs GitHub; it is
-                             skipped, not fatal, when it cannot be reached)
+  board item <n>             one item with its text and children
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
   board views                the saved tabs the board has
@@ -27,7 +25,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
 
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
-  board install-skill        write the agent skill into .claude/skills/
+  board install-skill        write the agent skills for Claude Code and Codex
 """
 from __future__ import annotations
 
@@ -154,22 +152,11 @@ def dispatch(command: str, args: list[str]) -> int:
             print()
             print(found.body.rstrip())
             print()
-        # Parent links are not in the snapshot, so children cost a call. A
-        # draft cannot have any: nothing can name it as a parent.
-        #
-        # Being unable to make that call is not a failure of this command. The
-        # item, its text and its fields have already printed from the snapshot,
-        # which is what `board item` promises; the children are the one part
-        # that was never local. Raising here printed the whole answer and then
-        # died on the footnote.
-        kids = []
-        if found is not None and not found.draft:
-            try:
-                kids = [index[str(n)] for n
-                        in board_module.children(found.number, config)
-                        if str(n) in index]
-            except (Unreachable, RateLimited) as why:
-                print(f"  children: not listed ({why.__class__.__name__.lower()})")
+        # Local, like the rest of the answer: each item carries its parent, so
+        # the children are a pass over the snapshot. This was a search per
+        # invocation — the one read that always spent quota, and the one that
+        # could fail for a reason the question had nothing to do with.
+        kids = board_module.children(found.number, items) if found else []
         if kids:
             print("  children:")
             board_module.show(kids, view)
@@ -195,6 +182,9 @@ def freshen(config, store: Store, offline: bool = False) -> Snapshot:
     Nothing is supervised and nothing polls. A pull that cannot reach GitHub
     leaves the snapshot alone and says so, because answering from a known-old
     copy beats failing the question.
+
+    The window elapsing is also the only regular tick there is, so a queue
+    left behind by an offline write is retried here before the pull.
     """
     snapshot = store.state()
     floor = config.max_read_age_seconds
@@ -202,14 +192,75 @@ def freshen(config, store: Store, offline: bool = False) -> Snapshot:
     # fetching one behind the caller's back, so that setting a repo up is
     # something they did and not something that happened to them.
     if snapshot.empty or offline or not floor or snapshot.age <= floor:
-        return snapshot
+        return showing(store, snapshot)
     try:
         auth.require(config, "read")
-        return sync.pull(config, store)
+        drain(config, store)
+        return showing(store, sync.pull(config, store))
     except (BoardError, RateLimited, Unreachable) as why:
         print(f"note: answering from a snapshot {int(snapshot.age)}s old; "
               f"could not refresh it ({why})", file=sys.stderr)
+        return showing(store, snapshot)
+
+
+def showing(store: Store, snapshot: Snapshot) -> Snapshot:
+    """The snapshot as a read should see it, with queued writes folded in.
+
+    A write that has not landed is still a decision this repository has made.
+    Leaving it out of reads means an agent sets a field, reads it back and is
+    told the old value — worst offline, which is exactly when the queue is
+    doing the job it exists for. The fold is the same operation a landed push
+    performs, applied to the copy a read answers from.
+
+    Not saved, on purpose. The file on disk goes on meaning "what GitHub last
+    held", which is what keeps the conflict check honest and what lets a pull
+    replace it without consulting anyone.
+
+    Said out loud rather than shown silently: a value that is not on the board
+    yet must not be indistinguishable from one that is.
+    """
+    pending = store.pending()
+    if not pending:
         return snapshot
+    print(f"note: {len(pending)} queued change(s) included below and not yet "
+          f"on the board.", file=sys.stderr)
+    return sync.patched(snapshot, pending)
+
+
+def drain(config, store: Store) -> None:
+    """Retry whatever the queue is still holding, before a refresh lands.
+
+    A write that could not reach GitHub when it was made waited for someone
+    to run `board sync push` — which, in an agent's session, means waiting for
+    a person who is not there. The refresh is the retry: the window elapsing
+    is the only regular tick boardkit has, it is already spending a call, and
+    nothing has to be supervised for it to come around.
+
+    Before the pull rather than after, because the pull replaces the snapshot
+    these writes were decided against. Pushing first means a landed change is
+    in what the pull returns; pushing after would compare them to values that
+    had already moved.
+
+    Best effort throughout. Still being offline is the ordinary case, and a
+    read that asked for a refresh must not fail over the queue it inherited.
+    """
+    if not store.pending():
+        return
+    try:
+        auth.require(config, "write")
+    except BoardError:
+        return  # A read-only token keeps its reads. The queue keeps waiting.
+    try:
+        pushed, lost, _why = sync.push_now(config, store)
+    except BoardError:
+        return
+    # On stderr with the staleness note, and for the same reason: stdout is
+    # the answer to the question that was asked, and this is not it.
+    if pushed:
+        print(f"note: pushed {pushed} queued change(s).", file=sys.stderr)
+    if lost:
+        print(f"note: {lost} queued change(s) rejected. "
+              f"`board rejected` to see them.", file=sys.stderr)
 
 
 def run_sync(config, store: Store, verb: str) -> int:
@@ -217,6 +268,7 @@ def run_sync(config, store: Store, verb: str) -> int:
         # Gated before the call, so a missing scope reads as advice rather
         # than as whatever `gh` happens to print.
         auth.require(config, "read")
+        drain(config, store)
         snapshot = sync.pull(config, store)
         print(f"Pulled {len(snapshot.items)} items and {len(snapshot.fields)} fields")
         return report_queue(store)
@@ -254,6 +306,9 @@ def queue(config, store: Store, args: list[str]) -> int:
     # Before recording, not after: a write refused here must never enter the
     # queue, where nothing would ever get it out again.
     sync.check(Write(ref=ref, field=field, value=value), snapshot)
+    # After `check`, not before: a write that is invalid anyway should fail on
+    # its value rather than spend the rejection that was guarding the field.
+    sync.contested(Write(ref=ref, field=field, value=value), store)
     write = store.queue(ref, field, value)
     was = write.was or "unset"
     if "--later" in args:
@@ -262,13 +317,11 @@ def queue(config, store: Store, args: list[str]) -> int:
 
     _pushed, lost, why = sync.push_now(config, store)
     if why:
-        # Nothing retries this on its own, on purpose. The path opens only when
-        # GitHub is unreachable, the change is already safe in the queue, and
-        # every listing repeats the count — so the cost of a timer or a hook
-        # that outlives the command buys very little. Telling the user plainly
-        # is the end state, not a placeholder for automation.
+        # No timer and no hook outliving the command: the next refresh past
+        # the read-age window retries this (see `drain`), and `board sync
+        # push` is what asking for it sooner looks like.
         print(f"#{ref} {field} = {value} (was {was}) — kept, {why}. "
-              f"`board sync push` when that clears.")
+              f"Retried on the next sync, or `board sync push` now.")
         return 0
     if lost:
         return rejected(store, clear=False)

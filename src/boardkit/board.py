@@ -10,7 +10,6 @@ from typing import Literal, get_args
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from .config import Config
-from .gh import gh_json
 
 MISSING = "-"
 
@@ -51,6 +50,10 @@ class ProjectItem(BaseModel):
     labels: tuple[str, ...] = ()
     assignees: tuple[str, ...] = ()
     milestone: str = ""
+    # The issue this one is a sub-issue of, zero when it has none. Stored
+    # upward because that is the direction GitHub will give us in bulk; the
+    # question everyone asks is the downward one, and `children` inverts it.
+    parent: int = 0
     fields: dict[str, str] = {}
 
     @field_validator("type", mode="before")
@@ -160,6 +163,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             labels=named(content.get("labels"), "name"),
             assignees=named(content.get("assignees"), "login"),
             milestone=(content.get("milestone") or {}).get("title", ""),
+            parent=(content.get("parent") or {}).get("number") or 0,
             fields=fields,
         ))
     return items
@@ -226,11 +230,24 @@ def show(items: list[ProjectItem], view: Shape) -> None:
               f'{item.title[:50]:50} {extra}  {item.url}{marker}')
 
 
-def children(number: int, config: Config) -> list[int]:
-    found = gh_json("issue", "list", "--repo", config.repo,
-                    "--search", f"parent-issue:{config.repo}#{number}",
-                    "--json", "number", "--limit", "50")
-    return [found_item["number"] for found_item in found]
+def children(number: int, items: list[ProjectItem]) -> list[ProjectItem]:
+    """The items on the board whose parent is this one.
+
+    Local, because each item carries its own parent and the whole board is in
+    hand. This used to be a search per `board item`: the one read that always
+    spent an API call, that the read-age window could not bound because there
+    was no stored value whose age it could check, and that grew with how many
+    cards an agent opened rather than with time.
+
+    Nothing is lost by inverting instead of asking. The caller only ever
+    displayed children that are on the board, and every card on the board is
+    in the download — so a child GitHub would have named and this does not is
+    one that was being discarded anyway. It also now works offline, where the
+    search could only be skipped with a note.
+    """
+    if not number:
+        return []  # A draft. Nothing can name it as a parent.
+    return [item for item in items if item.parent == number]
 
 
 def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:

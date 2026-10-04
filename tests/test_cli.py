@@ -217,32 +217,34 @@ def test_a_field_can_be_cleared(seeded, monkeypatch, capsys):
     assert "workstream = " in capsys.readouterr().out
 
 
-def test_an_item_still_reads_when_github_cannot_be_reached(seeded, monkeypatch,
-                                                           capsys):
-    """`board item` is the one read that needs GitHub, for the child list only.
-    It used to print the whole item and then die on that footnote — so the
-    offline test above had to use a draft to dodge it.
-    """
-    from boardkit import board as board_module
-
-    def offline(number, config):
-        raise gh.Unreachable("GitHub could not be reached: no such host")
-
-    monkeypatch.setattr(board_module, "children", offline)
+def test_children_are_listed_from_the_snapshot_without_asking_github(seeded,
+                                                                     capsys):
+    """Each item carries its parent, so the child list is a pass over the
+    snapshot. It was a search per invocation: the one read that always spent
+    quota, and the one the read-age window could not bound because there was
+    no stored value whose age it could check. The `repo` fixture fails any
+    subprocess, so reaching GitHub here would fail this test."""
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={"items": (
+        *(item for item in state.items if item.ref != "8"),
+        state.item("8").model_copy(update={"parent": 7}))}))
     assert cli.main(["item", "7"]) == 0
     printed = capsys.readouterr().out
-    assert "Corridor" in printed                  # the item answered locally
-    assert "children: not listed" in printed      # and said what it could not do
+    assert "Corridor" in printed
+    assert "children:" in printed
+    assert "#8" in printed
 
 
-def test_an_item_that_can_reach_github_still_lists_its_children(seeded,
-                                                                monkeypatch,
-                                                                capsys):
-    from boardkit import board as board_module
-
-    monkeypatch.setattr(board_module, "children", lambda number, config: [8])
+def test_an_item_with_no_children_says_nothing_about_them(seeded, capsys):
     assert cli.main(["item", "7"]) == 0
-    assert "children:" in capsys.readouterr().out
+    assert "children:" not in capsys.readouterr().out
+
+
+def test_a_draft_has_no_children_and_costs_no_lookup(seeded, capsys):
+    """Nothing can name a draft as its parent: it has no issue number."""
+    draft = next(item for item in seeded.state().items if item.draft)
+    assert cli.main(["item", draft.ref]) == 0
+    assert "children:" not in capsys.readouterr().out
 
 
 # --- A read may not answer from a snapshot of any age -----------------------
@@ -314,3 +316,119 @@ def test_no_snapshot_at_all_is_not_staleness(repo, monkeypatch, capsys):
                         lambda c, s: pytest.fail("pulled behind the caller"))
     assert cli.main(["list"]) == 1
     assert "Run `board sync`" in capsys.readouterr().out
+
+
+# --- The refresh is the retry for a queue an offline write left behind ------
+
+@pytest.fixture
+def stranded(seeded, aged, monkeypatch):
+    """An aged snapshot with one write still queued, and a push that records
+    its calls rather than making them."""
+    seeded.queue("7", "status", "In progress")
+    pushes = []
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: pushes.append("pushed") or (1, 0, ""))
+    return pushes
+
+
+def test_a_refreshing_read_pushes_the_queue_first(stranded, aged, capsys):
+    assert cli.main(["list"]) == 0
+    assert stranded == ["pushed"], "the window elapsing is the retry"
+    assert aged == ["octo/widgets"], "and the pull still happens"
+    assert "pushed 1 queued change" in capsys.readouterr().err
+
+
+def test_a_read_inside_the_window_does_not_push(seeded, stranded, capsys):
+    seeded.save_state(seeded.state().model_copy(update={"synced_at": now()}))
+    assert cli.main(["list"]) == 0
+    assert stranded == [], "no refresh, no retry"
+
+
+def test_an_offline_read_does_not_push(stranded, capsys):
+    assert cli.main(["list", "--offline"]) == 0
+    assert stranded == []
+
+
+def test_an_empty_queue_costs_no_push_attempt(seeded, aged, monkeypatch):
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: pytest.fail("pushed nothing"))
+    assert cli.main(["list"]) == 0
+    assert aged == ["octo/widgets"]
+
+
+def test_a_read_only_token_still_reads_with_a_queue_waiting(seeded, aged,
+                                                            monkeypatch, capsys):
+    """The write scope is missing. That must cost the push, not the read."""
+    def scoped(config, tier):
+        if tier == "write":
+            raise gh.BoardError("the `write` tier needs scope(s) project")
+        return None
+
+    seeded.queue("7", "status", "In progress")
+    monkeypatch.setattr(cli.auth, "require", scoped)
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: pytest.fail("pushed unscoped"))
+    assert cli.main(["list"]) == 0
+    assert "#7" in capsys.readouterr().out
+
+
+def test_a_push_that_cannot_reach_github_still_leaves_the_read_answered(
+        seeded, aged, monkeypatch, capsys):
+    seeded.queue("7", "status", "In progress")
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: (0, 0, "offline"))
+    assert cli.main(["list"]) == 0
+    assert aged == ["octo/widgets"]
+    assert "#7" in capsys.readouterr().out
+
+
+def test_a_rejection_from_the_retry_is_named_on_stderr(seeded, aged, monkeypatch,
+                                                       capsys):
+    seeded.queue("7", "status", "In progress")
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: (0, 1, ""))
+    assert cli.main(["list"]) == 0
+    assert "1 queued change(s) rejected" in capsys.readouterr().err
+
+
+def test_sync_pull_drains_the_queue_too(seeded, aged, monkeypatch, capsys):
+    """An explicit pull is a snapshot sync, and drains on the same terms."""
+    pushes = []
+    monkeypatch.setattr(cli.sync, "push_now",
+                        lambda config, store: pushes.append("pushed") or (1, 0, ""))
+    seeded.queue("7", "status", "In progress")
+    assert cli.main(["sync", "pull"]) == 0
+    assert pushes == ["pushed"]
+
+
+# --- A queued write is visible to reads before it lands --------------------
+
+def test_a_queued_write_shows_in_reads_and_is_marked_as_queued(seeded, capsys):
+    seeded.queue("7", "status", "In progress")
+    assert cli.main(["json"]) == 0
+    caught = capsys.readouterr()
+    rows = {row["ref"]: row for row in json.loads(caught.out)}
+    assert rows["7"]["status"] == "In progress", "the agent's own change"
+    assert "1 queued change(s) included below" in caught.err
+
+
+def test_the_stored_snapshot_still_holds_what_github_last_held(seeded, capsys):
+    """The fold is for the read. The file is the conflict check's evidence."""
+    seeded.queue("7", "status", "In progress")
+    assert cli.main(["json"]) == 0
+    assert seeded.state().item("7").field("status") == "Todo"
+
+
+def test_an_empty_queue_says_nothing_and_changes_nothing(seeded, capsys):
+    assert cli.main(["json"]) == 0
+    caught = capsys.readouterr()
+    assert "queued change" not in caught.err
+    rows = {row["ref"]: row for row in json.loads(caught.out)}
+    assert rows["7"]["status"] == "Todo"
+
+
+def test_an_offline_read_shows_the_queue_it_cannot_push(seeded, capsys):
+    """The case the fold exists for: the queue is full because GitHub is gone."""
+    seeded.queue("7", "status", "In progress")
+    assert cli.main(["list", "--offline"]) == 0
+    assert "In progress" in capsys.readouterr().out

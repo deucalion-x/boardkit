@@ -2,6 +2,7 @@ import pathlib
 
 import pytest
 
+from boardkit import sync
 from boardkit.board import ProjectItem
 from boardkit.config import Config, ProjectField
 from boardkit.gh import BoardError
@@ -702,3 +703,47 @@ def test_an_ordinary_push_asks_for_no_extra_field_read(tmp_path, monkeypatch):
          "status": "Ready"}])
     monkeypatch.setattr(sync, "run_json", lambda args: {"data": {}})
     assert sync.push(config, kept) == (1, 0)
+
+
+# --- A standing rejection guards its field, once ---------------------------
+
+def contested_store(tmp_path, monkeypatch):
+    """A store holding one rejection: #1 area lost to `Maps`."""
+    from boardkit.store import Rejection
+
+    config = Config(root=tmp_path, owner="octo", project="4", repo="octo/widgets")
+    store = Store(config)
+    store.save_rejected([Rejection(
+        write=Write(ref="1", field="area", value="Trails"),
+        remote="Maps", reason="changed remotely")])
+    return store
+
+
+def test_a_write_to_a_field_that_lost_is_refused(tmp_path, monkeypatch):
+    store = contested_store(tmp_path, monkeypatch)
+    with pytest.raises(BoardError) as caught:
+        sync.contested(Write(ref="1", field="area", value="Trails"), store)
+    said = str(caught.value)
+    assert "the board holds `Maps`" in said
+    assert "repeat this command" in said
+
+
+def test_the_refusal_consumes_the_rejection_so_the_repeat_stands(tmp_path,
+                                                                 monkeypatch):
+    """One-shot: deliberate repetition is how an agent says it still means it."""
+    store = contested_store(tmp_path, monkeypatch)
+    with pytest.raises(BoardError):
+        sync.contested(Write(ref="1", field="area", value="Trails"), store)
+    assert store.rejected() == []
+    assert sync.contested(Write(ref="1", field="area", value="Trails"),
+                          store) is None
+
+
+def test_another_field_on_the_same_item_is_not_gated(tmp_path, monkeypatch):
+    """The conflict was about one field. A batch must lose only that one."""
+    store = contested_store(tmp_path, monkeypatch)
+    assert sync.contested(Write(ref="1", field="status", value="Done"),
+                          store) is None
+    assert sync.contested(Write(ref="2", field="area", value="Trails"),
+                          store) is None
+    assert len(store.rejected()) == 1, "an ungated write spends nothing"

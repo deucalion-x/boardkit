@@ -23,9 +23,8 @@ once and nothing for the reads that follow. `--offline` answers from the
 snapshot as it stands, and `board sync status` names the floor in force.
 
 So you do not have to remember to sync before reporting status to someone —
-the read has already done it. The one exception is the child list in
-`board item`, which has to ask GitHub and is skipped with a note when it
-cannot; the rest of the item still answers from disk.
+the read has already done it. Every read is local, the child list in
+`board item` included.
 
 Calling `gh project` or `gh api` yourself is a wrong answer here: it costs a
 round trip and sees a different copy than the rest of your reasoning.
@@ -79,8 +78,21 @@ board rejected        # what lost, with both values and why
 That is not an error to retry. Read the item again, decide again, and set it
 again — or `board rejected --clear` if the remote value is right after all.
 
+Only the field that lost is affected. Forty changes with one conflict are
+thirty-nine applied and one recorded, so there is nothing to redo but the one.
+
+Your next write to that field is refused once, telling you what the board
+holds. That refusal is the prompt to go and look. Repeating the same command
+sends it anyway — which is yours to mean, not something to do reflexively,
+because the value you would be overwriting is a change someone else made.
+
+A read shows your queued changes before they land and says how many it is
+showing, so the field you just set reads back as you set it even offline.
+
 If the output says a change was kept because the network or the rate limit was
-in the way, it is queued and `board sync push` sends it later. Nothing is lost.
+in the way, it is queued, and the next read that refreshes the snapshot sends
+it. Nothing is lost and nothing is yours to remember; `board sync push` is only
+how you ask for it now rather than then.
 
 ## When the snapshot is stale
 

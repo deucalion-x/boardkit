@@ -131,10 +131,12 @@ Reads answer from the local snapshot and touch nothing:
 | `board json` | Normalized work items, for jq or python. |
 | `board views` | The saved tabs the board has. |
 
-One exception: a board does not record which issue is a sub-issue of which, so
-the sub-issue list in `board item` is the single read that asks GitHub. It is
-skipped with a note when GitHub cannot be reached — the rest of the item has
-already answered from the snapshot.
+Every one of them answers from the snapshot. A Project board does not record
+which issue is a sub-issue of which, so each item carries its own parent
+instead, taken from the same download; the sub-issue list is that relation read
+the other way, computed over the snapshot. It used to be a search per
+invocation — the only read that always spent quota, and the only one that could
+fail for a reason the question had nothing to do with.
 
 The snapshot holds open items only: closed issues stay on a Project board, and
 a pull joins against open issues and drops the rest. For closed work, or for
@@ -168,7 +170,7 @@ The rest:
 | `board auth` / `--refresh` | What this `gh` login is allowed to do. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |
 | `board links check` / `rewrite` | Sha-pinned document links in issue bodies. |
-| `board install-skill` / `--check` | Write the agent skill into `.claude/skills/`. |
+| `board install-skill` / `--check` | Write the agent skills for Claude Code and Codex. |
 
 For a question the verbs do not cover, pipe `board json` into jq or python
 rather than growing a verb.
@@ -237,12 +239,14 @@ branch before filing the issue, and do not squash the merge.
 ## The agent skill
 
 ```bash
-board install-skill          # write .claude/skills/board/ and board-admin/
+board install-skill          # write skills under .claude/ and .agents/
 board install-skill --check  # fail if the committed copy has drifted
 ```
 
-Two skills are written: `board` for reading and changing work, `board-admin`
-for changing the board's shape. The names are the same in every repo.
+Two skills are written for each agent: `board` for reading and changing work,
+and `board-admin` for changing the board's shape. Claude Code discovers them
+under `.claude/skills/`; Codex discovers the identical files under
+`.agents/skills/`. The names are the same in every repo.
 
 The files are copied from the package, identical in every repo: they tell an
 agent to run `board`, which answers for whichever repo it is standing in.
