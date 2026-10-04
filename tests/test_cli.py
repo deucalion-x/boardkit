@@ -501,3 +501,29 @@ def test_a_repo_declaring_no_order_gets_no_opinion(intake, repo, capsys):
         TABLE.replace('status_order = ["Ready", "In progress", "Done"]\n', ""),
         encoding="utf-8")
     assert cli.main(["set", intake.ref, "status", "In progress"]) == 0
+
+
+# --- A read says which board it answered about ----------------------------
+
+def test_a_listing_names_the_board_it_answered_about(seeded, capsys):
+    """Nobody has to ask "which board?" — and no rule has to be remembered."""
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={
+        "project_url": "https://github.com/users/octo/projects/4"}))
+    assert cli.main(["list"]) == 0
+    assert "https://github.com/users/octo/projects/4" in capsys.readouterr().out
+
+
+def test_json_carries_no_header(seeded, capsys):
+    """`board json` feeds jq, where a header line is a parse error."""
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={
+        "project_url": "https://github.com/users/octo/projects/4"}))
+    assert cli.main(["json"]) == 0
+    json.loads(capsys.readouterr().out)
+
+
+def test_a_snapshot_without_the_url_prints_nothing(seeded, capsys):
+    """Taken before the field existed. No line beats a wrong link."""
+    assert cli.main(["list"]) == 0
+    assert "https://github.com/users" not in capsys.readouterr().out

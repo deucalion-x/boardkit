@@ -71,6 +71,9 @@ class Snapshot(BaseModel):
     # what that resolved to. Keeping it here rather than in `pyproject.toml`
     # means nothing hand-maintained holds a value only GitHub can produce.
     project_id: str = ""
+    # Where a person goes to look at this board. Empty on a snapshot taken
+    # before it was carried, which prints nothing rather than a wrong link.
+    project_url: str = ""
     project_number: str = ""
     synced_at: str = ""
     fields: tuple[ProjectField, ...] = ()

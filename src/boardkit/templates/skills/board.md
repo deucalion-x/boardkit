@@ -23,6 +23,10 @@ So you do not have to remember to sync before reporting status to someone —
 the read has already done it. Every read is local, the child list in
 `board item` included.
 
+Every listing starts with the board's URL. Pass it on when you report status
+to a person: they may want to look at what you are describing, and nothing
+else in your answer says which board it was.
+
 Calling `gh project` or `gh api` yourself is a wrong answer here: it costs a
 round trip and sees a different copy than the rest of your reasoning.
 

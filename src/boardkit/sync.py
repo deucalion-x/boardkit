@@ -153,7 +153,11 @@ def fetch_board(config: Config, number: str) -> dict:
         "fragment fieldName on ProjectV2FieldCommon { name } "
         f"{{ {kind}(login: {quoted(config.owner)}) "
         f"{{ projectV2(number: {number}) {{ "
-        "id "
+        # `url` so a listing can say which board it is answering about — a
+        # scalar on a node already fetched, so it is free, and GitHub's own
+        # spelling rather than one assembled from owner and number, which
+        # would be a wrong link instead of a missing one for an org board.
+        "id url "
         # Names only: enough to tell a declared tab that is gone from one
         # that is there, which is all `apply` would act on.
         f"views(first: {config.page_size}) {{ nodes {{ name }} }} "
@@ -191,8 +195,8 @@ def fetch_board(config: Config, number: str) -> dict:
 
     views = [node.get("name", "") for node in
              (project.get("views") or {}).get("nodes", []) if node]
-    return {"id": project.get("id", ""), "fields": fields, "items": items,
-            "views": views}
+    return {"id": project.get("id", ""), "url": project.get("url", ""),
+            "fields": fields, "items": items, "views": views}
 
 
 def truncated(rows: list[dict]) -> list[str]:
@@ -332,6 +336,7 @@ def pull(config: Config, store: Store) -> Snapshot:
                   if row.get("content", {}).get("state") == "OPEN"}
     snapshot = Snapshot(
         project_id=board["id"],
+        project_url=board.get("url", ""),
         project_number=target,
         synced_at=now(),
         fields=fields,

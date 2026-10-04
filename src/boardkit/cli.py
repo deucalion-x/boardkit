@@ -138,6 +138,14 @@ def dispatch(command: str, args: list[str]) -> int:
     index = {item.ref: item for item in items}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
+    # Which board this is, said rather than assumed. An answer about work gets
+    # read by a person who may then want to look at it, and nothing else in
+    # the output names the board — a rule in the skill would need the agent to
+    # notice the first time, which is the thing that does not work.
+    #
+    # Not on `json`: that output feeds jq, where a header is a parse error.
+    if command != "json" and snapshot.project_url:
+        print(snapshot.project_url)
     if command == "views":
         for name in snapshot.views:
             print(name)
