@@ -24,7 +24,7 @@ filter = "-status:Done"
 [[board.views]]
 name = "Everything"
 layout = "TABLE"
-fields = ["status", "area", "effort", "sprint"]
+fields = ["status", "area", "effort"]
 
 # Any other field. One table per field, named as you will type it.
 # [board.fields.area]
