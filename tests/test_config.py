@@ -225,3 +225,64 @@ def test_the_internal_source_field_is_not_offered_as_a_setting(tmp_path):
 def test_the_skill_name_is_the_same_in_every_repo(tmp_path):
     write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "octo/places"\n')
     assert load(tmp_path).skill_name == "board"
+
+
+# --- A setting may be overridden for this machine or this run ---------------
+
+def test_the_read_floor_defaults_to_five_minutes(tmp_path):
+    """Chosen from measured read gaps, not from taste: see docs/pull-cost.md."""
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    assert load(tmp_path).max_read_age_seconds == 300
+
+
+def test_an_environment_variable_overrides_the_file(tmp_path, monkeypatch):
+    write(tmp_path, "boardkit.toml",
+          'owner = "octo"\nrepo = "o/p"\nmax_read_age_seconds = 60\n')
+    monkeypatch.setenv("BOARDKIT_MAX_READ_AGE_SECONDS", "900")
+    assert load(tmp_path).max_read_age_seconds == 900
+
+
+def test_a_lower_case_variable_is_read_too(tmp_path, monkeypatch):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    monkeypatch.setenv("BOARDKIT_max_read_age_seconds", "7")
+    assert load(tmp_path).max_read_age_seconds == 7
+
+
+def test_a_variable_can_name_the_board_itself(tmp_path, monkeypatch):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    monkeypatch.setenv("BOARDKIT_PROJECT", "11")
+    assert load(tmp_path).project == "11"
+
+
+def test_a_bad_variable_names_the_variable_and_not_the_file(tmp_path,
+                                                            monkeypatch):
+    """Blaming the file for a value it does not contain sends the reader to
+    edit the wrong thing, and a variable is the harder one to notice."""
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    monkeypatch.setenv("BOARDKIT_MAX_READ_AGE_SECONDS", "soon")
+    with pytest.raises(BoardError, match="BOARDKIT_MAX_READ_AGE_SECONDS"):
+        load(tmp_path)
+
+
+def test_a_negative_floor_is_refused_wherever_it_came_from(tmp_path,
+                                                            monkeypatch):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    monkeypatch.setenv("BOARDKIT_MAX_READ_AGE_SECONDS", "-1")
+    with pytest.raises(BoardError):
+        load(tmp_path)
+
+
+def test_an_unrelated_variable_is_ignored(tmp_path, monkeypatch):
+    write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
+    monkeypatch.setenv("BOARDKIT_NOT_A_SETTING", "x")
+    assert load(tmp_path).owner == "octo"
+
+
+def test_a_list_setting_is_not_taken_from_the_environment(tmp_path,
+                                                           monkeypatch):
+    """Only scalars. A list in a variable is a parser nobody asked for, and
+    `fields` describes the board rather than this run."""
+    write(tmp_path, "boardkit.toml",
+          'owner = "octo"\nrepo = "o/p"\nfields = ["workstream"]\n')
+    monkeypatch.setenv("BOARDKIT_FIELDS", "effort,priority")
+    assert [f.name for f in load(tmp_path).fields] == ["workstream"]

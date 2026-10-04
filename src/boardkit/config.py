@@ -5,13 +5,20 @@ Config comes from `[tool.boardkit]` in the consuming repository's
 Python packaging. Both are found by walking up from the working directory, so
 every command works from anywhere inside the repo.
 
+Any scalar setting is also readable as `BOARDKIT_<SETTING>`, which wins over
+the file. The file records what a repository decided; the variable records
+what this machine or this one run needs instead, which is the narrower claim
+and so the louder one.
+
 The models are the schema: required keys, unknown keys and field types are
 rejected by pydantic rather than by checks written out here.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import tomllib
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -22,6 +29,13 @@ from .gh import BoardError
 # table in pyproject.toml: writing one is the more explicit statement, and a
 # repo with no Python packaging has nowhere else to put it.
 CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
+# Every setting is also reachable as BOARDKIT_<NAME>, which wins over the file.
+# The file says what a repository decided; the variable says what this machine
+# or this run needs instead — a CI job with no checkout to edit, a floor raised
+# for one command — so it is the narrower statement and therefore the louder.
+# Only scalars: a list or a table in an environment variable is a parser nobody
+# asked for, and those settings describe the board rather than the run.
+ENV_PREFIX = "BOARDKIT_"
 # Everything about the board itself, as opposed to which board it is. They may
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
@@ -197,10 +211,15 @@ class Config(BaseModel):
     page_size: int = Field(default=100, ge=1, le=100)
     # The oldest a snapshot may be and still answer a read. Past it, the read
     # pulls first, so freshness is a property of the read rather than
-    # something an agent has to remember. Measured at 2 rate-limit points and
-    # ~2.3s a pull, 60s costs at most 2.4% of an hour's budget; a burst of
-    # reads in one turn pays once. 0 never syncs on read.
-    max_read_age_seconds: int = Field(default=60, ge=0)
+    # something an agent has to remember. 0 never syncs on read.
+    #
+    # 300 because the gaps between real reads are bimodal, measured over one
+    # session's trail: eighteen inside 17s, then nothing until 44s, then a
+    # cluster at 73-199s, then hours. A floor of 300 answers three reads in
+    # four from disk and still bounds staleness two orders of magnitude below
+    # the 16-hour snapshot that nearly got reported as current. See
+    # docs/pull-cost.md.
+    max_read_age_seconds: int = Field(default=300, ge=0)
     mirror_path: str = ""
     docs_prefix: str = "docs/"
     project_name: str = ""
@@ -353,32 +372,63 @@ def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, 
     )
 
 
+def from_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Scalar settings overridden for this machine or this run.
+
+    Named `BOARDKIT_<SETTING>`, upper or lower case. Pydantic does the
+    coercion and the complaining, so a bad value is reported like a bad line
+    in the file rather than silently ignored — being unable to see an
+    environment variable is exactly when a silent default is worst.
+    """
+    source: Mapping[str, str] = os.environ if environ is None else environ
+    scalars = {name for name, field in Config.model_fields.items()
+               if name not in {"root", "source"}
+               and field.annotation in (str, int, bool)}
+    found = {}
+    for key, value in source.items():
+        if not key.startswith(ENV_PREFIX):
+            continue
+        setting = key[len(ENV_PREFIX):].lower()
+        if setting in scalars:
+            found[setting] = value
+    return found
+
+
 def load(start: pathlib.Path | None = None) -> Config:
     root, table, source = find_config(start)
+    overrides = from_env()
     try:
-        return Config(root=root, source=source, **table)
+        return Config(root=root, source=source, **{**table, **overrides})
     except ValidationError as error:
-        raise BoardError(describe(error, source)) from None
+        raise BoardError(describe(error, source, overrides)) from None
 
 
-def describe(error: ValidationError, source: pathlib.Path) -> str:
+def describe(error: ValidationError, source: pathlib.Path,
+             overrides: dict[str, str] | None = None) -> str:
     """Pydantic's report as advice: one line per bad setting, no traceback.
 
     The two common mistakes get their own wording, because "Field required"
     and "Extra inputs are not permitted" do not tell the reader what to type.
     """
     known = ", ".join(sorted(Config.model_fields.keys() - {"root", "source"}))
+    overrides = overrides or {}
     lines = []
     for detail in error.errors():
         setting = ".".join(str(part) for part in detail["loc"]) or "<table>"
+        # Blaming the file for a value the file does not contain sends the
+        # reader to edit the wrong thing, and an environment variable is the
+        # harder of the two to notice.
+        where = (f" (from {ENV_PREFIX}{setting.upper()})"
+                 if setting in overrides else "")
         if detail["type"] == "missing":
             lines.append(f"  missing `{setting}`")
         elif detail["type"] == "extra_forbidden":
             lines.append(f"  unknown boardkit setting `{setting}`")
         else:
-            lines.append(f"  {setting}: {detail['msg']}")
+            lines.append(f"  {setting}: {detail['msg']}{where}")
     return (
         f"invalid boardkit configuration in {source}:\n"
         + "\n".join(lines)
         + f"\nKnown settings: {known}."
+        + f"\nAny of them may be overridden as {ENV_PREFIX}<SETTING>."
     )

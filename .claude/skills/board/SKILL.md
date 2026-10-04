@@ -17,10 +17,10 @@ not yet refined enough to start. Ask the board.
 ## Reads are free after the first, so ask as many as you need
 
 `board` answers from a snapshot on disk, so there is no reason to ration
-questions. The snapshot is never more than a minute out of date: a read older
-than that refreshes it first and then answers, which costs a couple of seconds
+questions. The snapshot is also never stale by more than a few minutes: a read
+past that refreshes it first and then answers, which costs a couple of seconds
 once and nothing for the reads that follow. `--offline` answers from the
-snapshot as it stands.
+snapshot as it stands, and `board sync status` names the floor in force.
 
 So you do not have to remember to sync before reporting status to someone —
 the read has already done it. The one exception is the child list in

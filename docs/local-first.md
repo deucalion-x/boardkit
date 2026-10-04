@@ -19,13 +19,18 @@ has no way to notice that the instruction applies. A session once opened
 against a 16-hour-old snapshot and came within one command of reporting that
 board to a person as current.
 
-So a read pulls first when the snapshot is older than `max_read_age_seconds`
-(60 by default; 0 to disable), and answers from the snapshot otherwise. The
-first read of a session pays for the pull and the rest are free, which makes
-the promise an age rather than a request to remember: no read is more than a
-minute out of date. `--offline` answers from the snapshot whatever its age, and
-a pull that cannot reach GitHub says so and answers from disk rather than
+So a read pulls first when the snapshot is older than `max_read_age_seconds`,
+and answers from the snapshot otherwise. The first read of a burst pays for the
+pull and the rest are free, which makes the promise an age rather than a
+request to remember. `--offline` answers from the snapshot whatever its age,
+and a pull that cannot reach GitHub says so and answers from disk rather than
 failing the question.
+
+The default is 300 seconds, chosen from measured read gaps rather than taste —
+[pull-cost.md](pull-cost.md#how-often-a-read-actually-pulls) has the
+distribution. Set it in the config file, or as `BOARDKIT_MAX_READ_AGE_SECONDS`
+for one machine or one command; 0 disables it and restores reads that never
+touch the network.
 
 Nothing polls and nothing is supervised. A background syncer would fetch for a
 board nobody is looking at and bring a lifecycle with it — start, stop, crash,

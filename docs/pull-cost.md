@@ -44,7 +44,7 @@ So when extending a query: **add a scalar freely, weigh a connection.**
 **Combining is cheaper than staging.** The whole query is estimated at once, so
 head + items together cost less than head and items apart. A design that probes
 first and pulls second can therefore cost *more* than one that just pulls — the
-intuition that a cheap check saves a expensive fetch does not survive contact
+intuition that a cheap check saves an expensive fetch does not survive contact
 with the pricing.
 
 **Cost tracks pages, not items.** Measured by shrinking `page_size` on the same
@@ -89,6 +89,42 @@ checking one card before writing to it. It is not a freshness oracle: it cannot
 see a card that was created, and a card moved between columns leaves the id set
 identical. Membership and field staleness are different questions and L0
 answers only the first.
+
+## How often a read actually pulls
+
+The objection worth taking seriously is that a read which pulls is barely a
+local board at all. Measured over one session's trail — 33 reads, 32 gaps
+between them — the answer is that read gaps are bimodal:
+
+| gap between consecutive reads | count |
+|---|---|
+| 0-17s | 18 |
+| 44-199s | 5 |
+| 415-5100s | 8 |
+| 16 hours | 1 |
+
+Median 14s, and **nothing at all between 17s and 44s**. The bursts are where a
+snapshot earns its keep: those eighteen reads inside seventeen seconds would
+otherwise be eighteen API calls, which is what having no board would really
+cost.
+
+The floor is therefore chosen to land in the empty band above the second
+cluster, not the first:
+
+| floor | reads answered from disk | pulls in that session |
+|---|---|---|
+| 60s | 19/32 | 13 |
+| 300s | 24/32 | 8 |
+
+300 is the default. It keeps three reads in four local while bounding staleness
+two orders of magnitude below the 16-hour snapshot that once came within one
+command of being reported as current. Raising it further buys little: the next
+gap up is already 415s, and past that the distribution is hours.
+
+One session is thin evidence and it was a session unusually full of board
+poking. Re-derive it from `.boardkit/log.jsonl` before moving the number: the
+trail records every command with its timestamp, so the distribution above is a
+few lines of jq away.
 
 ## When this answer changes
 
