@@ -1,8 +1,13 @@
 [project]
 name = "boardkit"
-version = "0.1.0"
+# No version here. It is derived from the git tag by hatch-vcs, so there is no
+# second copy that can disagree with the tag — which it did: this file once
+# said 0.1.1 while the only tag was v0.1.0.
+dynamic = ["version"]
 description = "Create github project boards, manage them locally with agents."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
 authors = [
     { name = "Antoine Gerardin", email = "antoine@novatix.ch" },
@@ -36,8 +41,14 @@ Changelog = "https://github.com/agerardin/boardkit/blob/main/CHANGELOG.md"
 dev = ["pytest>=8.3,<9.0", "ruff>=0.14,<1.0", "mypy>=1.18,<2.0"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# The tag is the version. `v0.2.0` builds 0.2.0; a commit past it builds
+# 0.2.1.devN+g<sha>, which says how far past and which commit rather than
+# claiming to be a release.
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/boardkit"]

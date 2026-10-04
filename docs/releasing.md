@@ -8,10 +8,18 @@ registry without coupling the build to either destination.
 
 ## Prepare a version
 
-1. Choose the version with `uv version <version>`.
-2. Move the relevant entries in `CHANGELOG.md` from `Unreleased` to a heading
-   containing that version and the release date.
-3. Run the same checks as CI:
+The version is not written down. `hatch-vcs` derives it from the git tag, so
+the tag is the only place a version exists and nothing can drift from it —
+`pyproject.toml` once said 0.1.1 while the only tag was v0.1.0, which is the
+failure this removes. A build between tags names its distance and its commit
+(`0.1.1.dev9+g5250ad5`) rather than claiming to be a release.
+
+So there is no version to choose here, only a changelog to settle and checks
+to pass. Decide the number when you tag.
+
+1. Move the relevant entries in `CHANGELOG.md` from `Unreleased` to a heading
+   containing the version you are about to tag and the release date.
+2. Run the same checks as CI:
 
    ```bash
    uv sync --locked --dev
@@ -21,8 +29,8 @@ registry without coupling the build to either destination.
    uv build --no-sources
    ```
 
-4. Run the live contract check (below) and record the result.
-5. Merge the release change to `main` and confirm CI is green, including the
+3. Run the live contract check (below) and record the result.
+4. Merge the release change to `main` and confirm CI is green, including the
    `package` job.
 
 ## The live contract check
@@ -74,15 +82,20 @@ sitting in the queue forever.
 
 ## Tag
 
-Create an annotated tag whose value exactly matches the version in
-`pyproject.toml`, then push it:
+The tag is what decides the version, so this step is the release rather than a
+record of one. Annotated, `v` plus the number:
 
 ```bash
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
 
-The tag starts the `release artifacts` workflow. Download its retained wheel
+The tag starts the `release artifacts` workflow, which builds and then checks
+that the wheel it produced names exactly this tag — a development version there
+means the build could not see the tag, and the release fails rather than
+shipping something mislabelled. Both build jobs check out with `fetch-depth: 0`
+for that reason: a depth-1 checkout carries no tags, and the version would come
+out as a dev build of the previous release. Download its retained wheel
 and source distribution if they need to be passed to a registry. No job uploads
 them to a package index automatically.
 

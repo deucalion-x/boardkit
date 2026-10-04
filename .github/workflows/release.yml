@@ -17,20 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # hatch-vcs derives the version from the git tag, and the default
+          # depth-1 checkout carries no tags at all — the build would claim
+          # 0.1.0.dev1 for a release.
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: false
 
-      - name: verify tag matches package version
+      - name: build distributions
+        run: uv build --no-sources
+
+      # After the build, not before: with the version derived from the tag,
+      # what is worth checking is that the artifact says what the tag does.
+      - name: verify the built version matches the tag
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: uv run --no-project scripts/check_release_tag.py
-
-      - name: build distributions
-        run: uv build --no-sources
+        run: uv run --no-project scripts/check_release_tag.py dist
 
       - name: smoke-test wheel
         run: uv run --isolated --no-project --with dist/*.whl scripts/smoke_package.py
