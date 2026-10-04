@@ -43,40 +43,15 @@ a board nobody is asking about is never fetched at all.
 
 ## What a pull costs
 
-Measured against a 37-item board, with `rateLimit { cost }` on the queries
-themselves:
+Measured, not estimated: a full `board sync` is **2 rate-limit points and 2.3s**
+on a board that fits in one page, against a budget of 5000 points an hour.
+Quota does not bind at any size boardkit will meet, which is why the read floor
+above is affordable and why a pull brings back everything rather than a cheaper
+subset.
 
-| | points | wall clock |
-|---|---|---|
-| one item by node id | 1 | 0.7s |
-| 100 item ids, nothing else | 1 | 0.8s |
-| a full `board sync` — items, bodies, labels, fields, views | **2** | 2.3s |
-| the same board at `page_size = 10` (4 pages) | 4 | — |
-| the same board at `page_size = 5` (8 pages) | 10 | — |
-
-The budget is 5000 points an hour, so a full pull is 0.04% of it and a 60s
-read floor spends at most 2.4% — and in practice far less, for the reason
-above. Those last two rows are why `page_size` stays at GitHub's maximum:
-smaller pages buy nothing and cost a point each. Cost tracks pages rather than board size, so a
-1000-item board is about ten pages and twenty points — still 250 full pulls an
-hour. **Quota does not bind at any board size this tool will meet.** Wall clock
-is the only real cost, which is what the read floor is measured in.
-
-What a pull brings back, per card: the project item's id, type and every field
-value; and for an issue, its number, title, url, open/closed state, body,
-labels, assignees and milestone. Once per pull, board-level: the project's ids,
-every field definition with its options and their ids — a push needs all three
-to write a single select — and the saved view names. One combined query covers
-the board head and the first hundred items; each further hundred is another
-page at about a point.
-
-The rule behind those numbers is worth knowing before extending a query:
-GraphQL cost counts the nodes a query could return, not the bytes it does.
-A scalar on a node already being fetched is therefore free — which is why every
-issue body comes down in the same pass, at 76% of the payload and none of the
-quota. Fetching bodies lazily instead would cost a query per card read and lose
-offline `board find`, which searches them. Add a scalar freely; weigh a
-connection.
+[pull-cost.md](pull-cost.md) holds the layers, the per-page scaling, the three
+pricing rules behind them, and how to re-measure — so that the next change to
+what a pull fetches argues with numbers instead of re-deriving them.
 
 ## The store
 
