@@ -3,6 +3,49 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.2.0 — 2026-10-11
+
+Agents work a repository through `board` alone, under that repository's own
+credential; the person's `gh` login is an approved, logged escape hatch.
+
+### Credentials
+- boardkit's `gh` calls never use the personal login by default. In order:
+  `BOARDKIT_TOKEN`, a sign-in through the repository's own GitHub App, or a
+  token for that repository alone.
+- `board auth app create` creates the repository's app through GitHub's
+  manifest flow and records its client ID; no app secret is kept.
+- `board auth login` / `logout`: device-flow sign-in per app, renewed
+  silently. `board auth setup`: a per-repository token, as the fallback.
+- `--as-me` on any verb uses the personal login for one command; creating a
+  board requires it. Every use, and each approved raw `gh` call (through a
+  Claude Code hook), is in `board log --superuser`.
+- Sign-ins and tokens live in the macOS keychain, the Linux Secret Service or
+  Windows Credential Manager, with no file fallback.
+- Messages name the credential in use and how to renew it.
+
+### Working the issue
+- `board comment`, `board close [--not-planned]`, `board reopen`,
+  `board edit --title/--body`, and `board set <ref> labels|assignees|parent`;
+  `board add … parent=<n>` makes a sub-issue. They go through the sync queue,
+  so they work offline and are sent by the next sync.
+
+### The cache
+- Closed items stay in the snapshot, with why and when they closed.
+- Every issue of the repository is cached, archived cards included: read
+  whole once, then refreshed with only what changed.
+- Each item carries its comments and the pull requests that close it; pull
+  request cards carry review, mergeability and checks.
+- `board find` searches comments too and lists open work before closed.
+- A partial answer from GitHub is an error, not an empty board.
+
+### Removed
+- `board gh`: agents use `board`; other repositories are the escape hatch.
+
+### Also
+- Columns use GitHub's spelling, `In Progress` and `In Review`.
+- `admin apply -n` reports option renames; `--help` on a verb prints help.
+- The contract test covers the issue verbs on an organisation's board.
+
 ## 0.1.3 — 2026-10-11
 
 - Fix `board admin apply` failing while reading saved views: the query carried
