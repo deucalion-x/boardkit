@@ -206,6 +206,15 @@ rejected.json   changes that lost to a remote edit, with both values
 auth.json       the cached visibility probe, keyed by token scopes
 ```
 
+### What a sync costs
+
+Measured with GitHub's dry-run pricing (2026-10-11): a page of 100 board items,
+with comments, linked pull requests and field values, costs 5 points; the
+repository's 100 recent issues cost 4. A 1,000-item board is 54 points per
+sync against an hourly budget of 5,000, and a read refreshes at most every
+five minutes. Each page asks for about 36,000 nodes, under GitHub's 500,000
+per-query limit.
+
 ## The log
 
 Every action — queued, pushed, rejected, pulled, created, refused — is one JSON
