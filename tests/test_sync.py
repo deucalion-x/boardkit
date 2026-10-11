@@ -747,3 +747,16 @@ def test_another_field_on_the_same_item_is_not_gated(tmp_path, monkeypatch):
     assert sync.contested(Write(ref="2", field="area", value="Trails"),
                           store) is None
     assert len(store.rejected()) == 1, "an ungated write spends nothing"
+
+
+def test_a_partial_answer_is_an_error_not_an_empty_board(tmp_path, monkeypatch):
+    """A credential that sees the project but not its items' repository gets
+    the project with `items: null` and an error. That is not an empty board."""
+    from boardkit import sync
+    config = Config(root=tmp_path, owner="octo", owner_type="org",
+                    repo="octo/widgets", project="4")
+    monkeypatch.setattr(sync, "run_json", lambda args: {
+        "data": {"organization": {"projectV2": {"id": "PVT_1", "items": None}}},
+        "errors": [{"message": "Resource not accessible by integration"}]})
+    with pytest.raises(BoardError, match=r"not accessible.*app is installed on octo/widgets"):
+        sync.fetch_board(config, "4")

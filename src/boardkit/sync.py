@@ -164,7 +164,17 @@ def fetch_board(config: Config, number: str) -> dict:
         f"{fields_block(config, None)}")
     payload = run_json(["gh", "api", "graphql", "-f",
                         f"query={head}{items_block(config, None)}}} }} }}"])
-    project = payload["data"][kind]["projectV2"]
+    project = ((payload.get("data") or {}).get(kind) or {}).get("projectV2")
+    # GitHub answers a credential that may see the project but not the items'
+    # repository with a partial result and an error beside it. Reading the
+    # partial result as the board would empty it, so the error is the answer.
+    if not project or project.get("items") is None or payload.get("errors"):
+        said = "; ".join(e.get("message", "") for e in payload.get("errors") or [])
+        raise BoardError(
+            f"GitHub would not show project {number} of {config.owner} to this "
+            f"credential{': ' + said if said else ''}. If you signed in with "
+            f"`board auth login`, check that the boardkit app is installed on "
+            f"{config.repo}.")
     items = [flatten(node) for node in project["items"]["nodes"] if node]
     page, pages = project["items"]["pageInfo"], 1
     fields = [node for node in project["fields"]["nodes"] if node]
