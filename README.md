@@ -25,10 +25,11 @@ the configuration schema rather than a validation layer bolted onto it.
 
 ## Install
 
-Install the current source directly from GitHub:
+The repository is private, so installing from GitHub needs access to it,
+through an SSH key or `gh auth`:
 
 ```bash
-uv tool install "git+https://github.com/deucalion-x/boardkit.git"
+uv tool install "git+ssh://git@github.com/deucalion-x/boardkit.git"
 ```
 
 Or install a development checkout:
@@ -36,6 +37,35 @@ Or install a development checkout:
 ```bash
 uv tool install --editable .
 ```
+
+## Getting started
+
+From nothing to an agent working a board. Each step is once per repository
+unless it says otherwise.
+
+1. **An organisation owns the repository and its board.** GitHub gives apps
+   and fine-grained tokens no access to a personal account's board. A free
+   organisation is enough.
+2. **Configure the repository:** `board init` writes `owner`, `repo` and the
+   board's title. Add `owner_type = "org"`.
+3. **Create the board**, if it does not exist yet: `board admin apply --as-me`.
+   Creating a project is beyond any one repository, so it uses your own `gh`
+   login, once.
+4. **Give the repository its own GitHub App**, named `boardkit-<org>-<repo>`:
+   private, Device Flow enabled, no webhook, with Contents, Issues and Pull
+   requests read and write, Actions, Checks and Commit statuses read-only, and
+   organisation Projects read and write. Install it on **this repository
+   only**, and put its client ID in the config as `app_client_id`. (#30 makes
+   this one command.)
+5. **Sign in,** once per machine: `board auth login`. boardkit now acts as you,
+   via that app, and reaches this repository alone.
+6. **Install the agent skills:** `board install-skill`, then commit them, and
+   add the Claude Code settings from [Permissions](#permissions) so your own
+   login always asks first.
+7. **First sync:** `board sync`. From here, reads answer from the cache.
+
+Without an app, step 4 and 5 become `board auth setup`: a token for this
+repository alone, regenerated every 90 days.
 
 ## Configure
 
@@ -47,9 +77,11 @@ board init
 
 ```toml
 # boardkit.toml
-owner = "agerardin"
-repo = "agerardin/places"
+owner = "deucalion-x"
+owner_type = "org"
+repo = "deucalion-x/places"
 project_name = "Places 2"
+app_client_id = "Iv23li..."   # this repository's GitHub App
 ```
 
 That is the whole configuration for reading a board. Its columns, its fields,
@@ -142,8 +174,8 @@ Reads answer from the local snapshot and touch nothing:
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| `board item <ref>` | One item: fields, labels, full text, sub-issues. |
-| `board find <terms>` | Titles, bodies and labels holding every word given. |
+| `board item <ref>` | One item: fields, labels, full text, sub-issues, comments, linked pull requests; whether and why it closed. |
+| `board find <terms>` | Titles, bodies, labels and comments holding every word given; open work first, then closed. |
 | `board json` | Normalized work items, for jq or python. |
 | `board views` | The saved tabs the board has. |
 
@@ -154,27 +186,33 @@ the other way, computed over the snapshot. It used to be a search per
 invocation — the only read that always spent quota, and the only one that could
 fail for a reason the question had nothing to do with.
 
-The snapshot keeps every item on the board, open or closed: `board` lists open
-work, while `board item` and `board find` also answer about closed work, which
-is marked as such. Each item carries its latest 50 comments, which `board item`
-shows and `board find` searches. Issues that were never on the board are not in
-it; reaching them is plain `gh`, as the person, with their approval.
+The snapshot keeps every item on the board, open or closed, and every other
+issue of the repository, including cards the board has archived: `board`
+lists open work on the board, while `board item` and `board find` answer about
+all of it. Each item carries its latest 50 comments and the pull requests that
+close it. An issue of this repository that is not in the snapshot does not
+exist; only other repositories need plain `gh`, as the person, with approval.
 
 An item is named by its issue number, or — for a draft card, which has no
 issue behind it — by the `~handle` the board prints. Either is accepted
 wherever a reference is taken.
 
-Changes are recorded locally, then sent:
+Changes are recorded locally, then sent; one that cannot be sent waits for
+the next sync:
 
 | Command | Does |
 |---|---|
 | `board add <title> [field=value]` | Create an issue and put it on the board. `--body <text>` for its text, `--draft` for a card with no issue behind it. |
-| `board set <ref> <field> <value>` | Change a field. Sent now; queued if it cannot be, or with `--later`. |
+| `board set <ref> <field> <value>` | Change a field. Sent now; queued if it cannot be, or with `--later`. `labels`, `assignees` and `parent` change the issue itself. |
+| `board comment <ref> <text>` | Record a result or a decision on the issue. |
+| `board close <ref>` / `--not-planned` | Close as completed, or as not planned for dropped work. |
+| `board reopen <ref>` | Reopen it. |
+| `board edit <ref> --title t --body b` | Refine the plan. |
 | `board sync` | Pull: replace the snapshot. |
 | `board sync push` | Drain the queue against a fresh pull. |
 | `board sync status` | Snapshot age, queue depth, rejections. |
 | `board rejected` / `--clear` | Changes that lost to a remote edit, with both values. |
-| `board log [n]` | What boardkit did, for audit and debugging. |
+| `board log [n]` / `--superuser` | What boardkit did; `--superuser` lists each use of your own login. |
 
 The rest:
 
@@ -186,7 +224,10 @@ The rest:
 | `board admin apply --reconcile` | Also make declared view layouts and filters win; combine with `-n` to preview. |
 | `board admin apply --prune-views` | Delete saved tabs config does not name. The only deletion; preview with `-n`. |
 | `board admin link` | Attach the project to the repository. |
-| `board auth` / `--refresh` | What this `gh` login is allowed to do. |
+| `board auth` / `--refresh` | Which credential is in use, and what it can see. |
+| `board auth login` / `logout` | Sign in through this repository's GitHub App. |
+| `board auth setup` | Or store a token for this repository alone. |
+| `--as-me` on any verb | Use your own `gh` login for one command; approved and logged. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |
 | `board links check` / `rewrite` | Sha-pinned document links in issue bodies. |
 | `board install-skill` / `--check` | Write the agent skills for Claude Code and Codex. |
@@ -249,13 +290,13 @@ board auth login    # shows a code; approve it on GitHub
 board auth logout
 ```
 
-boardkit then acts for you, marked "via boardkit", on the repositories the
+boardkit then acts for you, marked "via" the app, on the repositories the
 app is installed on, with only the app's permissions. The token lasts eight
 hours and renews itself. The app works for organisation-owned boards; GitHub
 offers no project permission on a personal account's board.
 
-Without the app, boardkit's `gh` calls run under a **focused token** for one repository and its
-board, never under your personal `gh` login, which reaches every repository
+Without an app, boardkit's `gh` calls run under a **token for this repository
+alone**, never under your personal `gh` login, which reaches every repository
 and board the account can. Set it up once per repository:
 
 ```bash
@@ -264,7 +305,7 @@ board auth         # says which credential is in use
 ```
 
 `BOARDKIT_TOKEN`, when set, is used instead of the keychain (CI, Linux).
-Without a focused token, a command that needs GitHub is refused and names the
+Without any credential, a command that needs GitHub is refused and names the
 fix. Reads of the local store never need one.
 
 Anything beyond one repository and its board, such as creating a project,
@@ -310,6 +351,20 @@ so a refreshed token invalidates it with no expiry to tune.
 A refused tier prints the `gh auth refresh -s …` line that fixes it. boardkit
 never runs `gh auth login` or `refresh` itself: both are interactive and mutate
 global state.
+
+### What this does not protect against
+
+- **Projects access is organisation-wide.** GitHub has no per-board scope, so a
+  repository's app can reach every board of its organisation. boardkit itself
+  only touches the board its config names.
+- **Inside its repository, the agent can do a lot**: everything the app's
+  permissions allow. Branch protection on `main` (a paid plan for private
+  organisation repositories) is what stops a force-push or a deleted branch.
+- **The approvals and the log are Claude Code settings.** Another tool, or a
+  script on the same machine, can still use your `gh` login or read the
+  keychain. They are a guard for agents, not a security boundary.
+- **Sign-ins live in the macOS keychain.** Elsewhere, export `BOARDKIT_TOKEN`
+  until #31 lands.
 
 ## The mirror and the links
 
