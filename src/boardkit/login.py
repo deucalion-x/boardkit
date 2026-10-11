@@ -15,13 +15,12 @@ keychain under the app's client ID, one per app.
 from __future__ import annotations
 
 import json
-import subprocess
 import time
 import urllib.parse
 import urllib.request
 import webbrowser
 
-from . import credential
+from . import credential, keychain
 
 HOST = "github.com"
 SERVICE = "boardkit-app"
@@ -57,27 +56,18 @@ def stamped(answer: dict) -> dict:
 def load(app: str) -> dict | None:
     if not app or not credential.has_keychain():
         return None
-    result = subprocess.run(
-        ["security", "find-generic-password", "-s", SERVICE, "-a", app, "-w"],
-        capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        return None
     try:
-        return json.loads(result.stdout)
+        return json.loads(keychain.get(SERVICE, app) or "null")
     except json.JSONDecodeError:
         return None
 
 
 def save(app: str, tokens: dict) -> None:
-    subprocess.run(
-        ["security", "add-generic-password", "-U", "-s", SERVICE, "-a", app,
-         "-l", f"boardkit sign-in {app}", "-w", json.dumps(tokens)],
-        capture_output=True, text=True, check=True)
+    keychain.put(SERVICE, app, json.dumps(tokens), f"boardkit sign-in {app}")
 
 
 def forget(app: str) -> None:
-    subprocess.run(["security", "delete-generic-password", "-s", SERVICE, "-a", app],
-                   capture_output=True, text=True, check=False)
+    keychain.delete(SERVICE, app)
 
 
 def signed_in(app: str) -> bool:
@@ -116,7 +106,8 @@ def login(app: str, repo: str) -> int:
               f"for this repository alone.")
         return 1
     if not credential.has_keychain():
-        print(f"No keychain here to keep a sign-in. Export {credential.ENV} instead.")
+        print("No credential store here (macOS keychain, Linux secret-tool or Windows "
+              f"Credential Manager) to keep a sign-in. Export {credential.ENV} instead.")
         return 1
     started = post(DEVICE, {"client_id": app})
     if "device_code" not in started:

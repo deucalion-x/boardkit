@@ -363,8 +363,9 @@ global state.
 - **The approvals and the log are Claude Code settings.** Another tool, or a
   script on the same machine, can still use your `gh` login or read the
   keychain. They are a guard for agents, not a security boundary.
-- **Sign-ins live in the macOS keychain.** Elsewhere, export `BOARDKIT_TOKEN`
-  until #31 lands.
+- **Sign-ins live in the platform's credential store**: the macOS keychain,
+  the Linux Secret Service (`secret-tool`), or Windows Credential Manager.
+  Without one there is no file fallback; export `BOARDKIT_TOKEN` instead.
 
 ## The mirror and the links
 

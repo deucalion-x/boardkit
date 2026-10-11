@@ -16,9 +16,8 @@ approved by the person and logged.
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
-import sys
+
+from . import keychain
 
 # The keychain service every repository's token is filed under; the account
 # is the repository, so each repo keeps its own.
@@ -38,30 +37,19 @@ def configure(name: str, elevated: bool = False, app_id: str = "") -> None:
 
 
 def has_keychain() -> bool:
-    return sys.platform == "darwin" and shutil.which("security") is not None
+    return keychain.available()
 
 
 def stored(name: str) -> str:
     """This repository's own token (`board auth setup`), or "" if none."""
     if os.environ.get(ENV):
         return os.environ[ENV]
-    if not has_keychain():
-        return ""
-    result = subprocess.run(
-        ["security", "find-generic-password", "-s", SERVICE, "-a", name, "-w"],
-        capture_output=True, text=True, check=False)
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return keychain.get(SERVICE, name) if has_keychain() else ""
 
 
 def store(name: str, token: str) -> None:
-    """File `token` in the keychain for `name`, replacing any earlier one."""
-    # `-w` takes the secret on argv, visible to this user's `ps` for the
-    # instant the call runs. `security` reads it no other way without a
-    # prompt, and the token is narrow by design, so that is the trade.
-    subprocess.run(
-        ["security", "add-generic-password", "-U", "-s", SERVICE, "-a", name,
-         "-l", f"boardkit {name}", "-w", token],
-        capture_output=True, text=True, check=True)
+    """File `token` for `name` in the platform's store, replacing any earlier one."""
+    keychain.put(SERVICE, name, token, f"boardkit {name}")
 
 
 def source() -> str:

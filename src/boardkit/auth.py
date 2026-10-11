@@ -269,7 +269,8 @@ def setup(config: Config) -> int:
     """Store a token for this repository alone, after checking it can see the
     repository and the board."""
     if not credential.has_keychain():
-        print(f"No keychain here. Export {credential.ENV} with a token instead.")
+        print("No credential store here (macOS keychain, Linux secret-tool or Windows "
+              f"Credential Manager). Export {credential.ENV} with a token instead.")
         return 1
     if config.owner_type == "user":
         # Fine-grained tokens offer no Projects permission on a personal
