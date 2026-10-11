@@ -17,6 +17,16 @@ MISSING = "-"
 ItemType = Literal["ISSUE", "PULL_REQUEST", "DRAFT_ISSUE", "REDACTED"]
 
 
+class Comment(BaseModel):
+    """One comment on an issue or pull request: where plans get discussed
+    and revised, so it is carried with the item rather than fetched."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    author: str = ""
+    at: str = ""
+    body: str = ""
+
+
 class ProjectItem(BaseModel):
     """One project item under GitHub's names for it.
 
@@ -57,6 +67,11 @@ class ProjectItem(BaseModel):
     # upward because that is the direction GitHub will give us in bulk; the
     # question everyone asks is the downward one, and `children` inverts it.
     parent: int = 0
+    # The latest comments, oldest first, and how many there are in all: the
+    # count says when older ones were left out, rather than passing a tail
+    # off as the whole conversation.
+    comments: tuple[Comment, ...] = ()
+    comment_count: int = 0
     fields: dict[str, str] = {}
 
     @field_validator("type", mode="before")
@@ -170,6 +185,11 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             assignees=named(content.get("assignees"), "login"),
             milestone=(content.get("milestone") or {}).get("title", ""),
             parent=(content.get("parent") or {}).get("number") or 0,
+            comments=tuple(
+                Comment(author=(c.get("author") or {}).get("login", ""),
+                        at=c.get("createdAt", ""), body=c.get("body") or "")
+                for c in (content.get("comments") or {}).get("nodes") or [] if c),
+            comment_count=(content.get("comments") or {}).get("totalCount") or 0,
             fields=fields,
         ))
     return items
@@ -257,7 +277,7 @@ def children(number: int, items: list[ProjectItem]) -> list[ProjectItem]:
 
 
 def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
-    """Items whose title or body contains every word given.
+    """Items whose title, body, labels or comments contain every word given.
 
     Local, because the snapshot carries the text of open and closed items.
     It is a substring match and not GitHub's search syntax.
@@ -267,7 +287,8 @@ def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
         return []
     found = []
     for item in items:
-        haystack = f"{item.title}\n{item.body}\n{' '.join(item.labels)}".lower()
+        said = "\n".join(comment.body for comment in item.comments)
+        haystack = f"{item.title}\n{item.body}\n{' '.join(item.labels)}\n{said}".lower()
         if all(word in haystack for word in words):
             found.append(item)
     return found

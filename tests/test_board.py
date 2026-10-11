@@ -224,3 +224,14 @@ def test_a_fractional_number_field_keeps_its_fraction():
 def test_kept_closed_items_are_marked_rather_than_dropped():
     every = normalize(ITEMS, {1, 3}, CONFIG, keep_closed=True)
     assert [(i.number, i.closed) for i in every if i.number] == [(1, False), (2, True), (3, False)]
+
+
+def test_comments_are_carried_and_searched():
+    from boardkit.board import matching
+    payload = [{"content": {"number": 1, "title": "Plan", "comments": {
+        "totalCount": 3, "nodes": [
+            {"author": {"login": "ada"}, "createdAt": "2026-10-11T00:00:00Z",
+             "body": "Decision: go with the device flow."}]}}}]
+    item = normalize(payload, {1}, CONFIG)[0]
+    assert item.comment_count == 3 and item.comments[0].author == "ada"
+    assert matching([item], "device flow") == [item]

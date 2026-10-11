@@ -92,6 +92,10 @@ VALUE_FRAGMENTS = """
 """
 
 
+# The latest comments, where a plan is discussed and revised, so reading an
+# item's conversation is local too. The last fifty in the same query: no
+# extra call per item, and `totalCount` says when older ones were left out.
+COMMENTS = "comments(last: 50) { totalCount nodes { author { login } createdAt body } } "
 CONTENT = (
     # `body` is a scalar on a node already being fetched, so it costs no points
     # — only bytes. Worth it: deciding what to work on means reading the
@@ -111,10 +115,12 @@ CONTENT = (
     # download, so inverting it locally is the whole answer rather than an
     # approximation of it. See `board.children`.
     "    parent { number } "
-    "    milestone { title } } "
+    "    milestone { title } "
+    + COMMENTS + "} "
     "  ... on PullRequest { number title url state body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
-    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } } "
+    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
+    + COMMENTS + "} "
     # A draft has a title and a body and nothing else — no number, no url, no
     # labels. It is the board's own note rather than a repository's issue.
     "  ... on DraftIssue { title body } } ")

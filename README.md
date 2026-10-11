@@ -156,8 +156,9 @@ fail for a reason the question had nothing to do with.
 
 The snapshot keeps every item on the board, open or closed: `board` lists open
 work, while `board item` and `board find` also answer about closed work, which
-is marked as such. Comments, and issues that were never on the board, are not
-in it; reaching them is plain `gh`, as the person, with their approval.
+is marked as such. Each item carries its latest 50 comments, which `board item`
+shows and `board find` searches. Issues that were never on the board are not in
+it; reaching them is plain `gh`, as the person, with their approval.
 
 An item is named by its issue number, or — for a draft card, which has no
 issue behind it — by the `~handle` the board prints. Either is accepted

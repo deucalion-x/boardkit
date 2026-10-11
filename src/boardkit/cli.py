@@ -212,6 +212,14 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             print()
             print(found.body.rstrip())
             print()
+        if found is not None and found.comments:
+            left_out = found.comment_count - len(found.comments)
+            print(f"  comments ({found.comment_count}"
+                  f"{f', the earliest {left_out} not kept' if left_out else ''}):")
+            for comment in found.comments:
+                print(f"\n  {comment.author}, {comment.at[:10]}:")
+                print("    " + comment.body.rstrip().replace("\n", "\n    "))
+            print()
         # Local, like the rest of the answer: each item carries its parent, so
         # the children are a pass over the snapshot. This was a search per
         # invocation — the one read that always spent quota, and the one that
