@@ -98,7 +98,9 @@ draft in Inbox
    "<text>"`, then move it to `In Review`. This means ready for judgement, not
    done.
 6. Only a human accepts work. After explicit acceptance, record `Done`; the
-   Project automation closes the issue.
+   Project automation closes the issue. A person merging the pull request
+   that closes an issue is that acceptance: the automation then moves the
+   issue to `Done` on its own. Never merge a pull request yourself.
 
 Close rejected, duplicate, or abandoned issues with `board close <ref>
 --not-planned`. Never move them through `Done`; the Project automation
