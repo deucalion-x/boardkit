@@ -1,6 +1,7 @@
 # Which board this is.
 owner = "deucalion-x"
 owner_type = "org"
+app_client_id = "Iv23liPclAFWDh1mSceP"
 repo = "deucalion-x/boardkit"
 project = "2"
 project_name = "boardkit"

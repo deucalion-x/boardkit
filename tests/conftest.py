@@ -9,3 +9,4 @@ def inherited_credential(monkeypatch):
     through it must not leave the next one needing a keychain."""
     monkeypatch.setattr(credential, "repo", None)
     monkeypatch.setattr(credential, "as_me", False)
+    monkeypatch.setattr(credential, "app", "")

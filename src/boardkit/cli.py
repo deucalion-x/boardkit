@@ -20,7 +20,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     which credential is used, and what it may do
-  board auth login|logout    sign in through the boardkit GitHub App
+  board auth login|logout    sign in through this repo's GitHub App
   board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login, not the
                              focused token (creating a board needs it)
@@ -94,7 +94,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         return setup.schema()
 
     config = load()
-    credential.configure(config.repo, elevated=as_me)
+    credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
     # Named once per command, because three files can hold this configuration
     # and the costly confusion is editing one that is not the one being read.
@@ -117,9 +117,9 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         if args[:1] == ["setup"]:
             return auth.setup(config)
         if args[:1] == ["login"]:
-            return login.login()
+            return login.login(config.app_client_id, config.repo)
         if args[:1] == ["logout"]:
-            return login.logout()
+            return login.logout(config.app_client_id, config.repo)
         return auth.report(config, refresh="--refresh" in args)
     if command == "sync":
         verbs = [a for a in args if not a.startswith("-")]

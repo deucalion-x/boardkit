@@ -23,12 +23,13 @@ ENV = "BOARDKIT_TOKEN"
 # Set once per invocation by the CLI. Unset, as in tests and library use,
 # `gh` runs with whatever environment it inherits, as it always did.
 repo: str | None = None
+app = ""
 as_me = False
 
 
-def configure(name: str, elevated: bool = False) -> None:
-    global repo, as_me
-    repo, as_me = name, elevated
+def configure(name: str, elevated: bool = False, app_id: str = "") -> None:
+    global repo, as_me, app
+    repo, as_me, app = name, elevated, app_id
 
 
 def has_keychain() -> bool:
@@ -65,8 +66,8 @@ def source() -> str:
         return "your gh login" + (" (--as-me)" if as_me else "")
     if os.environ.get(ENV):
         return f"focused token from {ENV}"
-    if login.signed_in():
-        return "your boardkit app sign-in (acts as you, via boardkit)"
+    if login.signed_in(app):
+        return f"your sign-in through {repo}'s app (acts as you, via the app)"
     return "focused token from the keychain" if stored(repo) else "none set up"
 
 
@@ -91,13 +92,13 @@ def environment() -> dict[str, str] | None:
     """The environment a `gh` call runs in, or None to inherit as-is."""
     if repo is None or as_me:
         return None
-    # An explicit token wins; then the app sign-in, which covers every repo
-    # the app is installed on; then this repository's own token.
+    # An explicit token wins; then the sign-in through this repository's own
+    # app; then this repository's own token.
     from . import login
     token = os.environ.get(ENV, "")
     if not token:
         try:
-            token = login.access_token()
+            token = login.access_token(app)
         except login.LoginError as expired:
             raise Missing(str(expired)) from None
     token = token or stored(repo)

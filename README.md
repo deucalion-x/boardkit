@@ -227,8 +227,11 @@ BOARDKIT_LOG=/tmp/audit.jsonl board sync   # keep it somewhere else
 
 ## Permissions
 
-The simplest way in is to sign in through the boardkit GitHub App, once per
-machine:
+The simplest way in is to sign in through the repository's own GitHub App,
+named by `app_client_id` in its boardkit config. Give each repository its own
+app, installed on that repository alone: GitHub limits a sign-in to the repos
+its app is installed on, so each sign-in reaches one repository. Once per
+repository and machine:
 
 ```bash
 board auth login    # shows a code; approve it on GitHub

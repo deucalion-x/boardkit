@@ -180,6 +180,11 @@ class Config(BaseModel):
     # that queries a board calls `require("project")` instead.
     project: str = ""
     owner_type: Literal["user", "org"] = "user"
+    # The client ID of the GitHub App this repository signs in through. One
+    # app per repository keeps each sign-in to that repository alone: GitHub
+    # limits a sign-in to the repos its own app is installed on. Empty means
+    # no app, and a per-repository token instead.
+    app_client_id: str = ""
     # Empty means "whatever the board says", in the board's own order. A repo
     # only names its columns to assert an order, or to create them.
     # The columns to create when `status_order` names none, and what each
