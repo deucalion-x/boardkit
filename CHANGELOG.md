@@ -3,8 +3,13 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
-## Unreleased
+## 0.1.3 — 2026-10-11
 
+- Fix `board admin apply` failing while reading saved views: the query carried
+  an extra closing brace, so GitHub rejected it.
+- `board admin apply --reconcile` updates a view's layout, not only its filter.
+- Add `board admin apply --prune-views`, which deletes saved tabs the config
+  does not name.
 - Give the starter board an unfiltered `Current` board and an unfiltered `All`
   table, showing the same tasks in two layouts.
 
