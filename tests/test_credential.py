@@ -85,3 +85,17 @@ def test_an_expired_token_says_how_to_replace_it(monkeypatch):
     credential.configure("octo/widgets")
     with pytest.raises(gh.BoardError, match=r"expired or been revoked.*board auth setup"):
         gh.gh("api", "user")
+
+
+def test_board_gh_runs_gh_under_the_repo_credential(monkeypatch, tmp_path):
+    from boardkit import cli
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.boardkit]\nowner = "octo"\nrepo = "octo/widgets"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(credential.ENV, "narrow")
+    ran = []
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: ran.append((args, kw["env"]))
+                        or subprocess.CompletedProcess(args, 0))
+    assert cli.main(["gh", "issue", "view", "29"]) == 0
+    assert ran[0][0] == ["gh", "issue", "view", "29"]
+    assert ran[0][1]["GH_TOKEN"] == "narrow"

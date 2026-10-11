@@ -145,12 +145,17 @@ instead of fetching one behind your back.
 The snapshot holds open items only, and no comments or history. So:
 
 ```bash
-gh issue list --search "<terms> is:closed"   # was this already done
-gh issue view 29 --comments                  # the discussion itself
+board gh issue list --search "<terms> is:closed"   # was this already done
+board gh issue view 29 --comments                  # the discussion itself
+board gh pr list                                   # pull requests, CI, releases
 ```
 
+`board gh` is `gh` run under this repository's own credential, so it reaches
+this repository alone and needs no approval. Plain `gh` runs as the person's
+full login and asks them first; do not use it for this.
+
 Reach for these when the question is about history or conversation. For
-anything about current work, `board` already knows.
+anything about current work, `board` already knows, from its cache.
 
 ## The limit worth knowing
 

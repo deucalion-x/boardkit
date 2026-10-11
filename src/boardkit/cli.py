@@ -33,6 +33,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
   board install-skill        write the agent skills for Claude Code and Codex
+  board gh <args>            gh under this repo's credential, for what the
+                             snapshot lacks: closed issues, comments, PRs
 """
 from __future__ import annotations
 
@@ -102,6 +104,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
                project=config.name, declares=config.declares)
 
     # Verbs that never read the board are handled before it is loaded.
+    if command == "gh":
+        return passthrough(args)
     if command == "install-skill":
         return skill.install(config, check="--check" in args)
     if command == "admin":
@@ -458,6 +462,16 @@ def report_queue(store: Store) -> int:
     if lost:
         print(f"{lost} change(s) rejected. `board rejected` to see them.")
     return 0
+
+
+def passthrough(args: list[str]) -> int:
+    """`gh` itself, under this repository's credential rather than the
+    personal login: for what the snapshot does not hold, such as closed
+    issues, comments and pull requests. Output goes straight to the terminal."""
+    import subprocess
+
+    from .gh import environment
+    return subprocess.run(["gh", *args], env=environment(["gh"]), check=False).returncode
 
 
 def usage(code: int = 2) -> int:
