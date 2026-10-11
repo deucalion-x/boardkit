@@ -96,32 +96,30 @@ VALUE_FRAGMENTS = """
 # item's conversation is local too. The last fifty in the same query: no
 # extra call per item, and `totalCount` says when older ones were left out.
 COMMENTS = "comments(last: 50) { totalCount nodes { author { login } createdAt body } } "
+# An issue's own fields, shared by the board's item query and the
+# repository's issue query, so both read an issue the same way.
+#
+# `body` is a scalar on a node already being fetched, so it costs no points,
+# only bytes. Worth it: deciding what to work on means reading the acceptance
+# criteria, and without it that is an API call. Labels, assignees and
+# milestone are connections and so the expensive shape in principle; measured,
+# they cost nothing worth saving, and an agent choosing work reads them.
+# 100 is GitHub's maximum for a connection. These are not paged, which would
+# mean a follow-up query per item; truncation is read back and reported.
+# `parent` replaces a live search per `board item`: children are the same
+# relation read the other way, inverted locally. See `board.children`.
+ISSUE_FIELDS = (
+    "number title url state stateReason closedAt body "
+    "labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
+    "assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
+    "parent { number } milestone { title } " + COMMENTS)
 CONTENT = (
-    # `body` is a scalar on a node already being fetched, so it costs no points
-    # — only bytes. Worth it: deciding what to work on means reading the
-    # acceptance criteria, and without it that is an API call. Labels,
-    # assignees and milestone are connections and so the expensive shape in
-    # principle; measured, they cost nothing worth saving, and an agent
-    # choosing work reads them.
-    # 100 is GitHub's maximum for a connection. These are not paged — doing so
-    # would mean a follow-up query per item — so instead the page info is read
-    # back and truncation is reported rather than passed off as the whole list.
-    "content { ... on Issue { number title url state stateReason closedAt body "
-    "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
-    "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
-    # One scalar, on a node already being fetched, and it replaces a live
-    # search per `board item`. Only the parent is asked for: children are the
-    # same relation read the other way, and every item on the board is in this
-    # download, so inverting it locally is the whole answer rather than an
-    # approximation of it. See `board.children`.
-    "    parent { number } "
-    "    milestone { title } "
-    + COMMENTS + "} "
+    "content { ... on Issue { " + ISSUE_FIELDS + "} "
     "  ... on PullRequest { number title url state body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
     + COMMENTS + "} "
-    # A draft has a title and a body and nothing else — no number, no url, no
+    # A draft has a title and a body and nothing else: no number, no url, no
     # labels. It is the board's own note rather than a repository's issue.
     "  ... on DraftIssue { title body } } ")
 
@@ -349,12 +347,10 @@ def off_board(config: Config, names: tuple[str, ...], on_board: set[int]):
 
 def fetch_repo_issues(config: Config) -> list[dict]:
     owner, name = config.repo.split("/", 1)
-    issue = CONTENT.split("... on Issue {", 1)[1].split("... on PullRequest", 1)[0]
-    fields = issue.rsplit("}", 1)[0]
-    payload = run_json(["gh", "api", "graphql", "-f",
-                        f"query={{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
-                        f"{{ issues(first: {REPO_ISSUES}, orderBy: "
-                        f"{{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ {fields} }} }} }} }}"])
+    query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+             f"{{ issues(first: {REPO_ISSUES}, orderBy: "
+             f"{{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ {ISSUE_FIELDS} }} }} }} }}")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     found = ((payload.get("data") or {}).get("repository") or {}).get("issues") or {}
     return [{"id": "", "type": "ISSUE", "content": {**node, "type": "ISSUE"}}
             for node in found.get("nodes") or [] if node]
