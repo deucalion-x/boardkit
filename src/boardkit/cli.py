@@ -21,7 +21,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
                              --later: queue without trying
                              --anyway: move a draft out of the intake column
   board rejected [--clear]   local changes that lost to a remote change
-  board log [n]              what boardkit did, for audit and debugging
+  board log [n] [--superuser]  what boardkit did; --superuser: uses of your
+                             own login (--as-me, approved gh)
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     which credential is used, and what it may do
@@ -106,6 +107,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # and the costly confusion is editing one that is not the one being read.
     trail.note("configured", file=str(config.source), command=command,
                project=config.name, declares=config.declares)
+    # The escape hatch is on record every time, not only approved: it runs
+    # with the person's full login, beyond this repository's credential.
+    if as_me:
+        superuser(config, "--as-me", " ".join(["board", command, *args]))
 
     # Verbs that never read the board are handled before it is loaded.
     if command == "install-skill":
@@ -164,7 +169,14 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
                 changes[word[2:]] = rest.pop(0)
         return issue.edit(config, store, args[0], changes.get("title"), changes.get("body"))
     if command == "log":
-        return history(store, int(args[0]) if args and args[0].isdigit() else 30)
+        if "--record-gh" in args:
+            # Fed by a Claude Code hook with each approved raw `gh` command.
+            said = sys.stdin.read().strip()
+            if said.startswith("gh ") or said == "gh":
+                superuser(config, "gh", said)
+            return 0
+        limit = next((int(a) for a in args if a.isdigit()), 30)
+        return history(store, limit, superuser_only="--superuser" in args)
     if command == "rejected":
         return rejected(store, clear="--clear" in args)
     if command == "mirror":
@@ -492,8 +504,17 @@ def rejected(store: Store, clear: bool) -> int:
     return 1
 
 
-def history(store: Store, limit: int) -> int:
-    entries = store.history(limit)
+def superuser(config, via: str, command: str) -> None:
+    """One use of the person's own login, recorded as such."""
+    import getpass
+    trail.note("superuser", via=via, repo=config.repo, user=getpass.getuser(),
+               command=command[:500])
+
+
+def history(store: Store, limit: int, superuser_only: bool = False) -> int:
+    entries = store.history(limit if not superuser_only else 10_000)
+    if superuser_only:
+        entries = [e for e in entries if e.get("action") == "superuser"][-limit:]
     if not entries:
         print("Nothing recorded yet.")
         return 0

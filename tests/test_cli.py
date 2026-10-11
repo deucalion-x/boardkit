@@ -1,5 +1,6 @@
 """Reads must answer from the local store. Nothing but sync may touch GitHub."""
 import json
+import sys
 
 import pytest
 
@@ -586,3 +587,19 @@ def test_the_listing_still_shows_open_work_only(with_closed, capsys):
 
 def test_a_closed_item_cannot_be_written(with_closed, capsys):
     assert cli.main(["set", "3", "status", "Todo"]) != 0
+
+
+def test_the_superuser_hatch_is_logged(repo, monkeypatch, capsys):
+    import io
+
+    from boardkit import trail
+    noted = []
+    monkeypatch.setattr(trail, "note", lambda action, **d: noted.append((action, d)))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("gh issue view 3 --repo other/repo"))
+    assert cli.main(["log", "--record-gh"]) == 0
+    monkeypatch.setattr(sys, "stdin", io.StringIO("ls -la"))
+    assert cli.main(["log", "--record-gh"]) == 0
+    assert cli.main(["views", "--as-me"]) in (0, 1)
+    supers = [d for action, d in noted if action == "superuser"]
+    assert [s["via"] for s in supers] == ["gh", "--as-me"]
+    assert supers[0]["command"] == "gh issue view 3 --repo other/repo"

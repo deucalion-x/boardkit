@@ -263,8 +263,17 @@ an agent ask before it uses your login, add this to the repository's
 `.claude/settings.json`:
 
 ```json
-{ "permissions": { "ask": ["Bash(board:* --as-me*)", "Bash(gh:*)"] } }
+{
+  "permissions": { "ask": ["Bash(gh *)", "Bash(board --as-me*)", "Bash(board * --as-me*)"] },
+  "hooks": { "PostToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
+    "if": "Bash(gh *)",
+    "command": "jq -r '.tool_input.command' | board log --record-gh 2>/dev/null || true" }] }] }
+}
 ```
+
+Every `--as-me` is recorded as a superuser action, and the hook records each
+approved raw `gh` command the same way. `board log --superuser` lists them:
+who used their own login, when, in which repository, for what.
 
 For an organisation's board, `board auth setup` opens a pre-filled
 fine-grained token form for agent work on one repository: contents, issues and

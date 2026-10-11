@@ -5,5 +5,19 @@
       "Bash(board --as-me*)",
       "Bash(board * --as-me*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh *)",
+            "command": "jq -r '.tool_input.command' | board log --record-gh 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }
