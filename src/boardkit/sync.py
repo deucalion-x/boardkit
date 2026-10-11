@@ -193,7 +193,7 @@ def fetch_board(config: Config, number: str) -> dict:
         raise BoardError(
             f"GitHub would not show project {number} of {config.owner} to this "
             f"credential{': ' + said if said else ''}. If you signed in with "
-            f"`board auth login`, check that the boardkit app is installed on "
+            f"`board auth login`, check that this repository's app is installed on "
             f"{config.repo}.")
     items = [flatten(node) for node in project["items"]["nodes"] if node]
     page, pages = project["items"]["pageInfo"], 1

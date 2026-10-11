@@ -49,7 +49,7 @@ board admin apply --prune-views       # delete tabs config does not name
 board sync                            # pull the new shape into the snapshot
 ```
 
-These run under the repository's focused token. Creating a project reaches
+These run under the repository's own credential. Creating a project reaches
 beyond it, so `board admin apply` refuses and asks for `--as-me`, which uses
 the person's own gh login. Ask the person before adding `--as-me`; never add it
 to get past a refusal on your own.

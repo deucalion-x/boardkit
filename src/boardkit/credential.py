@@ -1,12 +1,17 @@
 """Which GitHub credential boardkit's `gh` calls run under.
 
-By default it is a focused token: one repository, its issues and its board,
-set up once with `board auth setup`. The personal `gh` login is broad — every
-repository and board the account reaches — and an agent working the board
-needs none of that, so it is used only when `--as-me` asks for it.
+Never the person's own `gh` login by default: that reaches every repository
+and board the account can, and an agent working one repository's board needs
+none of it. In order, boardkit uses:
 
-The token comes from `BOARDKIT_TOKEN` when set, so CI and other platforms can
-supply one, and otherwise from the macOS keychain, keyed by repository.
+1. `BOARDKIT_TOKEN`, when set, for CI and platforms without a keychain;
+2. the sign-in through this repository's own GitHub App (`board auth login`),
+   which reaches only the repositories that app is installed on;
+3. a token for this repository alone (`board auth setup`), the fallback for
+   anyone who cannot use an app.
+
+`--as-me` uses the personal login instead, for one command: the escape hatch,
+approved by the person and logged.
 """
 from __future__ import annotations
 
@@ -37,7 +42,7 @@ def has_keychain() -> bool:
 
 
 def stored(name: str) -> str:
-    """The focused token for `name`, or "" when none is set up."""
+    """This repository's own token (`board auth setup`), or "" if none."""
     if os.environ.get(ENV):
         return os.environ[ENV]
     if not has_keychain():
@@ -65,26 +70,39 @@ def source() -> str:
     if repo is None or as_me:
         return "your gh login" + (" (--as-me)" if as_me else "")
     if os.environ.get(ENV):
-        return f"focused token from {ENV}"
+        return f"the token in {ENV}"
     if login.signed_in(app):
         return f"your sign-in through {repo}'s app (acts as you, via the app)"
-    return "focused token from the keychain" if stored(repo) else "none set up"
+    return ("this repository's token, from the keychain" if stored(repo)
+            else "none set up")
 
 
 def focused() -> bool:
-    """True when `gh` runs under the focused token rather than the login."""
+    """True when `gh` runs under this repository's credential, not the login."""
     return repo is not None and not as_me
 
 
+def renewal() -> str:
+    """How to replace the credential in use once GitHub stops accepting it."""
+    from . import login
+    if os.environ.get(ENV):
+        return f"Replace the token in {ENV}."
+    if login.signed_in(app):
+        return "Run `board auth login` to sign in again."
+    return ("Regenerate it at https://github.com/settings/personal-access-tokens "
+            "(Regenerate token keeps its permissions), then run `board auth setup` "
+            "and paste the new value.")
+
+
 class Missing(RuntimeError):
-    """No focused token for this repository, and `--as-me` was not given."""
+    """No credential for this repository, and `--as-me` was not given."""
 
 
 def elevated(action: str) -> None:
-    """Refuse `action` under the focused token: it reaches beyond one repo and
-    its board, so the person asks for it with --as-me."""
+    """Refuse `action` under this repository's credential: it reaches beyond
+    one repository and its board, so the person asks for it with --as-me."""
     if repo is not None and not as_me:
-        raise Missing(f"{action} needs your own gh login, not the focused token. "
+        raise Missing(f"{action} needs your own gh login, not this repository's credential. "
                       f"Re-run with --as-me.")
 
 

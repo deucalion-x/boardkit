@@ -28,8 +28,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth [--refresh]     which credential is used, and what it may do
   board auth login|logout    sign in through this repo's GitHub App
   board auth setup           or store a token for this repo alone
-  --as-me                    on any verb: use your own gh login, not the
-                             focused token (creating a board needs it)
+  --as-me                    on any verb: use your own gh login instead of
+                             this repo's credential; approved and logged
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
   board admin apply [-n] [--reconcile] [--prune-views]
@@ -70,7 +70,7 @@ STALE = "No local snapshot. Run `board sync` first."
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # Any verb may ask for the personal gh login instead of the focused token.
+    # Any verb may ask for the personal gh login instead of the repo's credential.
     as_me = "--as-me" in argv
     argv = [a for a in argv if a != "--as-me"]
     command = argv[0] if argv else "list"

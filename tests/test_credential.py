@@ -83,6 +83,19 @@ def test_an_expired_token_says_how_to_replace_it(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(
         args, 1, "", "HTTP 401: Bad credentials (https://api.github.com/graphql)"))
     credential.configure("octo/widgets")
-    with pytest.raises(gh.BoardError, match=r"expired or been revoked.*board auth setup"):
+    with pytest.raises(gh.BoardError, match=r"expired or been revoked.*BOARDKIT_TOKEN"):
+        gh.gh("api", "user")
+
+
+def test_an_expired_app_sign_in_says_to_sign_in_again(monkeypatch):
+    from boardkit import login
+    monkeypatch.delenv(credential.ENV, raising=False)
+    monkeypatch.setattr(login, "access_token", lambda app: "ghu_stale")
+    monkeypatch.setattr(login, "signed_in", lambda app: True)
+    monkeypatch.setattr(gh.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(
+        args, 1, "", "HTTP 401: Bad credentials"))
+    credential.configure("octo/widgets", app_id="Iv1.x")
+    with pytest.raises(gh.BoardError, match="board auth login"):
         gh.gh("api", "user")
 

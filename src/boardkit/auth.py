@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict
 
 from . import credential
 from .config import Config
-from .gh import TOKENS, BoardError, probe
+from .gh import BoardError, probe
 from .store import directory
 
 CACHE = "auth.json"
@@ -90,7 +90,7 @@ def parse_status(output: str) -> Capability:
     """Read `gh auth status`. Local, so this is the cheap half of the answer.
 
     It lists every login it knows; only the active one's block is read, or a
-    focused token would be reported with the personal login's scopes.
+    repository's credential would be reported with the personal login's scopes.
     """
     blocks = re.split(r"(?=^\s*✓ Logged in to )", output, flags=re.MULTILINE)
     active = [b for b in blocks if "Active account: true" in b]
@@ -110,7 +110,7 @@ def parse_status(output: str) -> Capability:
 
 
 def status() -> Capability:
-    # Asked first, so a missing focused token is named as such rather than
+    # Asked first, so a missing credential is named as such rather than
     # read back by the probe as nobody being logged in.
     try:
         credential.environment()
@@ -173,10 +173,8 @@ def require(config: Config, tier: str) -> Capability:
     found = capability(config)
     if not found.logged_in and credential.focused():
         raise BoardError(
-            f"GitHub does not accept the focused token for {config.repo}: it has "
-            f"expired or been revoked. Regenerate it at {TOKENS} (Regenerate "
-            f"token keeps its permissions), then run `board auth setup` and "
-            f"paste the new value.")
+            f"GitHub no longer accepts the credential for {config.repo}: it has "
+            f"expired or been revoked. {credential.renewal()}")
     if not found.logged_in:
         raise BoardError("not logged in to GitHub. Run `gh auth login`.")
     missing = found.missing(tier)
@@ -208,7 +206,11 @@ def report(config: Config, refresh: bool = False) -> int:
         print("Not logged in. Run `gh auth login`.")
         return 1
     print(f"Account : {found.account} on {found.host}")
-    if found.fine_grained:
+    from . import login
+    if credential.focused() and login.signed_in(credential.app):
+        print("Token   : app sign-in; it has the app's permissions, on the "
+              "repositories the app is installed on")
+    elif found.fine_grained:
         print("Token   : fine-grained or env-supplied; permissions are not "
               "reported, so only the probe below can tell you what works")
     else:
@@ -264,10 +266,10 @@ def prefilled(config: Config) -> str:
 
 
 def setup(config: Config) -> int:
-    """Store this repository's focused token, after checking it can see the
+    """Store a token for this repository alone, after checking it can see the
     repository and the board."""
     if not credential.has_keychain():
-        print(f"No keychain here. Export {credential.ENV} with a focused token instead.")
+        print(f"No keychain here. Export {credential.ENV} with a token instead.")
         return 1
     if config.owner_type == "user":
         # Fine-grained tokens offer no Projects permission on a personal
@@ -306,7 +308,7 @@ def setup(config: Config) -> int:
         print(f"That token cannot see {config.repo}; nothing stored.")
         return 1
     credential.store(config.repo, token)
-    print(f"Stored the focused token for {config.repo} in the keychain.")
+    print(f"Stored the token for {config.repo} in the keychain.")
     if found.can_see_project is False:
         print(f"  warning: it cannot see the projects of {config.owner}, so "
               f"`board sync` will fail. Re-run with a token that can.")

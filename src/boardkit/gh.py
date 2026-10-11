@@ -37,7 +37,6 @@ class Unreachable(BoardError):
 
 # What GitHub says to a token it no longer accepts.
 EXPIRED = re.compile(r"bad credentials|HTTP 401|token (has )?expired", re.IGNORECASE)
-TOKENS = "https://github.com/settings/personal-access-tokens"
 
 
 # What `gh` says when the network is the problem rather than the request.
@@ -64,7 +63,7 @@ def quoted(value: object) -> str:
 
 
 def environment(args: list[str]) -> dict[str, str] | None:
-    """The credential a call runs under: `gh` gets the focused token, and
+    """The credential a call runs under: `gh` gets this repository's, and
     anything else — `git` above all — keeps its own."""
     if args[0] != "gh":
         return None
@@ -158,10 +157,8 @@ def run(args: list[str]) -> str:
     if args[0] == "gh" and EXPIRED.search(detail) and credential.focused():
         note("token_refused", command=" ".join(args[:3]), said=detail[:200])
         raise BoardError(
-            f"GitHub refused the focused token for {credential.repo}: it has "
-            f"expired or been revoked. Regenerate it at {TOKENS} (Regenerate "
-            f"token keeps its permissions), then run `board auth setup` and "
-            f"paste the new value.")
+            f"GitHub no longer accepts the credential for {credential.repo}: it "
+            f"has expired or been revoked. {credential.renewal()}")
     if not LIMITED.search(detail):
         note("failed", command=" ".join(args[:3]), said=detail[:400])
         raise BoardError(f"{' '.join(args)} failed: {detail}")
