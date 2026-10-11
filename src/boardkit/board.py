@@ -61,6 +61,14 @@ class ProjectItem(BaseModel):
     # Closed since it was put on the board. Kept, so a question about done
     # work is answered from the snapshot rather than by a search.
     closed: bool = False
+    # Why and when it closed: COMPLETED, NOT_PLANNED or DUPLICATE, so done
+    # work is told apart from dropped work.
+    state_reason: str = ""
+    closed_at: str = ""
+    # False for an issue of the repository that is not on the board: one
+    # never added, or a card the board has archived, which GitHub no longer
+    # lists among the board's items.
+    on_board: bool = True
     assignees: tuple[str, ...] = ()
     milestone: str = ""
     # The issue this one is a sub-issue of, zero when it has none. Stored
@@ -185,6 +193,8 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             assignees=named(content.get("assignees"), "login"),
             milestone=(content.get("milestone") or {}).get("title", ""),
             parent=(content.get("parent") or {}).get("number") or 0,
+            state_reason=content.get("stateReason") or "",
+            closed_at=content.get("closedAt") or "",
             comments=tuple(
                 Comment(author=(c.get("author") or {}).get("login", ""),
                         at=c.get("createdAt", ""), body=c.get("body") or "")

@@ -760,3 +760,18 @@ def test_a_partial_answer_is_an_error_not_an_empty_board(tmp_path, monkeypatch):
         "errors": [{"message": "Resource not accessible by integration"}]})
     with pytest.raises(BoardError, match=r"not accessible.*app is installed on octo/widgets"):
         sync.fetch_board(config, "4")
+
+
+def test_repo_issues_off_the_board_are_kept_apart(tmp_path, monkeypatch):
+    """Archived cards vanish from the board's item list; the repo still has
+    them, so a done-work question can still be answered."""
+    from boardkit import sync
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets", project="4")
+    monkeypatch.setattr(sync, "fetch_repo_issues", lambda config: [
+        {"id": "", "type": "ISSUE", "content": {"number": 1, "state": "OPEN", "title": "On board"}},
+        {"id": "", "type": "ISSUE", "content": {
+            "number": 65, "state": "CLOSED", "title": "Archived", "stateReason": "COMPLETED",
+            "closedAt": "2026-09-21T00:00:00Z"}}])
+    off = list(sync.off_board(config, (), {1}))
+    assert [(i.number, i.on_board, i.closed, i.state_reason) for i in off] == [
+        (65, False, True, "COMPLETED")]

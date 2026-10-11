@@ -196,7 +196,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     items = list(snapshot.items)
     # Reads about one item, or a search, also see closed work; the listing
     # and everything that writes see open work only.
-    everything = [*items, *snapshot.closed]
+    everything = [*items, *snapshot.closed, *snapshot.elsewhere]
     index = {item.ref: item for item in everything}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
@@ -228,7 +228,11 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             if said:
                 print(f"  {said}")
         if found is not None and found.closed:
-            print("  closed")
+            why = found.state_reason.replace("_", " ").lower()
+            print(f"  closed{' as ' + why if why else ''}"
+                  f"{', ' + found.closed_at[:10] if found.closed_at else ''}")
+        if found is not None and not found.on_board:
+            print("  not on the board")
         if found is not None and not found.body:
             # Silence read as "the skill lied about showing the full text".
             print("  (no description)")
@@ -256,14 +260,20 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         # The snapshot carries titles, bodies and labels, open or closed, so
         # this costs nothing, including "was this already done".
         hits = board_module.matching(everything, " ".join(args))
+        live = [h for h in hits if not h.closed and h.on_board]
         done = [h for h in hits if h.closed]
-        if not done or len(done) < len(hits):
-            board_module.show([h for h in hits if not h.closed], view)
+        off = [h for h in hits if not h.closed and not h.on_board]
+        if live or not hits:
+            board_module.show(live, view)
+        if off:
+            print("open, not on the board:")
+            board_module.show(off, view)
         if done:
             print("closed:")
             board_module.show(done, view)
     elif command == "json":
-        json.dump([{**item.flat(), "closed": item.closed} for item in everything],
+        json.dump([{**item.flat(), "closed": item.closed, "on_board": item.on_board,
+                    "state_reason": item.state_reason} for item in everything],
                   sys.stdout, indent=2)
         print()
     return 0

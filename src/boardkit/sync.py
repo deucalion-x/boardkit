@@ -106,7 +106,7 @@ CONTENT = (
     # 100 is GitHub's maximum for a connection. These are not paged — doing so
     # would mean a follow-up query per item — so instead the page info is read
     # back and truncation is reported rather than passed off as the whole list.
-    "content { ... on Issue { number title url state body "
+    "content { ... on Issue { number title url state stateReason closedAt body "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
     # One scalar, on a node already being fetched, and it replaces a live
@@ -330,6 +330,36 @@ def number(config: Config, store: Store) -> str:
     return find_project(listed.get("projects", []), config)
 
 
+# The repository's issues, most recently updated first: what the board's item
+# list cannot show, namely issues never put on the board and cards it has
+# archived. One page of the latest hundred, which bounds the cost of a sync;
+# older history is plain `gh`, as the person.
+REPO_ISSUES = 100
+
+
+def off_board(config: Config, names: tuple[str, ...], on_board: set[int]):
+    """The repository's recent issues that the board does not list."""
+    rows = [row for row in fetch_repo_issues(config)
+            if row["content"].get("number") not in on_board]
+    still_open = {row["content"]["number"] for row in rows
+                  if row["content"].get("state") == "OPEN"}
+    for item in normalize(rows, still_open, config, names, keep_closed=True):
+        yield item.model_copy(update={"on_board": False, "fields": {}})
+
+
+def fetch_repo_issues(config: Config) -> list[dict]:
+    owner, name = config.repo.split("/", 1)
+    issue = CONTENT.split("... on Issue {", 1)[1].split("... on PullRequest", 1)[0]
+    fields = issue.rsplit("}", 1)[0]
+    payload = run_json(["gh", "api", "graphql", "-f",
+                        f"query={{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+                        f"{{ issues(first: {REPO_ISSUES}, orderBy: "
+                        f"{{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ {fields} }} }} }} }}"])
+    found = ((payload.get("data") or {}).get("repository") or {}).get("issues") or {}
+    return [{"id": "", "type": "ISSUE", "content": {**node, "type": "ISSUE"}}
+            for node in found.get("nodes") or [] if node]
+
+
 def pull(config: Config, store: Store) -> Snapshot:
     """Replace the snapshot with what GitHub currently holds."""
     target = number(config, store)
@@ -360,6 +390,7 @@ def pull(config: Config, store: Store) -> Snapshot:
         views=tuple(board.get("views", ())),
         items=tuple(item for item in every if not item.closed),
         closed=tuple(item for item in every if item.closed),
+        elsewhere=tuple(off_board(config, names, {i.number for i in every if i.number})),
     )
     store.save_state(snapshot)
     store.ignore_file()

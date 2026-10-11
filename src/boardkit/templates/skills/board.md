@@ -155,8 +155,10 @@ instead of fetching one behind your back.
 
 ## Done work, and what the snapshot does not hold
 
-The snapshot keeps every item on the board, open or closed, so "was this
-already done" is a local question:
+The snapshot keeps every item on the board, open or closed, with why it closed
+(completed or not planned), plus the repository's recent issues the board does
+not list, including cards it has archived. So "was this already done" is a
+local question:
 
 ```bash
 board find <terms>     # open matches first, then the closed ones
@@ -164,8 +166,7 @@ board item 29          # a closed item says so, with its full text
 ```
 
 `board item` also shows an item's comments, where plans get discussed and
-revised, and `board find` searches them. Issues that were never on the board,
-other repositories and pull request detail are not in it. Reaching them means plain `gh`, which runs as
+revised, and `board find` searches them. Older history and other repositories are not in it. Reaching them means plain `gh`, which runs as
 the person's own full login and asks them first. That is the escape hatch,
 for the person to approve case by case: not part of working the board, and
 never a way to reach another repository on your own.

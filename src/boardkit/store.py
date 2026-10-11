@@ -85,11 +85,16 @@ class Snapshot(BaseModel):
     # listing, counting and writing keep meaning open work; reads about done
     # work look here too.
     closed: tuple[ProjectItem, ...] = ()
+    # The repository's recent issues the board does not list: never added, or
+    # archived off it. Read about, never written through the board.
+    elsewhere: tuple[ProjectItem, ...] = ()
 
     def known(self, ref: str | int) -> ProjectItem | None:
-        """Open or closed: for reading about an item, never for writing."""
+        """Anywhere in the snapshot: for reading about an item, and for
+        changing the issue itself, never for writing a board field."""
         wanted = str(ref)
-        return self.item(ref) or next((i for i in self.closed if i.ref == wanted), None)
+        return self.item(ref) or next(
+            (i for i in (*self.closed, *self.elsewhere) if i.ref == wanted), None)
 
     def item(self, ref: str | int) -> ProjectItem | None:
         """By issue number or by a draft's handle; both arrive as text from a
