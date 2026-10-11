@@ -35,6 +35,11 @@ class Unreachable(BoardError):
     """GitHub could not be reached. Waiting is the fix, and it may be a while."""
 
 
+# What GitHub says to a token it no longer accepts.
+EXPIRED = re.compile(r"bad credentials|HTTP 401|token (has )?expired", re.IGNORECASE)
+TOKENS = "https://github.com/settings/personal-access-tokens"
+
+
 # What `gh` says when the network is the problem rather than the request.
 OFFLINE = re.compile(
     r"no such host|could not resolve|connection refused|network is unreachable|"
@@ -150,6 +155,13 @@ def run(args: list[str]) -> str:
     if OFFLINE.search(detail):
         note("unreachable", command=" ".join(args[:3]), said=detail[:200])
         raise Unreachable(f"GitHub could not be reached: {detail}")
+    if args[0] == "gh" and EXPIRED.search(detail) and credential.focused():
+        note("token_refused", command=" ".join(args[:3]), said=detail[:200])
+        raise BoardError(
+            f"GitHub refused the focused token for {credential.repo}: it has "
+            f"expired or been revoked. Regenerate it at {TOKENS} (Regenerate "
+            f"token keeps its permissions), then run `board auth setup` and "
+            f"paste the new value.")
     if not LIMITED.search(detail):
         note("failed", command=" ".join(args[:3]), said=detail[:400])
         raise BoardError(f"{' '.join(args)} failed: {detail}")

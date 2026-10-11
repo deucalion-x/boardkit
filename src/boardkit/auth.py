@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict
 
 from . import credential
 from .config import Config
-from .gh import BoardError, probe
+from .gh import TOKENS, BoardError, probe
 from .store import directory
 
 CACHE = "auth.json"
@@ -171,6 +171,12 @@ def capability(config: Config, refresh: bool = False) -> Capability:
 def require(config: Config, tier: str) -> Capability:
     """Refuse before acting, and name the command that fixes it."""
     found = capability(config)
+    if not found.logged_in and credential.focused():
+        raise BoardError(
+            f"GitHub does not accept the focused token for {config.repo}: it has "
+            f"expired or been revoked. Regenerate it at {TOKENS} (Regenerate "
+            f"token keeps its permissions), then run `board auth setup` and "
+            f"paste the new value.")
     if not found.logged_in:
         raise BoardError("not logged in to GitHub. Run `gh auth login`.")
     missing = found.missing(tier)

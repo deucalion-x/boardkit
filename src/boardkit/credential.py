@@ -67,6 +67,11 @@ def source() -> str:
     return "focused token from the keychain" if stored(repo) else "none set up"
 
 
+def focused() -> bool:
+    """True when `gh` runs under the focused token rather than the login."""
+    return repo is not None and not as_me
+
+
 class Missing(RuntimeError):
     """No focused token for this repository, and `--as-me` was not given."""
 

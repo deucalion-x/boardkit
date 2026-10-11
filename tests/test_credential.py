@@ -75,3 +75,13 @@ def test_the_token_form_is_prefilled_for_agent_work_on_one_repo():
     assert asked["contents"] == ["write"] and asked["pull_requests"] == ["write"]
     assert asked["organization_projects"] == ["write"]
     assert len(asked["name"][0]) <= 40
+
+
+def test_an_expired_token_says_how_to_replace_it(monkeypatch):
+    monkeypatch.setenv(credential.ENV, "stale")
+    monkeypatch.setattr(gh.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(
+        args, 1, "", "HTTP 401: Bad credentials (https://api.github.com/graphql)"))
+    credential.configure("octo/widgets")
+    with pytest.raises(gh.BoardError, match=r"expired or been revoked.*board auth setup"):
+        gh.gh("api", "user")
