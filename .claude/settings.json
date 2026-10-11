@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(gh *)",
+      "Bash(board --as-me*)",
+      "Bash(board * --as-me*)"
+    ]
+  }
+}
