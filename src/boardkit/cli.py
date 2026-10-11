@@ -26,6 +26,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     which credential is used, and what it may do
+  board auth app create      create this repo's own GitHub App, in one go
   board auth login|logout    sign in through this repo's GitHub App
   board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login instead of
@@ -127,6 +128,9 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     if command == "auth":
         if args[:1] == ["setup"]:
             return auth.setup(config)
+        if args[:2] == ["app", "create"]:
+            from . import app
+            return app.create(config)
         if args[:1] == ["login"]:
             return login.login(config.app_client_id, config.repo)
         if args[:1] == ["logout"]:

@@ -51,12 +51,12 @@ unless it says otherwise.
 3. **Create the board**, if it does not exist yet: `board admin apply --as-me`.
    Creating a project is beyond any one repository, so it uses your own `gh`
    login, once.
-4. **Give the repository its own GitHub App**, named `boardkit-<org>-<repo>`:
-   private, Device Flow enabled, no webhook, with Contents, Issues and Pull
-   requests read and write, Actions, Checks and Commit statuses read-only, and
-   organisation Projects read and write. Install it on **this repository
-   only**, and put its client ID in the config as `app_client_id`. (#30 makes
-   this one command.)
+4. **Give the repository its own GitHub App:** `board auth app create`. It
+   opens GitHub with the app already defined (`boardkit-<org>-<repo>`,
+   private, no webhook, the permissions an agent needs), you click Create,
+   and boardkit records its client ID in the config, keeping none of its
+   secrets. Then tick **Enable Device Flow** on the app's page and install it
+   on **this repository only**; the command opens both.
 5. **Sign in,** once per machine: `board auth login`. boardkit now acts as you,
    via that app, and reaches this repository alone.
 6. **Install the agent skills:** `board install-skill`, then commit them, and
@@ -225,6 +225,7 @@ The rest:
 | `board admin apply --prune-views` | Delete saved tabs config does not name. The only deletion; preview with `-n`. |
 | `board admin link` | Attach the project to the repository. |
 | `board auth` / `--refresh` | Which credential is in use, and what it can see. |
+| `board auth app create` | Create this repository's own GitHub App, and record its client ID. |
 | `board auth login` / `logout` | Sign in through this repository's GitHub App. |
 | `board auth setup` | Or store a token for this repository alone. |
 | `--as-me` on any verb | Use your own `gh` login for one command; approved and logged. |

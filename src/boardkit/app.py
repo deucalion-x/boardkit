@@ -1,0 +1,147 @@
+"""Create a repository's own GitHub App in one command.
+
+GitHub's app manifest flow: a local page posts the app's definition to the
+organisation's "new app" form, the person clicks Create, GitHub redirects back
+here with a one-time code, and the code is exchanged for the app. The
+exchange also returns a client secret, a private key and a webhook secret.
+The device flow needs none of them, so they are dropped without ever being
+written down: the safest key is the one nobody holds.
+
+What a manifest cannot set is said instead of guessed: device flow is a
+checkbox on the app's page, so the command opens it and names it.
+"""
+from __future__ import annotations
+
+import html
+import http.server
+import json
+import re
+import secrets
+import socketserver
+import threading
+import urllib.request
+import webbrowser
+
+from .config import Config
+from .gh import BoardError
+
+# What an agent working one repository needs, and nothing that administers it.
+PERMISSIONS = {
+    "contents": "write", "issues": "write", "pull_requests": "write",
+    "actions": "read", "checks": "read", "statuses": "read", "metadata": "read",
+    "organization_projects": "write",
+}
+WAIT_SECONDS = 600
+
+
+def name_for(config: Config) -> str:
+    """`boardkit-<org>-<repo>`, within GitHub's 34-character limit."""
+    return f"boardkit-{config.repo.replace('/', '-')}"[:34].rstrip("-")
+
+
+def manifest(config: Config, redirect: str) -> dict:
+    return {
+        "name": name_for(config),
+        "url": f"https://github.com/{config.repo}",
+        "description": f"Lets boardkit agents plan and do the work on {config.repo}, "
+                       f"acting for the person signed in.",
+        "redirect_url": redirect,
+        "public": False,
+        "hook_attributes": {"url": "https://example.invalid/unused", "active": False},
+        "request_oauth_on_install": False,
+        "default_permissions": PERMISSIONS,
+        "default_events": [],
+    }
+
+
+def page(config: Config, redirect: str, state: str) -> str:
+    """The form that posts the manifest, submitted as soon as it loads."""
+    action = (f"https://github.com/organizations/{config.owner}/settings/apps/new"
+              f"?state={state}")
+    if config.owner_type != "org":
+        action = f"https://github.com/settings/apps/new?state={state}"
+    value = html.escape(json.dumps(manifest(config, redirect)), quote=True)
+    return (f'<form id="f" method="post" action="{html.escape(action, quote=True)}">'
+            f'<input type="hidden" name="manifest" value="{value}"></form>'
+            "<p>Sending you to GitHub to create the app…</p>"
+            "<script>document.getElementById('f').submit()</script>")
+
+
+def convert(code: str) -> dict:
+    """Exchange the one-time code; keep only what is public."""
+    request = urllib.request.Request(
+        f"https://api.github.com/app-manifests/{code}/conversions", data=b"",
+        method="POST", headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        made = json.loads(response.read())
+    # Client secret, private key and webhook secret are never kept.
+    return {key: made.get(key, "") for key in ("client_id", "slug", "html_url")}
+
+
+def remember(config: Config, client_id: str) -> None:
+    """Write `app_client_id` into the config file actually in use."""
+    file = config.source
+    if file is None or not file.exists():
+        raise BoardError(f"no config file to record app_client_id = {client_id!r} in")
+    text = file.read_text(encoding="utf-8")
+    line = f'app_client_id = "{client_id}"'
+    if re.search(r"^app_client_id\s*=", text, re.MULTILINE):
+        text = re.sub(r"^app_client_id\s*=.*$", line, text, count=1, flags=re.MULTILINE)
+    else:
+        text = re.sub(r"^(repo\s*=.*)$", rf"\1\n{line}", text, count=1, flags=re.MULTILINE)
+    file.write_text(text, encoding="utf-8")
+
+
+def create(config: Config) -> int:
+    """Run the manifest flow end to end."""
+    state = secrets.token_urlsafe(16)
+    caught: dict[str, str] = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):  # quiet
+            pass
+
+        def do_GET(self):
+            from urllib.parse import parse_qs, urlsplit
+            asked = urlsplit(self.path)
+            if asked.path == "/done":
+                query = parse_qs(asked.query)
+                if query.get("state", [""])[0] == state:
+                    caught["code"] = query.get("code", [""])[0]
+                body = "<p>Done. You can close this tab and return to the terminal.</p>"
+            else:
+                body = page(config, f"http://127.0.0.1:{port}/done", state)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+    with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
+        port = server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        print(f"Opening GitHub to create {name_for(config)} for {config.repo}.\n"
+              "Check the name, click Create GitHub App, and come back here.")
+        webbrowser.open(f"http://127.0.0.1:{port}/")
+        waited = 0.0
+        while "code" not in caught and waited < WAIT_SECONDS:
+            threading.Event().wait(0.5)
+            waited += 0.5
+        server.shutdown()
+    if not caught.get("code"):
+        print("No app came back from GitHub; nothing was changed.")
+        return 1
+    made = convert(caught["code"])
+    remember(config, made["client_id"])
+    settings = (f"https://github.com/organizations/{config.owner}/settings/apps/{made['slug']}"
+                if config.owner_type == "org" else
+                f"https://github.com/settings/apps/{made['slug']}")
+    where = config.source.name if config.source else "the config"
+    print(f"Created {made['slug']} and recorded app_client_id in {where}.\n"
+          f"Its secrets were not kept: boardkit signs in without them.\n\n"
+          f"Two clicks are left, which GitHub does not let a manifest make:\n"
+          f"  1. Tick \"Enable Device Flow\" on {settings}\n"
+          f"  2. Install it on {config.repo} only:\n"
+          f"     https://github.com/apps/{made['slug']}/installations/new\n"
+          f"Then run `board auth login`.")
+    webbrowser.open(settings)
+    return 0
