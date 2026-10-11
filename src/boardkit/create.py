@@ -83,7 +83,8 @@ def add(config: Config, store: Store, title: str, body: str,
 
     from . import sync
     sync.pull(config, store)
-    remember(store, added.get("id", ""), issue, title, body or "", values)
+    remember(store, added.get("id", ""), issue, title, body or "", values,
+             parent=int(parent) if parent else 0)
     return 0
 
 
@@ -142,7 +143,7 @@ def promote(config: Config, store: Store, ref: str) -> int:
 
 
 def remember(store: Store, item_id: str, issue: int, title: str, body: str,
-             values: dict[str, str]) -> None:
+             values: dict[str, str], parent: int = 0) -> None:
     """Put the new item in the snapshot when the pull did not see it.
 
     A pull taken moments after creating one does not reliably return it —
@@ -152,9 +153,16 @@ def remember(store: Store, item_id: str, issue: int, title: str, body: str,
     from .board import ProjectItem
 
     snapshot = store.state()
-    if any(item.id == item_id for item in snapshot.items):
+    seen = next((item for item in snapshot.items if item.id == item_id), None)
+    if seen is not None:
+        # The pull saw the item but, for the same reason, maybe not the
+        # sub-issue link made a moment before it.
+        if parent and seen.parent != parent:
+            store.save_state(snapshot.model_copy(update={"items": tuple(
+                item.model_copy(update={"parent": parent}) if item is seen else item
+                for item in snapshot.items)}))
         return
-    made = ProjectItem(number=issue, id=item_id, title=title, body=body,
+    made = ProjectItem(number=issue, id=item_id, title=title, body=body, parent=parent,
                        type="ISSUE" if issue else "DRAFT_ISSUE", fields=dict(values))
     store.save_state(snapshot.model_copy(update={"items": (*snapshot.items, made)}))
     note("remembered", ref=made.ref, reason="not in the pull that followed creating it")

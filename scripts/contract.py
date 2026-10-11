@@ -10,7 +10,7 @@ deletes, so nothing it does touches the real board.
     uv run python scripts/contract.py             # create, exercise, clean up
     uv run python scripts/contract.py --keep      # leave the project for a look
     uv run python scripts/contract.py --no-issue  # drafts only, no repo residue
-    uv run python scripts/contract.py --project 18  # reuse a standing board
+    uv run python scripts/contract.py --project 3  # reuse a standing board
     uv run python scripts/contract.py --seed 20     # stock it with dummy cards
 
 It is deliberately not a pytest test. It needs a token that can create and
@@ -105,7 +105,8 @@ UNSET = "-"
 CLEARABLE = ("note", "size", "due", "area", "tags")
 
 
-def declaration(owner: str, repo: str, title: str, project: str = "") -> str:
+def declaration(owner: str, repo: str, title: str, project: str = "",
+                owner_type: str = "org") -> str:
     """The canonical starter config, extended only with contract fields.
 
     Pure, so a unit test can parse it and check it still declares one field of
@@ -121,7 +122,10 @@ def declaration(owner: str, repo: str, title: str, project: str = "") -> str:
         marker = f'project_name = "{title}"'
         assert marker in config, "the template stopped naming the project"
         config = config.replace(marker, f'{marker}\nproject = "{project}"', 1)
-    return config
+    # An organisation's board, as boardkit is used: GitHub links a board only
+    # to its owner's repositories, and offers apps no personal-board access.
+    marker = f'project_name = "{title}"'
+    return config.replace(marker, f'{marker}\nowner_type = "{owner_type}"', 1)
 
 
 class Failed(RuntimeError):
@@ -369,6 +373,37 @@ def check_refusal(where: pathlib.Path, ref: str) -> None:
          f"a write to the {UNWRITABLE} field is refused with a reason")
 
 
+def check_issue_verbs(where: pathlib.Path, issue: str, stamp: str,
+                      made: list[str]) -> None:
+    """Every change to an issue itself, each read back from the snapshot.
+
+    The sub-issue it makes goes into `made` the moment it exists, so a check
+    that fails afterwards cannot leave it behind.
+    """
+    def item() -> str:
+        return board(where, "item", issue)
+
+    board(where, "comment", issue, f"Contract comment {stamp}")
+    held(f"Contract comment {stamp}" in item(), "a comment reads back from the cache")
+    board(where, "edit", issue, "--title", f"Contract run {stamp} (edited)")
+    held("(edited)" in item(), "an edited title reads back")
+    board(where, "set", issue, "labels", "backlog")
+    held("labels: backlog" in item(), "labels set exactly as given")
+    said = board(where, "add", f"Contract child {stamp}", f"parent={issue}",
+                 "--body", "Sub-issue made by scripts/contract.py. Deletable.")
+    child = next((w for w in said.split() if w.startswith("https://")), "")
+    child = child.rstrip("/").rsplit("/", 1)[-1]
+    made.append(child)
+    held(child.isdigit() and f"#{child}" in item(), f"#{child} is a child of #{issue}")
+    board(where, "close", issue, "--not-planned")
+    closed = item()
+    held("closed as not planned" in closed, "a not-planned close reads back with its reason")
+    held(f"Contract run {stamp}" not in board(where), "a closed item leaves the listing")
+    held(f"Contract run {stamp}" in board(where, "find", stamp), "find still finds it")
+    board(where, "reopen", issue)
+    held("closed as" not in item(), "a reopened item is open again")
+
+
 def titled(owner: str, number: str) -> str:
     """The name the standing board already carries."""
     seen = json.loads(gh("project", "view", number, "--owner", owner,
@@ -383,7 +418,7 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool,
     where = pathlib.Path(tempfile.mkdtemp(prefix="boardkit-contract-"))
     (where / "boardkit.toml").write_text(
         declaration(owner, repo, title, project=standing), encoding="utf-8")
-    number, issue = standing, ""
+    number, issue, children = standing, "", []
     try:
         if standing:
             # A board that already exists is brought to the template rather
@@ -442,12 +477,16 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool,
                  "the field set at creation reads back from the board")
             round_trip(where, issue, f"#{issue}")
 
+            print("\n== changing the issue itself: comment, edit, labels, sub-issue, "
+                  "close, reopen")
+            check_issue_verbs(where, issue, stamp, children)
+
         built = f"reused project {number}" if standing else "created a project"
         stocked = f", stocked {stock} dummy cards" if stock else ""
         print(f"\nPASS  {built}, read its shape back{stocked}, wrote and read "
               f"{len(ROUND_TRIP)} field types ({', '.join(sorted(ROUND_TRIP))}), "
               f"cleared {len(CLEARABLE)}, and had {UNWRITABLE} refused"
-              f"{', with one issue created and placed' if with_issue else ''}.")
+              f"{', with one issue created, placed, commented, edited, labelled, parented, closed and reopened' if with_issue else ''}.")
         print("      Not covered: writing an ITERATION field, which "
               "boardkit refuses; renaming or deleting a field, which it never "
               "does; and the mirror and links verbs, which touch git rather "
@@ -463,13 +502,13 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool,
             if standing and not keep:
                 # The board outlives the run, so only the run's own residue
                 # goes: the issue it filed and the temporary checkout.
-                cleanup(owner, repo, "", issue, where)
+                cleanup(owner, repo, "", issue, where, children)
         else:
-            cleanup(owner, repo, number, issue, where)
+            cleanup(owner, repo, number, issue, where, children)
 
 
 def cleanup(owner: str, repo: str, number: str, issue: str,
-            where: pathlib.Path) -> None:
+            where: pathlib.Path, children: list[str] | None = None) -> None:
     """Delete what the run made, saying so even when a step failed.
 
     Each deletion is attempted on its own rather than in one block: a project
@@ -478,12 +517,14 @@ def cleanup(owner: str, repo: str, number: str, issue: str,
     `project list` and shows up in the owner's project picker forever.
     """
     print()
-    if issue:
+    for made in (*(children or []), issue):
+        if not made:
+            continue
         try:
-            gh("issue", "delete", issue, "--repo", repo, "--yes")
-            print(f"Deleted issue #{issue}.")
+            gh("issue", "delete", made, "--repo", repo, "--yes")
+            print(f"Deleted issue #{made}.")
         except Failed as refused:
-            print(f"Could not delete issue #{issue}: {refused}")
+            print(f"Could not delete issue #{made}: {refused}")
     if number:
         try:
             gh("project", "delete", number, "--owner", owner)
@@ -496,7 +537,7 @@ def cleanup(owner: str, repo: str, number: str, issue: str,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Exercise every board mutation against a throwaway project.")
-    parser.add_argument("--owner", default="agerardin",
+    parser.add_argument("--owner", default="deucalion-x",
                         help="who owns the throwaway project")
     parser.add_argument("--repo", default="deucalion-x/boardkit",
                         help="the repository the throwaway issue is created in")
