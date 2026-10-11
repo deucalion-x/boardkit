@@ -22,9 +22,9 @@ import webbrowser
 
 from . import credential
 
-# The boardkit app's client ID. Public by design; empty until the app is
-# registered, and overridable for anyone running their own copy of the app.
-CLIENT_ID = ""
+# The client ID of boardkit-deucalion, the boardkit app. Public by design;
+# overridable for anyone running their own copy of the app.
+CLIENT_ID = "Iv23liPclAFWDh1mSceP"
 CLIENT_ENV = "BOARDKIT_APP_CLIENT_ID"
 HOST = "github.com"
 SERVICE = "boardkit-app"
