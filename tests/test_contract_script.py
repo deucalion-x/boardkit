@@ -42,7 +42,7 @@ def declared(contract, tmp_path) -> Config:
 def test_the_declaration_is_valid_configuration(declared):
     assert declared.project_name == "a board"
     assert declared.status_order == (
-        "Inbox", "Todo", "In progress", "In review", "Done")
+        "Inbox", "Todo", "In Progress", "In Review", "Done")
     assert [(view.name, view.layout, view.filter) for view in declared.views] == [
         ("Current", "BOARD", ""),
         ("All", "TABLE", ""),

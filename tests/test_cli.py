@@ -57,6 +57,24 @@ def test_help_exits_clean(repo):
     assert cli.main(["--help"]) == 0
 
 
+@pytest.mark.parametrize("argv", [["install-skill", "--help"], ["admin", "apply", "-h"],
+                                  ["sync", "--help"]])
+def test_a_verb_asked_for_help_prints_it_rather_than_running(repo, monkeypatch, capsys, argv):
+    from boardkit import admin, skill
+    monkeypatch.setattr(skill, "install", lambda *a, **k: pytest.fail("installed"))
+    monkeypatch.setattr(admin, "apply", lambda *a, **k: pytest.fail("applied"))
+    assert cli.main(argv) == 0
+    assert "board install-skill" in capsys.readouterr().out
+
+
+def test_help_as_body_text_is_not_a_flag(repo, monkeypatch):
+    from boardkit import create
+    called = []
+    monkeypatch.setattr(create, "add", lambda *a: called.append(a) or 0)
+    assert cli.main(["add", "Title", "--body", "--help"]) == 0
+    assert called
+
+
 def test_admin_reconcile_flag_reaches_apply(repo, monkeypatch):
     from boardkit import admin
     called = []
@@ -199,7 +217,7 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
         rendered(settings, nested=True), encoding="utf-8")
     assert load(packaged).repo == "octo/places"
     assert load(packaged).status_order == (
-        "Inbox", "Todo", "In progress", "In review", "Done")
+        "Inbox", "Todo", "In Progress", "In Review", "Done")
     assert [v.name for v in load(packaged).views] == ["Current", "All"]
 
 

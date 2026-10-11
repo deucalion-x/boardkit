@@ -57,8 +57,8 @@ BLOCKED_FIELD = "blocked"
 DEFAULT_STATUS = {
     "Inbox": "captured, not yet refined",
     "Todo": "refined enough to pick up now",
-    "In progress": "started",
-    "In review": "finished and waiting on review",
+    "In Progress": "started",
+    "In Review": "finished and waiting on review",
     "Done": "reviewed and closed; stays on the board",
 }
 

@@ -11,7 +11,7 @@ project_name = "$project_name"
 # The columns, in order. Each is created carrying what it means, which GitHub
 # shows on the board itself. A `blocked` text field is created alongside them:
 # being blocked is not a stage, so it is a field holding what is in the way.
-status_order = ["Inbox", "Todo", "In progress", "In review", "Done"]
+status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
 
 # The same unfiltered work appears in two layouts: Current for movement across
 # statuses, and All for scanning every task as rows.

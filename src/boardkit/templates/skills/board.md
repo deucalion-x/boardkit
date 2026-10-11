@@ -57,7 +57,7 @@ A change is sent the moment it is made. It is also recorded first, so nothing
 is lost if it cannot be sent.
 
 ```bash
-board set 18 status "In progress"         # one field
+board set 18 status "In Progress"         # one field
 board set 18 <field> "<value>"
 board add "Title" --body "..." status=Inbox   # a new issue, fielded in one go
 board add --draft "A thought"             # a board card, no issue behind it
@@ -76,8 +76,8 @@ The normal path is:
 draft in Inbox
   → issue in Inbox
   → Todo
-  → In progress
-  → In review
+  → In Progress
+  → In Review
   → Done and closed
 ```
 
@@ -90,9 +90,9 @@ draft in Inbox
    command; `--anyway` does it regardless, which is for when someone asks and
    not a way around this step.
 3. Move a refined, unblocked issue to `Todo`.
-4. Move it to `In progress` before starting work.
+4. Move it to `In Progress` before starting work.
 5. Record the result and verification on the issue, then move it to `In
-   review`. This means ready for judgement, not done.
+   Review`. This means ready for judgement, not done.
 6. Only a human accepts work. After explicit acceptance, record `Done`; the
    Project automation closes the issue.
 

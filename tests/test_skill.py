@@ -51,7 +51,7 @@ def test_the_work_skill_carries_the_lifecycle_policy():
     for rule in (
         "Draft cards are ideas and are allowed only in `Inbox`.",
         "Only issues move beyond `Inbox`.",
-        "Move it to `In progress` before starting work.",
+        "Move it to `In Progress` before starting work.",
         "Only a human accepts work.",
         "Never move them through `Done`",
     ):

@@ -451,6 +451,26 @@ def test_a_dry_run_sends_no_mutation_at_all(sent, monkeypatch, capsys):
     assert "would add" in capsys.readouterr().out
 
 
+def test_a_dry_run_reports_the_option_renames_a_real_apply_makes(
+        sent, monkeypatch, capsys):
+    """A case-only rename keeps the option's id, so its cards stay put; the
+    dry run used to say nothing about it."""
+    from boardkit import admin
+    config = CONFIG.model_copy(update={"status_order": ("Ready", "In progress", "Done"),
+                                       "fields": (), "blocked_field": ""})
+    status = ProjectField(name="status", id="F_S", data_type="SINGLE_SELECT",
+                          options=("Ready", "In Progress", "Done"),
+                          option_ids={"Ready": "o1", "In Progress": "o2", "Done": "o3"})
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", (status,)))
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    admin.apply(config, dry=True)
+    out = capsys.readouterr().out
+    assert not any("mutation" in q for q in sent)
+    assert "would rename option 'In Progress' to 'In progress' in Status" in out
+    assert "nothing missing" not in out
+
+
 def test_a_reconcile_dry_run_reports_filter_drift_without_mutating(
         sent, monkeypatch, capsys):
     from boardkit import admin

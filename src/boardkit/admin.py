@@ -130,6 +130,25 @@ def align(wanted: ProjectField, present: ProjectField) -> list[dict] | None:
             for name in ordered]
 
 
+def describe(present: ProjectField, options: list[dict]) -> list[str]:
+    """What sending `options` would do to `present`, one change per line.
+
+    The dry run prints this so it reports the renames and additions a real
+    apply makes, rather than staying silent about them.
+    """
+    names = {identity: name for name, identity in present.option_ids.items()}
+    lines = []
+    for option in options:
+        before = names.get(option.get("id", ""))
+        if before is None:
+            lines.append(f"add option {option['name']!r}")
+        elif before != option["name"]:
+            lines.append(f"rename option {before!r} to {option['name']!r}")
+    if not lines:
+        lines.append("reorder options to " + ", ".join(o["name"] for o in options))
+    return lines
+
+
 def duplicates(present: ProjectField) -> list[tuple[str, ...]]:
     """Options on the board that differ only in case.
 
@@ -277,6 +296,15 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         for field in missing:
             detail = f" ({', '.join(field.options)})" if field.options else ""
             print(f"  would add {field.display} [{field.data_type}]{detail}")
+        standing = {field.name: field for field in present}
+        realigned = False
+        for field in wanted(config):
+            current = standing.get(field.name)
+            options = align(field, current) if current else None
+            if options:
+                realigned = True
+                for line in describe(current, options):
+                    print(f"  would {line} in {current.display}")
         saved = existing_views(config, number) if number else {}
         for view in config.views:
             if view.name not in saved:
@@ -294,7 +322,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
                     saved[view.name].filter == view.filter and
                     saved[view.name].layout == view.layout))
             for view in config.views)
-        if not missing and views_match:
+        if not missing and not realigned and views_match:
             print("  nothing missing.")
         return 0
 

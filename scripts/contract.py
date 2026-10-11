@@ -229,7 +229,7 @@ def check_shape(where: pathlib.Path) -> None:
         held(name in fields and bool(fields[name]["id"]),
              f"`{name}` exists on the board with an id")
     # GitHub seeds Todo, In Progress and Done. The template reuses those
-    # options by name (case-insensitively) and adds Inbox and In review, so the
+    # options by name (case-insensitively) and adds Inbox and In Review, so the
     # resulting order should exactly match the template without duplicate
     # spellings.
     columns = list(fields["status"]["options"])

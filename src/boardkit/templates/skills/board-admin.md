@@ -22,7 +22,7 @@ Edit the `[board]` section of the repo's boardkit config, then apply:
 
 ```toml
 [board]
-status_order = ["Inbox", "Todo", "In progress", "Done"]   # the columns, in order
+status_order = ["Inbox", "Todo", "In Progress", "Done"]   # the columns, in order
 
 [board.fields.area]
 data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION

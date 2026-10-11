@@ -55,9 +55,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+HELP = {"-h", "--help", "help"}
+
+
 def dispatch(command: str, args: list[str]) -> int:
     # Help needs no configuration, so it works outside a configured repo.
-    if command in {"-h", "--help", "help"}:
+    if command in HELP:
+        return usage(0)
+    # A verb asked for help must not run: `install-skill --help` used to write
+    # the skills. The value after `--body` is text, so it is not a flag.
+    flags = [a for i, a in enumerate(args) if i == 0 or args[i - 1] != "--body"]
+    if any(a in HELP for a in flags):
         return usage(0)
 
     # These two run before configuration exists, which is their whole point.
