@@ -9,6 +9,8 @@ can then be tested without a token or a project.
 """
 from __future__ import annotations
 
+import datetime
+
 from .board import MISSING, normalize
 from .config import Config, DataType, ProjectField
 from .gh import BoardError, RateLimited, Unreachable, gh_json, quoted, run_json
@@ -344,32 +346,55 @@ def number(config: Config, store: Store) -> str:
     return find_project(listed.get("projects", []), config)
 
 
-# The repository's issues, most recently updated first: what the board's item
-# list cannot show, namely issues never put on the board and cards it has
-# archived. One page of the latest hundred, which bounds the cost of a sync;
-# older history is plain `gh`, as the person.
 REPO_ISSUES = 100
+# The repository's issues are cached whole: the first pull reads every one,
+# a page of a hundred at a time, and each later pull asks only for those
+# updated since the last, which is usually none. So "not in the snapshot"
+# means "not in the repository", and nobody reaches for `gh` to find out.
+# A minute of overlap, so an issue updated as the last pull ran is not missed.
+OVERLAP_SECONDS = 60
 
 
-def off_board(config: Config, names: tuple[str, ...], on_board: set[int]):
-    """The repository's recent issues that the board does not list."""
-    rows = [row for row in fetch_repo_issues(config)
-            if row["content"].get("number") not in on_board]
+def off_board(config: Config, names: tuple[str, ...], rows: list[dict]):
+    """Repository issues as items, marked as not on the board."""
     still_open = {row["content"]["number"] for row in rows
                   if row["content"].get("state") == "OPEN"}
     for item in normalize(rows, still_open, config, names, keep_closed=True):
         yield item.model_copy(update={"on_board": False, "fields": {}})
 
 
-def fetch_repo_issues(config: Config) -> list[dict]:
+def fetch_repo_issues(config: Config, since: str = "") -> list[dict]:
+    """Every issue updated since `since`, or every issue at all."""
     owner, name = config.repo.split("/", 1)
-    query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
-             f"{{ issues(first: {REPO_ISSUES}, orderBy: "
-             f"{{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ {ISSUE_FIELDS} }} }} }} }}")
-    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
-    found = ((payload.get("data") or {}).get("repository") or {}).get("issues") or {}
-    return [{"id": "", "type": "ISSUE", "content": {**node, "type": "ISSUE"}}
-            for node in found.get("nodes") or [] if node]
+    window = f", filterBy: {{since: {quoted(since)}}}" if since else ""
+    rows, after = [], ""
+    while True:
+        cursor = f", after: {quoted(after)}" if after else ""
+        query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+                 f"{{ issues(first: {REPO_ISSUES}{cursor}{window}, orderBy: "
+                 f"{{field: UPDATED_AT, direction: ASC}}) "
+                 f"{{ pageInfo {{ hasNextPage endCursor }} nodes {{ {ISSUE_FIELDS} }} }} }} }}")
+        payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+        found = ((payload.get("data") or {}).get("repository") or {}).get("issues") or {}
+        rows += [{"id": "", "type": "ISSUE", "content": {**node, "type": "ISSUE"}}
+                 for node in found.get("nodes") or [] if node]
+        page = found.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            return rows
+        after = page.get("endCursor") or ""
+
+
+def repo_issues(config: Config, store: Store, names: tuple[str, ...]):
+    """The cached issues, refreshed with what changed since the last pull."""
+    previous = store.state()
+    started = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=OVERLAP_SECONDS)
+    since = previous.issues_synced_at if previous.repo_issues else ""
+    fresh = {item.number: item for item in off_board(config, names,
+                                                      fetch_repo_issues(config, since))}
+    kept = {item.number: item for item in previous.repo_issues}
+    kept.update(fresh)
+    return (tuple(sorted(kept.values(), key=lambda item: item.number)),
+            started.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
 
 def pull(config: Config, store: Store) -> Snapshot:
@@ -393,6 +418,8 @@ def pull(config: Config, store: Store) -> Snapshot:
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
     every = normalize(rows, still_open, config, names, keep_closed=True)
+    on_board = {item.number for item in every if item.number}
+    issues, issues_at = repo_issues(config, store, names)
     snapshot = Snapshot(
         project_id=board["id"],
         project_url=board.get("url", ""),
@@ -402,7 +429,9 @@ def pull(config: Config, store: Store) -> Snapshot:
         views=tuple(board.get("views", ())),
         items=tuple(item for item in every if not item.closed),
         closed=tuple(item for item in every if item.closed),
-        elsewhere=tuple(off_board(config, names, {i.number for i in every if i.number})),
+        elsewhere=tuple(item for item in issues if item.number not in on_board),
+        repo_issues=issues,
+        issues_synced_at=issues_at,
     )
     store.save_state(snapshot)
     store.ignore_file()

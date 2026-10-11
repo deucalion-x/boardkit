@@ -762,20 +762,36 @@ def test_a_partial_answer_is_an_error_not_an_empty_board(tmp_path, monkeypatch):
         sync.fetch_board(config, "4")
 
 
-def test_repo_issues_off_the_board_are_kept_apart(tmp_path, monkeypatch):
-    """Archived cards vanish from the board's item list; the repo still has
-    them, so a done-work question can still be answered."""
+def test_repo_issues_are_cached_whole_and_refreshed_by_change(tmp_path, monkeypatch):
+    """The first pull reads every issue; the next asks only for what changed
+    since, and merges it, so the cache holds the whole history cheaply."""
     from boardkit import sync
+    from boardkit.store import Store
     config = Config(root=tmp_path, owner="octo", repo="octo/widgets", project="4")
-    monkeypatch.setattr(sync, "fetch_repo_issues", lambda config: [
-        {"id": "", "type": "ISSUE", "content": {"number": 1, "state": "OPEN", "title": "On board"}},
-        {"id": "", "type": "ISSUE", "content": {
-            "number": 65, "state": "CLOSED", "title": "Archived", "stateReason": "COMPLETED",
-            "closedAt": "2026-09-21T00:00:00Z"}}])
-    off = list(sync.off_board(config, (), {1}))
-    assert [(i.number, i.on_board, i.closed, i.state_reason) for i in off] == [
-        (65, False, True, "COMPLETED")]
+    store = Store(config)
+    asked = []
 
+    def issues(config, since=""):
+        asked.append(since)
+        if not since:
+            return [{"id": "", "type": "ISSUE", "content": {
+                        "number": 65, "state": "CLOSED", "title": "Archived",
+                        "stateReason": "COMPLETED"}},
+                    {"id": "", "type": "ISSUE", "content": {
+                        "number": 66, "state": "OPEN", "title": "Old"}}]
+        return [{"id": "", "type": "ISSUE", "content": {
+                    "number": 66, "state": "CLOSED", "title": "Old, now done"}}]
+    monkeypatch.setattr(sync, "fetch_repo_issues", issues)
+
+    first, at = sync.repo_issues(config, store, ())
+    assert [(i.number, i.closed) for i in first] == [(65, True), (66, False)]
+    store.save_state(store.state().model_copy(update={
+        "repo_issues": first, "issues_synced_at": at, "synced_at": "now"}))
+    second, _ = sync.repo_issues(config, store, ())
+    assert asked == ["", at]
+    assert [(i.number, i.closed, i.title) for i in second] == [
+        (65, True, "Archived"), (66, True, "Old, now done")]
+    assert all(not i.on_board for i in second)
 
 def test_a_refused_check_rollup_does_not_fail_the_pull():
     from boardkit import sync

@@ -91,6 +91,12 @@ class Snapshot(BaseModel):
     # The repository's recent issues the board does not list: never added, or
     # archived off it. Read about, never written through the board.
     elsewhere: tuple[ProjectItem, ...] = ()
+    # Every issue of the repository, kept across pulls and refreshed with
+    # only what changed since `issues_synced_at`, so the first sync reads the
+    # whole history once and later ones read a handful. `elsewhere` is the
+    # part of it the board does not list.
+    repo_issues: tuple[ProjectItem, ...] = ()
+    issues_synced_at: str = ""
 
     def known(self, ref: str | int) -> ProjectItem | None:
         """Anywhere in the snapshot: for reading about an item, and for
