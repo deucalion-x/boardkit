@@ -12,6 +12,11 @@ Reads answer from the local store; only the sync verbs touch GitHub.
                              --body <text> for its text
                              --draft for a board card with no issue behind it
   board promote <ref>        turn a draft card into an issue, keeping its fields
+  board comment <ref> <text> record a result or decision on the issue
+  board close <ref> [--not-planned]   close it; not planned for dropped work
+  board reopen <ref>
+  board edit <ref> [--title t] [--body b]
+  board set <ref> labels|assignees "a, b"   or parent <n> (sub-issue)
   board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
                              --later: queue without trying
                              --anyway: move a draft out of the intake column
@@ -44,6 +49,7 @@ from . import (
     auth,
     create,
     credential,
+    issue,
     issue_mirror,
     login,
     plan_links,
@@ -138,7 +144,25 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         auth.require(config, "write")
         return create.promote(config, store, args[0].lstrip("#"))
     if command == "set":
+        words = [a for a in args if a not in ("--later", "--anyway")]
+        if len(words) >= 2 and words[1] in issue.META:
+            return issue.set_meta(config, store, words[0], words[1], " ".join(words[2:]))
         return queue(config, store, args)
+    if command == "comment" and len(args) >= 2:
+        return issue.comment(config, store, args[0], " ".join(args[1:]))
+    if command == "close" and args:
+        reason = "not-planned" if "--not-planned" in args else "completed"
+        return issue.close(config, store, args[0], reason)
+    if command == "reopen" and args:
+        return issue.reopen(config, store, args[0])
+    if command == "edit" and args:
+        rest = list(args[1:])
+        changes: dict[str, str] = {}
+        while rest:
+            word = rest.pop(0)
+            if word in ("--title", "--body") and rest:
+                changes[word[2:]] = rest.pop(0)
+        return issue.edit(config, store, args[0], changes.get("title"), changes.get("body"))
     if command == "log":
         return history(store, int(args[0]) if args and args[0].isdigit() else 30)
     if command == "rejected":

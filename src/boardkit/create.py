@@ -50,9 +50,14 @@ def add_draft(config: Config, store: Store, title: str, body: str,
 
 def add(config: Config, store: Store, title: str, body: str,
         values: dict[str, str]) -> int:
-    """Create an issue, put it on the board, and set any fields given."""
+    """Create an issue, put it on the board, and set any fields given.
+
+    `parent=<n>` is not a board field: it makes the new issue a sub-issue.
+    """
     if not title.strip():
         raise BoardError("an issue needs a title")
+    values = dict(values)
+    parent = values.pop("parent", "").lstrip("#")
     number = store.state().project_number or config.require("project")
 
     made = gh("issue", "create", "--repo", config.repo, "--title", title,
@@ -70,6 +75,11 @@ def add(config: Config, store: Store, title: str, body: str,
         # — GitHub takes a moment to index it — and the writes were being
         # rejected for an item that was plainly there.
         place(config, store, issue, added.get("id", ""), title, values)
+
+    if parent:
+        from .issue import link
+        link(config, issue, int(parent), 0)
+        print(f"  #{issue} is a sub-issue of #{parent}")
 
     from . import sync
     sync.pull(config, store)

@@ -94,13 +94,26 @@ draft in Inbox
    not a way around this step.
 3. Move a refined, unblocked issue to `Todo`.
 4. Move it to `In Progress` before starting work.
-5. Record the result and verification on the issue, then move it to `In
-   Review`. This means ready for judgement, not done.
+5. Record the result and verification on the issue with `board comment <ref>
+   "<text>"`, then move it to `In Review`. This means ready for judgement, not
+   done.
 6. Only a human accepts work. After explicit acceptance, record `Done`; the
    Project automation closes the issue.
 
-Close rejected, duplicate, or abandoned issues as `not planned`. Never move
-them through `Done`; the Project automation archives them.
+Close rejected, duplicate, or abandoned issues with `board close <ref>
+--not-planned`. Never move them through `Done`; the Project automation
+archives them.
+
+The issue itself is changed through `board` too, never through `gh`:
+
+```bash
+board comment 18 "Verified: …"           # a result, a decision, a plan change
+board edit 18 --title "…" --body "…"     # refine the plan
+board set 18 labels "bug, ui"            # exactly these labels; also assignees
+board set 18 parent 12                   # make it a sub-issue ("" detaches)
+board add "Title" parent=12 status=Inbox # a new sub-issue
+board close 18 --not-planned             # or --completed; board reopen 18
+```
 
 An agent may record `Done` after a human accepts the work. It must not make the
 acceptance decision.
