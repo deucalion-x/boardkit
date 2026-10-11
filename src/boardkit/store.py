@@ -34,6 +34,9 @@ from .trail import note
 
 DIRECTORY = ".boardkit"
 STATE, PENDING, REJECTED = "state.json", "pending.json", "rejected.json"
+# Changes to issues themselves (comment, close, edit...), queued apart from
+# field writes because they carry no old value to judge a conflict against.
+ACTIONS = "actions.json"
 
 
 def _now() -> float:
@@ -150,6 +153,21 @@ class Write(BaseModel):
     author: str = "agent"
 
 
+class Action(BaseModel):
+    """One change to an issue itself, waiting to be sent.
+
+    Recorded before it is sent, like a field write, so nothing is lost to a
+    dropped connection: the next sync sends what is still here.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    at: str = Field(default_factory=now)
+    kind: str
+    ref: str
+    args: dict[str, str] = {}
+
+
 class Rejection(BaseModel):
     """A write that lost, kept with both values so an agent can re-decide.
 
@@ -238,6 +256,19 @@ class Store:
 
     def save_pending(self, writes: list[Write]) -> None:
         self._write(PENDING, [write.model_dump(mode="json") for write in writes])
+
+    def actions(self) -> list[Action]:
+        return [Action.model_validate(row) for row in self._read(ACTIONS, "[]")]
+
+    def save_actions(self, actions: list[Action]) -> None:
+        self._write(ACTIONS, [action.model_dump(mode="json") for action in actions])
+
+    def queue_action(self, kind: str, ref: str, **args: str) -> Action:
+        action = Action(kind=kind, ref=ref, args=args)
+        with self.held():
+            self.save_actions([*self.actions(), action])
+        note("queued_action", id=action.id, kind=kind, ref=ref)
+        return action
 
     def queue(self, ref: str, field: str, value: str) -> Write:
         """Record a local change, replacing any still-pending write to the
