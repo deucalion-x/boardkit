@@ -17,11 +17,16 @@ cleans up.
 """
 from __future__ import annotations
 
+import getpass
 import json
+import os
 import re
+import webbrowser
+from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict
 
+from . import credential
 from .config import Config
 from .gh import BoardError, probe
 from .store import directory
@@ -82,7 +87,14 @@ class Capability(BaseModel):
 
 
 def parse_status(output: str) -> Capability:
-    """Read `gh auth status`. Local, so this is the cheap half of the answer."""
+    """Read `gh auth status`. Local, so this is the cheap half of the answer.
+
+    It lists every login it knows; only the active one's block is read, or a
+    focused token would be reported with the personal login's scopes.
+    """
+    blocks = re.split(r"(?=^\s*✓ Logged in to )", output, flags=re.MULTILINE)
+    active = [b for b in blocks if "Active account: true" in b]
+    output = active[0] if active else output
     account = ACCOUNT.search(output)
     scopes = SCOPES.search(output)
     found: tuple[str, ...] = ()
@@ -98,6 +110,12 @@ def parse_status(output: str) -> Capability:
 
 
 def status() -> Capability:
+    # Asked first, so a missing focused token is named as such rather than
+    # read back by the probe as nobody being logged in.
+    try:
+        credential.environment()
+    except credential.Missing as missing:
+        raise BoardError(str(missing)) from None
     _, output = probe(["gh", "auth", "status"])
     return parse_status(output)
 
@@ -174,7 +192,12 @@ def require(config: Config, tier: str) -> Capability:
 
 
 def report(config: Config, refresh: bool = False) -> int:
-    found = capability(config, refresh=refresh)
+    print(f"Using   : {credential.source()}")
+    try:
+        found = capability(config, refresh=refresh)
+    except BoardError as refused:
+        print(refused)
+        return 1
     if not found.logged_in:
         print("Not logged in. Run `gh auth login`.")
         return 1
@@ -201,3 +224,84 @@ def report(config: Config, refresh: bool = False) -> int:
 
 def shown(value: bool | None) -> str:
     return "?" if value is None else ("yes" if value else "no")
+
+
+# Where each kind of token is made. A classic token's page takes its scopes
+# in the URL; a fine-grained one's permissions are picked on the page.
+FINE_GRAINED = "https://github.com/settings/personal-access-tokens/new"
+CLASSIC = "https://github.com/settings/tokens/new?scopes=project&description=boardkit"
+
+
+def prefilled(config: Config) -> str:
+    """GitHub's fine-grained token form with everything it lets a link set.
+
+    The token is an agent's working credential for one repository: plan on
+    the board, write issues and pull requests, push branches. The limit that
+    keeps it safe is the one repository and its organisation's board, not a
+    crippled agent inside it. The repository itself cannot be pre-selected, so
+    that one choice is left to the person.
+    """
+    return FINE_GRAINED + "?" + urlencode({
+        "name": f"boardkit {config.repo}"[:40],
+        "description": f"Agent token for {config.repo} only: code, issues, pull "
+                       f"requests and the organisation's project board.",
+        "target_name": config.owner,
+        "expires_in": 90,
+        "contents": "write",
+        "issues": "write",
+        "pull_requests": "write",
+        "actions": "read",
+        # The GitHub App name for an organisation's Projects permission; the
+        # form is documented to validate what it is given.
+        "organization_projects": "write",
+    })
+
+
+def setup(config: Config) -> int:
+    """Store this repository's focused token, after checking it can see the
+    repository and the board."""
+    if not credential.has_keychain():
+        print(f"No keychain here. Export {credential.ENV} with a focused token instead.")
+        return 1
+    if config.owner_type == "user":
+        # Fine-grained tokens offer no Projects permission on a personal
+        # account, so they cannot reach a user-owned board at all. A classic
+        # token with only `project` can: every board of the account, but no
+        # repository code.
+        link = CLASSIC
+        print(f"Opening GitHub's classic token form with only the project scope.\n"
+              f"A user-owned board cannot be reached by a fine-grained token, so\n"
+              f"this one reaches all of {config.owner}'s boards but no code.\n"
+              f"Add the repo scope only if {config.repo} is private. Pick an\n"
+              f"expiry, generate the token and paste it below.\n\n  {link}\n")
+    else:
+        link = prefilled(config)
+        print(f"Opening GitHub's token form for {config.repo}, filled in except for\n"
+              f"one choice: under Repository access pick \"Only select repositories\"\n"
+              f"and choose {config.repo}. Check that Organization permissions show\n"
+              f"Projects as read and write. Then generate the token and paste it\n"
+              f"below.\n\n  {link}\n")
+    webbrowser.open(link)
+    token = getpass.getpass("Token: ").strip()
+    if not token:
+        print("No token given; nothing stored.")
+        return 1
+    # Checked under the new token itself before it replaces anything.
+    before = os.environ.get(credential.ENV)
+    os.environ[credential.ENV] = token
+    try:
+        found = visibility(config, status())
+    finally:
+        if before is None:
+            del os.environ[credential.ENV]
+        else:
+            os.environ[credential.ENV] = before
+    if not found.logged_in or not found.can_see_repo:
+        print(f"That token cannot see {config.repo}; nothing stored.")
+        return 1
+    credential.store(config.repo, token)
+    print(f"Stored the focused token for {config.repo} in the keychain.")
+    if found.can_see_project is False:
+        print(f"  warning: it cannot see the projects of {config.owner}, so "
+              f"`board sync` will fail. Re-run with a token that can.")
+    return 0

@@ -127,3 +127,18 @@ def test_a_fine_grained_token_still_fails_on_what_it_cannot_see(tmp_path, monkey
     monkeypatch.setattr(auth, "capability", lambda config, refresh=False: blind)
     with pytest.raises(BoardError, match="cannot see the projects"):
         auth.require(config(tmp_path), "read")
+
+
+def test_only_the_active_account_is_read():
+    """A focused token in GH_TOKEN must not borrow the stored login's scopes."""
+    from boardkit.auth import parse_status
+    output = ("github.com\n"
+              "  ✓ Logged in to github.com account octo (GH_TOKEN)\n"
+              "  - Active account: true\n"
+              "  - Token: github_pat_***\n"
+              "  ✓ Logged in to github.com account octo (keyring)\n"
+              "  - Active account: false\n"
+              "  - Token: gho_***\n"
+              "  - Token scopes: 'project', 'repo'\n")
+    found = parse_status(output)
+    assert found.account == "octo" and found.scopes == () and found.fine_grained

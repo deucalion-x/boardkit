@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import time
 
+from . import credential
 from .trail import note
 
 # GitHub limits requests two ways. The hourly point budget is generous and
@@ -57,12 +58,24 @@ def quoted(value: object) -> str:
     return json.dumps("" if value is None else str(value))
 
 
+def environment(args: list[str]) -> dict[str, str] | None:
+    """The credential a call runs under: `gh` gets the focused token, and
+    anything else — `git` above all — keeps its own."""
+    if args[0] != "gh":
+        return None
+    try:
+        return credential.environment()
+    except credential.Missing as missing:
+        raise BoardError(str(missing)) from None
+
+
 def once(args: list[str]) -> subprocess.CompletedProcess:
     # `check=False` throughout: a non-zero exit from `gh` is a result to
     # read, not a crash. The callers turn it into a message.
+    env = environment(args)
     try:
         return subprocess.run(args, capture_output=True, text=True, check=False,
-                              timeout=TIMEOUT)
+                              timeout=TIMEOUT, env=env)
     except subprocess.TimeoutExpired as expired:
         # Converted here because this is the one place every call goes
         # through. A timeout is a kind of unreachability — waiting is the
@@ -176,8 +189,12 @@ def probe(args: list[str]) -> tuple[bool, str]:
     if shutil.which(args[0]) is None:
         return False, f"{args[0]} is not installed or not on PATH"
     try:
+        env = environment(args)
+    except BoardError as missing:
+        return False, str(missing)
+    try:
         result = subprocess.run(args, capture_output=True, text=True,
-                                check=False, timeout=TIMEOUT)
+                                check=False, timeout=TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         # Failure being an answer here extends to this one: a probe that never
         # came back has not established what it was asked to establish.

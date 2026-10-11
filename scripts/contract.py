@@ -41,7 +41,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The checkout's own code, not whatever `board` resolves to on PATH — which on
 # a machine that also has boardkit installed is the installed copy, and the
 # point of this run is to exercise what is about to be released.
-BOARD = [sys.executable, "-m", "boardkit"]
+# `--as-me` because the throwaway boards belong to no repository's focused
+# token: the run creates and deletes projects, which is the person's own power.
+BOARD = [sys.executable, "-m", "boardkit", "--as-me"]
 
 # The canonical starter template supplies the board itself: columns and views.
 # These additional fields make its live acceptance run cover every type
@@ -496,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Exercise every board mutation against a throwaway project.")
     parser.add_argument("--owner", default="agerardin",
                         help="who owns the throwaway project")
-    parser.add_argument("--repo", default="agerardin/boardkit",
+    parser.add_argument("--repo", default="deucalion-x/boardkit",
                         help="the repository the throwaway issue is created in")
     parser.add_argument("--keep", action="store_true",
                         help="leave the project, issue and temp directory behind")

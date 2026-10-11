@@ -31,11 +31,11 @@ dependencies = ["pydantic>=2.7,<3.0"]
 board = "boardkit.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/agerardin/boardkit"
-Documentation = "https://github.com/agerardin/boardkit#readme"
-Repository = "https://github.com/agerardin/boardkit.git"
-Issues = "https://github.com/agerardin/boardkit/issues"
-Changelog = "https://github.com/agerardin/boardkit/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/deucalion-x/boardkit"
+Documentation = "https://github.com/deucalion-x/boardkit#readme"
+Repository = "https://github.com/deucalion-x/boardkit.git"
+Issues = "https://github.com/deucalion-x/boardkit/issues"
+Changelog = "https://github.com/deucalion-x/boardkit/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = ["pytest>=8.3,<9.0", "ruff>=0.14,<1.0", "mypy>=1.18,<2.0"]

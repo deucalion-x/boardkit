@@ -19,7 +19,10 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board log [n]              what boardkit did, for audit and debugging
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
-  board auth [--refresh]     what this gh login is allowed to do
+  board auth [--refresh]     which credential is used, and what it may do
+  board auth setup           store this repo's focused token, once
+  --as-me                    on any verb: use your own gh login, not the
+                             focused token (creating a board needs it)
   board init [-n] [title]    write the three settings a repo must decide
   board schema               the configuration's shape, as JSON schema
   board admin apply [-n] [--reconcile] [--prune-views]
@@ -35,7 +38,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import admin, auth, create, issue_mirror, plan_links, setup, skill, sync, trail
+from . import admin, auth, create, credential, issue_mirror, plan_links, setup, skill, sync, trail
 from . import board as board_module
 from .config import load
 from .gh import BoardError, RateLimited, Unreachable
@@ -47,9 +50,12 @@ STALE = "No local snapshot. Run `board sync` first."
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Any verb may ask for the personal gh login instead of the focused token.
+    as_me = "--as-me" in argv
+    argv = [a for a in argv if a != "--as-me"]
     command = argv[0] if argv else "list"
     try:
-        return dispatch(command, argv[1:])
+        return dispatch(command, argv[1:], as_me=as_me)
     except BoardError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -58,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 HELP = {"-h", "--help", "help"}
 
 
-def dispatch(command: str, args: list[str]) -> int:
+def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # Help needs no configuration, so it works outside a configured repo.
     if command in HELP:
         return usage(0)
@@ -75,6 +81,7 @@ def dispatch(command: str, args: list[str]) -> int:
         return setup.schema()
 
     config = load()
+    credential.configure(config.repo, elevated=as_me)
     store = Store(config)
     # Named once per command, because three files can hold this configuration
     # and the costly confusion is editing one that is not the one being read.
@@ -94,6 +101,8 @@ def dispatch(command: str, args: list[str]) -> int:
             return admin.link(config)
         return usage()
     if command == "auth":
+        if args[:1] == ["setup"]:
+            return auth.setup(config)
         return auth.report(config, refresh="--refresh" in args)
     if command == "sync":
         verbs = [a for a in args if not a.startswith("-")]

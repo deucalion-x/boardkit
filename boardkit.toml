@@ -1,6 +1,8 @@
 # Which board this is.
-owner = "agerardin"
-repo = "agerardin/boardkit"
+owner = "deucalion-x"
+owner_type = "org"
+repo = "deucalion-x/boardkit"
+project = "2"
 project_name = "boardkit"
 
 # The board itself: what `board admin apply` creates, and the print order of

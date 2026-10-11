@@ -102,6 +102,6 @@ them to a package index automatically.
 Verify a clean installation directly from the tag:
 
 ```bash
-uv tool install "git+https://github.com/agerardin/boardkit.git@v0.1.0"
+uv tool install "git+https://github.com/deucalion-x/boardkit.git@v0.1.0"
 board --help
 ```

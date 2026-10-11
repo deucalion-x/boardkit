@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 
-from . import auth
+from . import auth, credential
 from .config import CREATABLE, Config, ProjectField
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .sync import fetch_fields, find_project, parse_fields
@@ -300,7 +300,9 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         realigned = False
         for field in wanted(config):
             current = standing.get(field.name)
-            options = align(field, current) if current else None
+            if current is None:
+                continue
+            options = align(field, current)
             if options:
                 realigned = True
                 for line in describe(current, options):
@@ -328,6 +330,10 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
 
     created = not found
     if created:
+        try:
+            credential.elevated(f"creating project {config.name!r}")
+        except credential.Missing as refused:
+            raise BoardError(str(refused)) from None
         made = gh_json("project", "create", "--owner", config.owner,
                        "--title", config.name, "--format", "json")
         number = str(made.get("number", ""))

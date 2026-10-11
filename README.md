@@ -28,7 +28,7 @@ the configuration schema rather than a validation layer bolted onto it.
 Install the current source directly from GitHub:
 
 ```bash
-uv tool install "git+https://github.com/agerardin/boardkit.git"
+uv tool install "git+https://github.com/deucalion-x/boardkit.git"
 ```
 
 Or install a development checkout:
@@ -95,7 +95,7 @@ All six types can be created — `gh project field-create` handles only four, so
 boardkit sends `createProjectV2Field` itself. Five of them can then be set:
 `board set` refuses an `ITERATION` field, so declaring one gets you a column
 nothing can fill. Tracked as
-[#20](https://github.com/agerardin/boardkit/issues/20).
+[#20](https://github.com/deucalion-x/boardkit/issues/20).
 
 Declaring a field does not hide the others: every field the board owns is
 still carried, with declared ones printed first.
@@ -226,6 +226,39 @@ BOARDKIT_LOG=/tmp/audit.jsonl board sync   # keep it somewhere else
 ```
 
 ## Permissions
+
+boardkit's `gh` calls run under a **focused token** for one repository and its
+board, never under your personal `gh` login, which reaches every repository
+and board the account can. Set it up once per repository:
+
+```bash
+board auth setup   # create the token on GitHub, paste it; stored in the keychain
+board auth         # says which credential is in use
+```
+
+`BOARDKIT_TOKEN`, when set, is used instead of the keychain (CI, Linux).
+Without a focused token, a command that needs GitHub is refused and names the
+fix. Reads of the local store never need one.
+
+Anything beyond one repository and its board, such as creating a project,
+takes `--as-me`, which uses your own `gh` login for that command only. To make
+an agent ask before it uses your login, add this to the repository's
+`.claude/settings.json`:
+
+```json
+{ "permissions": { "ask": ["Bash(board:* --as-me*)", "Bash(gh:*)"] } }
+```
+
+For an organisation's board, `board auth setup` opens a pre-filled
+fine-grained token form for agent work on one repository: contents, issues and
+pull requests read-write, Actions read, and the organisation's projects. It is
+everything an agent needs to plan and do the work there, and nothing outside
+that repository and board. A **user-owned** board cannot be reached that way — fine-grained
+tokens offer no Projects permission on a personal account — so for one it opens
+a classic token form with only the `project` scope (add `repo` for a private
+repository). That reaches every board of the account, but no code.
+
+### Tiers
 
 `board auth` reports four tiers. Scopes come from `gh auth status` — local, no
 API call — and visibility is probed once and cached, keyed by the scope string
