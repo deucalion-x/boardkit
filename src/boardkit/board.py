@@ -78,6 +78,13 @@ class ProjectItem(BaseModel):
     # The latest comments, oldest first, and how many there are in all: the
     # count says when older ones were left out, rather than passing a tail
     # off as the whole conversation.
+    # For an issue, the pull requests that close it, as "#12 merged".
+    linked_prs: tuple[str, ...] = ()
+    # For a pull request: review decision, mergeability and the checks'
+    # rollup; "" where GitHub said nothing or would not say.
+    review: str = ""
+    mergeable: str = ""
+    checks: str = ""
     comments: tuple[Comment, ...] = ()
     comment_count: int = 0
     fields: dict[str, str] = {}
@@ -193,6 +200,13 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             assignees=named(content.get("assignees"), "login"),
             milestone=(content.get("milestone") or {}).get("title", ""),
             parent=(content.get("parent") or {}).get("number") or 0,
+            linked_prs=tuple(
+                f"#{pr['number']} {(pr.get('state') or '').lower()}"
+                for pr in (content.get("closedByPullRequestsReferences") or {}).get("nodes") or []
+                if pr),
+            review=(content.get("reviewDecision") or "").replace("_", " ").lower(),
+            mergeable=(content.get("mergeable") or "").lower(),
+            checks=((content.get("statusCheckRollup") or {}).get("state") or "").lower(),
             state_reason=content.get("stateReason") or "",
             closed_at=content.get("closedAt") or "",
             comments=tuple(

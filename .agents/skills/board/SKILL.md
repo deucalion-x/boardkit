@@ -168,7 +168,8 @@ board find <terms>     # open matches first, then the closed ones
 board item 29          # a closed item says so, with its full text
 ```
 
-`board item` also shows an item's comments, where plans get discussed and
+`board item` shows an issue's pull requests ("#12 merged") and, on a pull
+request card, its review, mergeability and checks. It also shows an item's comments, where plans get discussed and
 revised, and `board find` searches them. Older history and other repositories are not in it. Reaching them means plain `gh`, which runs as
 the person's own full login and asks them first. That is the escape hatch,
 for the person to approve case by case: not part of working the board, and

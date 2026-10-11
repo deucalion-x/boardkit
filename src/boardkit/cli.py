@@ -233,7 +233,12 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         board_module.show([index[ref]] if ref in index else [], view)
         found = index.get(ref)
         if found is not None:
-            about = [f"labels: {', '.join(found.labels)}" if found.labels else "",
+            about = [f"pull requests: {', '.join(found.linked_prs)}" if found.linked_prs else "",
+                     f"review: {found.review}" if found.review else "",
+                     f"mergeable: {found.mergeable}" if found.mergeable else "",
+                     (f"checks: {found.checks or 'unknown'}"
+                      if found.type == "PULL_REQUEST" else ""),
+                     f"labels: {', '.join(found.labels)}" if found.labels else "",
                      f"assignees: {', '.join(found.assignees)}" if found.assignees else "",
                      f"milestone: {found.milestone}" if found.milestone else ""]
             said = "  ".join(part for part in about if part)
@@ -285,7 +290,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             board_module.show(done, view)
     elif command == "json":
         json.dump([{**item.flat(), "closed": item.closed, "on_board": item.on_board,
-                    "state_reason": item.state_reason} for item in everything],
+                    "state_reason": item.state_reason, "type": item.type,
+                    "linked_prs": list(item.linked_prs), "review": item.review,
+                    "mergeable": item.mergeable, "checks": item.checks}
+                   for item in everything],
                   sys.stdout, indent=2)
         print()
     return 0

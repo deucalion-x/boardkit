@@ -235,3 +235,15 @@ def test_comments_are_carried_and_searched():
     item = normalize(payload, {1}, CONFIG)[0]
     assert item.comment_count == 3 and item.comments[0].author == "ada"
     assert matching([item], "device flow") == [item]
+
+
+def test_pull_request_state_and_linked_prs_are_carried():
+    payload = [
+        {"type": "PULL_REQUEST", "content": {
+            "number": 9, "title": "Fix", "reviewDecision": "CHANGES_REQUESTED",
+            "mergeable": "MERGEABLE", "statusCheckRollup": {"state": "FAILURE"}}},
+        {"content": {"number": 1, "title": "Bug", "closedByPullRequestsReferences": {
+            "nodes": [{"number": 9, "state": "OPEN"}]}}}]
+    pr, bug = normalize(payload, {1, 9}, CONFIG)
+    assert (pr.review, pr.mergeable, pr.checks) == ("changes requested", "mergeable", "failure")
+    assert bug.linked_prs == ("#9 open",)

@@ -775,3 +775,10 @@ def test_repo_issues_off_the_board_are_kept_apart(tmp_path, monkeypatch):
     off = list(sync.off_board(config, (), {1}))
     assert [(i.number, i.on_board, i.closed, i.state_reason) for i in off] == [
         (65, False, True, "COMPLETED")]
+
+
+def test_a_refused_check_rollup_does_not_fail_the_pull():
+    from boardkit import sync
+    assert sync.tolerated({"path": ["organization", "projectV2", "items", "nodes", 0,
+                                    "content", "statusCheckRollup"]})
+    assert not sync.tolerated({"path": ["organization", "projectV2", "items"]})

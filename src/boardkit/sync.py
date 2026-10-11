@@ -112,10 +112,18 @@ ISSUE_FIELDS = (
     "number title url state stateReason closedAt body "
     "labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
-    "parent { number } milestone { title } " + COMMENTS)
+    "parent { number } milestone { title } "
+    # The pull requests that close it, so "is there a PR, is it merged" is
+    # answered from the snapshot.
+    "closedByPullRequestsReferences(first: 10, includeClosedPrs: true) "
+    "{ nodes { number state } } " + COMMENTS)
 CONTENT = (
     "content { ... on Issue { " + ISSUE_FIELDS + "} "
     "  ... on PullRequest { number title url state body "
+    # Where a pull request stands: review, mergeability and checks. Checks
+    # need the app's Checks and Commit statuses permissions; without them
+    # GitHub refuses that one field, which a pull tolerates (see `tolerated`).
+    "    reviewDecision mergeable statusCheckRollup { state } "
     "    labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "    assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
     + COMMENTS + "} "
@@ -131,6 +139,13 @@ def items_block(config: Config, after: str | None) -> str:
             + CONTENT
             + f"fieldValues(first: {config.page_size}) "
               f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} ")
+
+
+def tolerated(error: dict) -> bool:
+    """A refusal of one optional detail, not of the board: CI checks, which
+    an app without the Checks permission may not read. The rest still holds."""
+    path = error.get("path") or []
+    return bool(path) and path[-1] == "statusCheckRollup"
 
 
 def fetch_board(config: Config, number: str) -> dict:
@@ -172,8 +187,9 @@ def fetch_board(config: Config, number: str) -> dict:
     # GitHub answers a credential that may see the project but not the items'
     # repository with a partial result and an error beside it. Reading the
     # partial result as the board would empty it, so the error is the answer.
-    if not project or project.get("items") is None or payload.get("errors"):
-        said = "; ".join(e.get("message", "") for e in payload.get("errors") or [])
+    errors = [e for e in payload.get("errors") or [] if not tolerated(e)]
+    if not project or project.get("items") is None or errors:
+        said = "; ".join(e.get("message", "") for e in errors)
         raise BoardError(
             f"GitHub would not show project {number} of {config.owner} to this "
             f"credential{': ' + said if said else ''}. If you signed in with "
