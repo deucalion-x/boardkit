@@ -20,7 +20,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     which credential is used, and what it may do
-  board auth setup           store this repo's focused token, once
+  board auth login|logout    sign in through the boardkit GitHub App
+  board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login, not the
                              focused token (creating a board needs it)
   board init [-n] [title]    write the three settings a repo must decide
@@ -38,7 +39,19 @@ from __future__ import annotations
 import json
 import sys
 
-from . import admin, auth, create, credential, issue_mirror, plan_links, setup, skill, sync, trail
+from . import (
+    admin,
+    auth,
+    create,
+    credential,
+    issue_mirror,
+    login,
+    plan_links,
+    setup,
+    skill,
+    sync,
+    trail,
+)
 from . import board as board_module
 from .config import load
 from .gh import BoardError, RateLimited, Unreachable
@@ -103,6 +116,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     if command == "auth":
         if args[:1] == ["setup"]:
             return auth.setup(config)
+        if args[:1] == ["login"]:
+            return login.login()
+        if args[:1] == ["logout"]:
+            return login.logout()
         return auth.report(config, refresh="--refresh" in args)
     if command == "sync":
         verbs = [a for a in args if not a.startswith("-")]

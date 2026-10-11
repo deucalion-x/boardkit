@@ -227,7 +227,20 @@ BOARDKIT_LOG=/tmp/audit.jsonl board sync   # keep it somewhere else
 
 ## Permissions
 
-boardkit's `gh` calls run under a **focused token** for one repository and its
+The simplest way in is to sign in through the boardkit GitHub App, once per
+machine:
+
+```bash
+board auth login    # shows a code; approve it on GitHub
+board auth logout
+```
+
+boardkit then acts for you, marked "via boardkit", on the repositories the
+app is installed on, with only the app's permissions. The token lasts eight
+hours and renews itself. The app works for organisation-owned boards; GitHub
+offers no project permission on a personal account's board.
+
+Without the app, boardkit's `gh` calls run under a **focused token** for one repository and its
 board, never under your personal `gh` login, which reaches every repository
 and board the account can. Set it up once per repository:
 

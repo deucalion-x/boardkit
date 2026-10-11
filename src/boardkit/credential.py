@@ -60,10 +60,13 @@ def store(name: str, token: str) -> None:
 
 def source() -> str:
     """Which credential the next `gh` call uses, said for a person."""
+    from . import login
     if repo is None or as_me:
         return "your gh login" + (" (--as-me)" if as_me else "")
     if os.environ.get(ENV):
         return f"focused token from {ENV}"
+    if login.signed_in():
+        return "your boardkit app sign-in (acts as you, via boardkit)"
     return "focused token from the keychain" if stored(repo) else "none set up"
 
 
@@ -88,12 +91,22 @@ def environment() -> dict[str, str] | None:
     """The environment a `gh` call runs in, or None to inherit as-is."""
     if repo is None or as_me:
         return None
-    token = stored(repo)
+    # An explicit token wins; then the app sign-in, which covers every repo
+    # the app is installed on; then this repository's own token.
+    from . import login
+    token = os.environ.get(ENV, "")
+    if not token:
+        try:
+            token = login.access_token()
+        except login.LoginError as expired:
+            raise Missing(str(expired)) from None
+    token = token or stored(repo)
     if not token:
         raise Missing(
-            f"no focused GitHub token for {repo}. Run `board auth setup` once to "
-            f"create one, or add --as-me to use your own gh login for this "
-            f"command.")
+            f"no GitHub credential for {repo}. Run `board auth login` to sign in "
+            f"through the boardkit app, or `board auth setup` for a token for this "
+            f"repository alone, or add --as-me to use your own gh login for "
+            f"this command.")
     # `GH_TOKEN` outranks the stored login in `gh`, so the personal session
     # is untouched and simply not used.
     return {**os.environ, "GH_TOKEN": token}
