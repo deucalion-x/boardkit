@@ -372,7 +372,7 @@ def drain(config, store: Store) -> None:
     Best effort throughout. Still being offline is the ordinary case, and a
     read that asked for a refresh must not fail over the queue it inherited.
     """
-    if not store.pending():
+    if not store.pending() and not store.actions():
         return
     try:
         auth.require(config, "write")
@@ -380,8 +380,11 @@ def drain(config, store: Store) -> None:
         return  # A read-only token keeps its reads. The queue keeps waiting.
     try:
         pushed, lost, _why = sync.push_now(config, store)
+        sent, _ = issue.send(config, store)
     except BoardError:
         return
+    if sent:
+        print(f"note: sent {sent} queued issue change(s).", file=sys.stderr)
     # On stderr with the staleness note, and for the same reason: stdout is
     # the answer to the question that was asked, and this is not it.
     if pushed:
@@ -403,7 +406,12 @@ def run_sync(config, store: Store, verb: str) -> int:
     if verb == "push":
         auth.require(config, "write")
         pushed, lost = sync.push(config, store)
-        print(f"Pushed {pushed} change(s); {lost} rejected")
+        sent, why = issue.send(config, store)
+        print(f"Pushed {pushed} change(s); {lost} rejected"
+              + (f"; sent {sent} issue change(s)" if sent else "")
+              + (f"; {len(store.actions())} issue change(s) kept, {why}" if why else ""))
+        if sent:
+            sync.pull(config, store)
         return 1 if lost else 0
     if verb == "status":
         snapshot = store.state()
@@ -534,7 +542,7 @@ def history(store: Store, limit: int, superuser_only: bool = False) -> int:
 
 
 def report_queue(store: Store) -> int:
-    waiting, lost = len(store.pending()), len(store.rejected())
+    waiting, lost = len(store.pending()) + len(store.actions()), len(store.rejected())
     if waiting:
         print(f"{waiting} change(s) queued. `board sync push` to apply.")
     if lost:

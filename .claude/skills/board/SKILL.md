@@ -117,6 +117,9 @@ board add "Title" parent=12 status=Inbox # a new sub-issue
 board close 18 --not-planned             # or --completed; board reopen 18
 ```
 
+These are queued like `board set`: sent at once when GitHub answers, and
+otherwise kept and sent by the next sync. "kept, offline" is not a failure.
+
 An agent may record `Done` after a human accepts the work. It must not make the
 acceptance decision.
 

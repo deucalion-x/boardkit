@@ -73,3 +73,30 @@ def test_set_routes_issue_metadata_away_from_board_fields(world, monkeypatch):
     assert routed == [("7", "assignees", "ada")]
 
 
+
+
+def test_offline_the_change_is_kept_and_the_next_sync_sends_it(world, monkeypatch, capsys):
+    from boardkit.gh import Unreachable
+    config, store, sent = world
+
+    def offline(*args):
+        raise Unreachable("no route")
+    monkeypatch.setattr(issue, "gh", offline)
+    issue.comment(config, store, "7", "Result: done.")
+    assert "kept, offline" in capsys.readouterr().out
+    assert [a.kind for a in store.actions()] == ["comment"]
+
+    monkeypatch.setattr(issue, "gh", lambda *args: sent.append(args) or "")
+    assert issue.send(config, store) == (1, "")
+    assert store.actions() == [] and sent[0][:3] == ("issue", "comment", "7")
+
+
+def test_a_refused_change_is_dropped_with_the_reason(world, monkeypatch, capsys):
+    config, store, _ = world
+
+    def refused(*args):
+        raise BoardError("HTTP 422: label does not exist")
+    monkeypatch.setattr(issue, "gh", refused)
+    issue.close(config, store, "7", "completed")
+    assert store.actions() == []
+    assert "refused" in capsys.readouterr().out

@@ -5,15 +5,16 @@ issue behind it, which is how the lifecycle records a result, drops rejected
 work and refines a plan. They run under the repository's own credential, so
 an agent working its repository never needs the person's `gh` login.
 
-Like creating an issue, they need the network: GitHub closes, comments and
-edits, and there is no local half worth queueing. Each pulls afterwards, so
-the next read answers with what it did.
+Each is recorded in the action queue first, then sent at once. One that
+cannot be sent (offline, rate limited) stays queued and goes with the next
+sync, exactly like a field write; one GitHub refuses is dropped with the
+reason recorded. A send that lands pulls, so the next read shows it.
 """
 from __future__ import annotations
 
 from .config import Config
 from .gh import BoardError, gh, quoted, run_json
-from .store import Store
+from .store import Action, Store
 from .trail import note
 
 # What `gh issue close --reason` takes, under the names the lifecycle uses.
@@ -33,11 +34,74 @@ def number(store: Store, ref: str) -> int:
     return item.number
 
 
-def done(config: Config, store: Store, what: str, issue: int, **detail) -> int:
-    from . import sync
-    note(what, issue=issue, **detail)
-    sync.pull(config, store)
+def record(config: Config, store: Store, kind: str, ref: str, said: str, **args: str) -> int:
+    """Queue one change to an issue, then try to send the queue now."""
+    store.queue_action(kind, ref, **args)
+    sent, why = send(config, store)
+    if sent:
+        print(said)
+        from . import sync
+        sync.pull(config, store)
+    else:
+        print(f"{said}: kept, {why}. It goes with the next sync, or `board sync push` now.")
     return 0
+
+
+def send(config: Config, store: Store) -> tuple[int, str]:
+    """Send every queued issue change, oldest first; stop at the first one
+    the network stops. Returns how many landed, and why the rest waited."""
+    from .gh import RateLimited, Unreachable
+    landed = 0
+    for action in store.actions():
+        try:
+            perform(config, store, action)
+        except Unreachable:
+            return landed, "offline"
+        except RateLimited:
+            return landed, "rate limited"
+        except BoardError as refused:
+            # GitHub said no for a reason waiting will not change: drop it,
+            # with the reason on record, rather than retry it forever.
+            note("action_refused", id=action.id, kind=action.kind, ref=action.ref,
+                 said=str(refused)[:300])
+            print(f"note: {action.kind} on #{action.ref} was refused: {refused}")
+        else:
+            landed += 1
+            note(action.kind, issue=action.ref, **action.args)
+        with store.held():
+            store.save_actions([a for a in store.actions() if a.id != action.id])
+    return landed, ""
+
+
+def perform(config: Config, store: Store, action: Action) -> None:
+    """Send one queued change to GitHub."""
+    issue, args = action.ref, action.args
+    repo = ["--repo", config.repo]
+    if action.kind == "comment":
+        gh("issue", "comment", issue, *repo, "--body", args["text"])
+    elif action.kind == "close":
+        gh("issue", "close", issue, *repo, "--reason", REASONS[args["reason"]])
+    elif action.kind == "reopen":
+        gh("issue", "reopen", issue, *repo)
+    elif action.kind == "edit":
+        extra = [x for key in ("title", "body") if key in args
+                 for x in (f"--{key}", args[key])]
+        gh("issue", "edit", issue, *repo, *extra)
+    elif action.kind in ("labels", "assignees"):
+        item = store.state().known(issue)
+        have = set(item.labels if action.kind == "labels" else item.assignees) if item else set()
+        want = set(names(args["value"]))
+        flag = "label" if action.kind == "labels" else "assignee"
+        changes = [*(x for n in sorted(want - have) for x in (f"--add-{flag}", n)),
+                   *(x for n in sorted(have - want) for x in (f"--remove-{flag}", n))]
+        if changes:
+            gh("issue", "edit", issue, *repo, *changes)
+    elif action.kind == "parent":
+        item = store.state().known(issue)
+        value = args["value"].lstrip("#")
+        link(config, int(issue), int(value) if value else 0, item.parent if item else 0)
+    else:
+        raise BoardError(f"unknown queued change {action.kind!r}")
 
 
 def comment(config: Config, store: Store, ref: str, text: str) -> int:
@@ -45,9 +109,7 @@ def comment(config: Config, store: Store, ref: str, text: str) -> int:
     if not text.strip():
         raise BoardError("a comment needs text")
     issue = number(store, ref)
-    gh("issue", "comment", str(issue), "--repo", config.repo, "--body", text)
-    print(f"Commented on #{issue}")
-    return done(config, store, "commented", issue)
+    return record(config, store, "comment", str(issue), f"Commented on #{issue}", text=text)
 
 
 def close(config: Config, store: Store, ref: str, reason: str) -> int:
@@ -56,16 +118,13 @@ def close(config: Config, store: Store, ref: str, reason: str) -> int:
     if reason not in REASONS:
         raise BoardError(f"close takes --completed or --not-planned, not {reason!r}")
     issue = number(store, ref)
-    gh("issue", "close", str(issue), "--repo", config.repo, "--reason", REASONS[reason])
-    print(f"Closed #{issue} as {REASONS[reason]}")
-    return done(config, store, "closed", issue, reason=REASONS[reason])
+    return record(config, store, "close", str(issue),
+                  f"Closed #{issue} as {REASONS[reason]}", reason=reason)
 
 
 def reopen(config: Config, store: Store, ref: str) -> int:
     issue = number(store, ref)
-    gh("issue", "reopen", str(issue), "--repo", config.repo)
-    print(f"Reopened #{issue}")
-    return done(config, store, "reopened", issue)
+    return record(config, store, "reopen", str(issue), f"Reopened #{issue}")
 
 
 def edit(config: Config, store: Store, ref: str, title: str | None, body: str | None) -> int:
@@ -73,15 +132,8 @@ def edit(config: Config, store: Store, ref: str, title: str | None, body: str | 
     if title is None and body is None:
         raise BoardError("edit takes --title, --body, or both")
     issue = number(store, ref)
-    args = ["issue", "edit", str(issue), "--repo", config.repo]
-    if title is not None:
-        args += ["--title", title]
-    if body is not None:
-        args += ["--body", body]
-    gh(*args)
-    print(f"Edited #{issue}")
-    return done(config, store, "edited", issue,
-                title=title is not None, body=body is not None)
+    args = {k: v for k, v in (("title", title), ("body", body)) if v is not None}
+    return record(config, store, "edit", str(issue), f"Edited #{issue}", **args)
 
 
 def names(value: str) -> list[str]:
@@ -92,24 +144,9 @@ def set_meta(config: Config, store: Store, ref: str, field: str, value: str) -> 
     """Labels and assignees become exactly the list given; parent makes this
     issue a sub-issue of another, and "" detaches it."""
     issue = number(store, ref)
-    item = store.state().known(str(issue))
-    assert item is not None
-    if field == "parent":
-        link(config, issue, int(value.lstrip("#")) if value.strip() else 0, item.parent)
-        print(f"#{issue} parent = {value or '(none)'}")
-        return done(config, store, "parented", issue, parent=value)
-    have = set(item.labels if field == "labels" else item.assignees)
-    want = set(names(value))
-    flag = "label" if field == "labels" else "assignee"
-    args = ["issue", "edit", str(issue), "--repo", config.repo]
-    for name in sorted(want - have):
-        args += [f"--add-{flag}", name]
-    for name in sorted(have - want):
-        args += [f"--remove-{flag}", name]
-    if len(args) > 5:
-        gh(*args)
-    print(f"#{issue} {field} = {', '.join(sorted(want)) or '(none)'}")
-    return done(config, store, f"set_{field}", issue, value=sorted(want))
+    shown = value if field == "parent" else ", ".join(sorted(names(value)))
+    return record(config, store, field, str(issue),
+                  f"#{issue} {field} = {shown or '(none)'}", value=value)
 
 
 def graphql(query: str) -> dict:
