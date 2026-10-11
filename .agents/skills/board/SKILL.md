@@ -143,22 +143,21 @@ refreshes it now — worth it right after someone says they changed something,
 rather than waiting out the floor. A read against no snapshot at all says so
 instead of fetching one behind your back.
 
-## What still needs GitHub
+## Done work, and what the snapshot does not hold
 
-The snapshot holds open items only, and no comments or history. So:
+The snapshot keeps every item on the board, open or closed, so "was this
+already done" is a local question:
 
 ```bash
-board gh issue list --search "<terms> is:closed"   # was this already done
-board gh issue view 29 --comments                  # the discussion itself
-board gh pr list                                   # pull requests, CI, releases
+board find <terms>     # open matches first, then the closed ones
+board item 29          # a closed item says so, with its full text
 ```
 
-`board gh` is `gh` run under this repository's own credential, so it reaches
-this repository alone and needs no approval. Plain `gh` runs as the person's
-full login and asks them first; do not use it for this.
-
-Reach for these when the question is about history or conversation. For
-anything about current work, `board` already knows, from its cache.
+Comments, issues that were never on the board, other repositories and pull
+request detail are not in it. Reaching them means plain `gh`, which runs as
+the person's own full login and asks them first. That is the escape hatch,
+for the person to approve case by case: not part of working the board, and
+never a way to reach another repository on your own.
 
 ## The limit worth knowing
 

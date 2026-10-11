@@ -219,3 +219,8 @@ def test_a_whole_number_field_reads_without_the_trailing_zero():
 def test_a_fractional_number_field_keeps_its_fraction():
     halved = [{"content": {"number": 1, "title": "T"}, "effort": 2.5}]
     assert normalize(halved, {1}, CONFIG)[0].field("effort") == "2.5"
+
+
+def test_kept_closed_items_are_marked_rather_than_dropped():
+    every = normalize(ITEMS, {1, 3}, CONFIG, keep_closed=True)
+    assert [(i.number, i.closed) for i in every if i.number] == [(1, False), (2, True), (3, False)]

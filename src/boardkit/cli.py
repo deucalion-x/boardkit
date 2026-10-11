@@ -33,8 +33,6 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
   board install-skill        write the agent skills for Claude Code and Codex
-  board gh <args>            gh under this repo's credential, for what the
-                             snapshot lacks: closed issues, comments, PRs
 """
 from __future__ import annotations
 
@@ -104,8 +102,6 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
                project=config.name, declares=config.declares)
 
     # Verbs that never read the board are handled before it is loaded.
-    if command == "gh":
-        return passthrough(args)
     if command == "install-skill":
         return skill.install(config, check="--check" in args)
     if command == "admin":
@@ -174,7 +170,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         print(STALE)
         return 1
     items = list(snapshot.items)
-    index = {item.ref: item for item in items}
+    # Reads about one item, or a search, also see closed work; the listing
+    # and everything that writes see open work only.
+    everything = [*items, *snapshot.closed]
+    index = {item.ref: item for item in everything}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
     # Which board this is, said rather than assumed. An answer about work gets
@@ -204,6 +203,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             said = "  ".join(part for part in about if part)
             if said:
                 print(f"  {said}")
+        if found is not None and found.closed:
+            print("  closed")
         if found is not None and not found.body:
             # Silence read as "the skill lied about showing the full text".
             print("  (no description)")
@@ -220,12 +221,18 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             print("  children:")
             board_module.show(kids, view)
     elif command == "find":
-        # The snapshot carries titles, bodies and labels, so this costs
-        # nothing. `gh issue list --search` is still what answers a question
-        # about closed work or history.
-        board_module.show(board_module.matching(items, " ".join(args)), view)
+        # The snapshot carries titles, bodies and labels, open or closed, so
+        # this costs nothing, including "was this already done".
+        hits = board_module.matching(everything, " ".join(args))
+        done = [h for h in hits if h.closed]
+        if not done or len(done) < len(hits):
+            board_module.show([h for h in hits if not h.closed], view)
+        if done:
+            print("closed:")
+            board_module.show(done, view)
     elif command == "json":
-        json.dump([item.flat() for item in items], sys.stdout, indent=2)
+        json.dump([{**item.flat(), "closed": item.closed} for item in everything],
+                  sys.stdout, indent=2)
         print()
     return 0
 
@@ -462,16 +469,6 @@ def report_queue(store: Store) -> int:
     if lost:
         print(f"{lost} change(s) rejected. `board rejected` to see them.")
     return 0
-
-
-def passthrough(args: list[str]) -> int:
-    """`gh` itself, under this repository's credential rather than the
-    personal login: for what the snapshot does not hold, such as closed
-    issues, comments and pull requests. Output goes straight to the terminal."""
-    import subprocess
-
-    from .gh import environment
-    return subprocess.run(["gh", *args], env=environment(["gh"]), check=False).returncode
 
 
 def usage(code: int = 2) -> int:

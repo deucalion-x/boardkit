@@ -81,6 +81,15 @@ class Snapshot(BaseModel):
     # names: what a tab shows is a UI setting boardkit does not read back.
     views: tuple[str, ...] = ()
     items: tuple[ProjectItem, ...] = ()
+    # Items on the board whose issue is closed. Apart from `items` so that
+    # listing, counting and writing keep meaning open work; reads about done
+    # work look here too.
+    closed: tuple[ProjectItem, ...] = ()
+
+    def known(self, ref: str | int) -> ProjectItem | None:
+        """Open or closed: for reading about an item, never for writing."""
+        wanted = str(ref)
+        return self.item(ref) or next((i for i in self.closed if i.ref == wanted), None)
 
     def item(self, ref: str | int) -> ProjectItem | None:
         """By issue number or by a draft's handle; both arrive as text from a

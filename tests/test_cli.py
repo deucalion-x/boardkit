@@ -557,3 +557,32 @@ def test_a_snapshot_without_the_url_prints_nothing(seeded, capsys):
     """Taken before the field existed. No line beats a wrong link."""
     assert cli.main(["list"]) == 0
     assert "https://github.com/users" not in capsys.readouterr().out
+
+
+@pytest.fixture
+def with_closed(seeded):
+    seeded.save_state(seeded.state().model_copy(update={"closed": (
+        ProjectItem(number=3, id="I_3", title="Corridor survey", closed=True,
+                    body="Shipped in March.", fields={"status": "Done"}),)}))
+    return seeded
+
+
+def test_a_closed_item_is_read_from_the_snapshot(with_closed, capsys):
+    assert cli.main(["item", "3"]) == 0
+    out = capsys.readouterr().out
+    assert "Corridor survey" in out and "closed" in out and "Shipped in March." in out
+
+
+def test_find_answers_was_this_already_done_locally(with_closed, capsys):
+    assert cli.main(["find", "corridor"]) == 0
+    out = capsys.readouterr().out
+    assert out.index("Corridor") < out.index("closed:") < out.index("Corridor survey")
+
+
+def test_the_listing_still_shows_open_work_only(with_closed, capsys):
+    assert cli.main([]) == 0
+    assert "Corridor survey" not in capsys.readouterr().out
+
+
+def test_a_closed_item_cannot_be_written(with_closed, capsys):
+    assert cli.main(["set", "3", "status", "Todo"]) != 0

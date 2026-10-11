@@ -154,10 +154,10 @@ the other way, computed over the snapshot. It used to be a search per
 invocation — the only read that always spent quota, and the only one that could
 fail for a reason the question had nothing to do with.
 
-The snapshot holds open items only: closed issues stay on a Project board, and
-a pull joins against open issues and drops the rest. For closed work, or for
-the discussion on an item, ask GitHub — `gh issue list --search "… is:closed"`,
-`gh issue view <n> --comments`.
+The snapshot keeps every item on the board, open or closed: `board` lists open
+work, while `board item` and `board find` also answer about closed work, which
+is marked as such. Comments, and issues that were never on the board, are not
+in it; reaching them is plain `gh`, as the person, with their approval.
 
 An item is named by its issue number, or — for a draft card, which has no
 issue behind it — by the `~handle` the board prints. Either is accepted

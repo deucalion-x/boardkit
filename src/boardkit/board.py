@@ -48,6 +48,9 @@ class ProjectItem(BaseModel):
     # work reads it — labels especially, which is where a repo tends to keep
     # kind and cross-cutting concept.
     labels: tuple[str, ...] = ()
+    # Closed since it was put on the board. Kept, so a question about done
+    # work is answered from the snapshot rather than by a search.
+    closed: bool = False
     assignees: tuple[str, ...] = ()
     milestone: str = ""
     # The issue this one is a sub-issue of, zero when it has none. Stored
@@ -133,8 +136,9 @@ def as_text(value) -> str:
 
 
 def normalize(payload: list[dict], still_open: set[int], config: Config,
-              names: tuple[str, ...] = ()) -> list[ProjectItem]:
-    """Project payload to items, dropping anything no longer open.
+              names: tuple[str, ...] = (), keep_closed: bool = False) -> list[ProjectItem]:
+    """Project payload to items, dropping anything no longer open unless
+    `keep_closed`, which keeps it marked `closed`.
 
     Pure, so the shape of an item is testable without touching the network.
     """
@@ -145,13 +149,15 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
         kind = entry.get("type") or content.get("type")
         # A draft has no number and so cannot be open or closed; everything
         # else is dropped once it is closed.
-        if kind != "DRAFT_ISSUE" and (number is None or number not in still_open):
+        closed = kind != "DRAFT_ISSUE" and (number is None or number not in still_open)
+        if closed and (not keep_closed or number is None):
             continue
         fields = {}
         for field in (names or config.synced_names):
             default = MISSING
             fields[field] = as_text(entry.get(field, default))
         items.append(ProjectItem(
+            closed=closed,
             number=number or 0,
             id=entry.get("id", ""),
             # GraphQL puts the kind on the item node; `gh` put it inside the
@@ -253,10 +259,8 @@ def children(number: int, items: list[ProjectItem]) -> list[ProjectItem]:
 def matching(items: list[ProjectItem], terms: str) -> list[ProjectItem]:
     """Items whose title or body contains every word given.
 
-    Local, because the snapshot carries the text now. It is a substring match
-    and not GitHub's search syntax — `gh issue list --search` is still what
-    answers a question about closed work or history, which the snapshot does
-    not hold.
+    Local, because the snapshot carries the text of open and closed items.
+    It is a substring match and not GitHub's search syntax.
     """
     words = [word.lower() for word in terms.split() if word]
     if not words:

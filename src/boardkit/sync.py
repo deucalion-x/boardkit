@@ -340,10 +340,11 @@ def pull(config: Config, store: Store) -> Snapshot:
     declared = [name for name in config.synced_names
                 if any(field.name == name for field in fields)]
     names = (*declared, *(field.name for field in fields if field.name not in declared))
-    # The state arrives with each item, so a closed one is dropped without the
-    # separate `gh issue list` call this used to need.
+    # The state arrives with each item, so a closed one is told apart without
+    # the separate `gh issue list` call this used to need, and kept aside.
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
+    every = normalize(rows, still_open, config, names, keep_closed=True)
     snapshot = Snapshot(
         project_id=board["id"],
         project_url=board.get("url", ""),
@@ -351,7 +352,8 @@ def pull(config: Config, store: Store) -> Snapshot:
         synced_at=now(),
         fields=fields,
         views=tuple(board.get("views", ())),
-        items=tuple(normalize(rows, still_open, config, names)),
+        items=tuple(item for item in every if not item.closed),
+        closed=tuple(item for item in every if item.closed),
     )
     store.save_state(snapshot)
     store.ignore_file()
