@@ -307,6 +307,54 @@ def fetch_some(config: Config, ids: list[str]) -> list[dict]:
     return [flatten(node) for node in payload["data"]["nodes"] if node]
 
 
+# How long an item this checkout created is read by its id when a pull does
+# not list it yet. GitHub takes seconds; minutes is generous and still bounded.
+UNLISTED_SECONDS = 600
+
+
+def fetch_items(config: Config, ids: list[str]) -> tuple[list[dict], bool]:
+    """Named items in full, with the fragment a pull reads every item with.
+    Also whether every one came back: one deleted, or not yet visible, does not."""
+    listed = ", ".join(quoted(identity) for identity in ids)
+    query = ("fragment fieldName on ProjectV2FieldCommon { name } "
+             f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
+             + CONTENT
+             + f"fieldValues(first: {config.page_size}) "
+               f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} }}")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    errors = [e for e in payload.get("errors") or [] if not tolerated(e)]
+    rows = [flatten(node) for node in (payload.get("data") or {}).get("nodes") or []
+            if node]
+    return rows, not errors and len(rows) == len(ids)
+
+
+def created(store: Store, item_id: str) -> None:
+    """Note an item this checkout just made, so the next pulls read it by id
+    until the board lists it."""
+    if not item_id:
+        return
+    snapshot = store.state()
+    store.save_state(snapshot.model_copy(
+        update={"created": {**snapshot.created, item_id: now()}}))
+
+
+def unlisted(config: Config, store: Store, rows: list[dict]) -> tuple[list[dict], dict]:
+    """Rows for the items created lately that the pull did not list, and the
+    created entries still young enough to keep watching."""
+    cutoff = (datetime.datetime.now(datetime.UTC)
+              - datetime.timedelta(seconds=UNLISTED_SECONDS)).isoformat(timespec="seconds")
+    recent = {identity: at for identity, at in store.state().created.items()
+              if at >= cutoff}
+    listed = {row.get("id") for row in rows}
+    missing = [identity for identity in recent if identity not in listed]
+    if not missing:
+        return [], recent
+    found, _ = fetch_items(config, missing)
+    if found:
+        note("unlisted", items=len(found), reason="created moments ago, not yet listed")
+    return found, recent
+
+
 def refresh(config: Config, store: Store, ids: list[str]) -> bool:
     """Re-read the named items in full and put them in the snapshot.
 
@@ -322,17 +370,8 @@ def refresh(config: Config, store: Store, ids: list[str]) -> bool:
     if not ids:
         return False
     snapshot = store.state()
-    listed = ", ".join(quoted(identity) for identity in ids)
-    query = ("fragment fieldName on ProjectV2FieldCommon { name } "
-             f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
-             + CONTENT
-             + f"fieldValues(first: {config.page_size}) "
-               f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} }}")
-    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
-    errors = [e for e in payload.get("errors") or [] if not tolerated(e)]
-    rows = [flatten(node) for node in (payload.get("data") or {}).get("nodes") or []
-            if node]
-    if errors or len(rows) != len(ids):
+    rows, complete = fetch_items(config, ids)
+    if not complete:
         return False
     names = tuple(field.name for field in snapshot.fields)
     still_open = {row["content"]["number"] for row in rows
@@ -451,7 +490,8 @@ def pull(config: Config, store: Store) -> Snapshot:
     """Replace the snapshot with what GitHub currently holds."""
     target = number(config, store)
     board = fetch_board(config, target)
-    rows = board["items"]
+    extra, recent = unlisted(config, store, board["items"])
+    rows = [*board["items"], *extra]
     # Fields are parsed first: when config declares none, they are what says
     # which keys an item carries.
     fields = parse_fields(board["fields"], config)
@@ -482,6 +522,7 @@ def pull(config: Config, store: Store) -> Snapshot:
         elsewhere=tuple(item for item in issues if item.number not in on_board),
         repo_issues=issues,
         issues_synced_at=issues_at,
+        created=recent,
     )
     store.save_state(snapshot)
     store.ignore_file()

@@ -41,6 +41,7 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     note("created_draft", title=title, ref=handle, item=made.get("id"))
 
     from . import sync
+    sync.created(store, made.get("id", ""))
     if values:
         place(config, store, 0, made.get("id", ""), title, values)
     if not sync.refresh(config, store, [made.get("id", "")]):
@@ -69,6 +70,8 @@ def add(config: Config, store: Store, title: str, body: str,
     issue = int(url.rstrip("/").rsplit("/", 1)[-1])
     print(f"Created {url}")
     note("created_issue", url=url, title=title, item=added.get("id"))
+    from . import sync
+    sync.created(store, added.get("id", ""))
 
     if values:
         # Set straight from the id `item-add` returns rather than pulling first.
@@ -82,7 +85,6 @@ def add(config: Config, store: Store, title: str, body: str,
         link(config, issue, int(parent), 0)
         print(f"  #{issue} is a sub-issue of #{parent}")
 
-    from . import sync
     if not sync.refresh(config, store, [added.get("id", "")]):
         sync.pull(config, store)
     remember(store, added.get("id", ""), issue, title, body or "", values,

@@ -855,3 +855,45 @@ def test_an_item_that_cannot_be_read_back_leaves_the_snapshot_alone(tmp_path, mo
     assert not sync.refresh(config, store, ["I_7"])
     assert store.state() == before
     assert not sync.refresh(config, store, [""])
+
+
+def pulling(tmp_path, monkeypatch, created, listed=()):
+    """A pull whose board lists `listed`, with `created` noted as made here."""
+    config = Config(root=tmp_path, owner="octo", project="4", repo="octo/widgets")
+    store = Store(config)
+    store.save_state(Snapshot(project_id="PVT_1", project_number="4",
+                              synced_at="2026-10-12T00:00:00Z", created=created))
+    monkeypatch.setattr(sync, "fetch_board", lambda config, number: {
+        "id": "PVT_1", "url": "u", "views": [], "fields": [], "items": list(listed)})
+    monkeypatch.setattr(sync, "repo_issues", lambda config, store, names: ((), ""))
+    asked = []
+
+    def by_id(args):
+        asked.append(args[-1])
+        return {"data": {"nodes": [{"id": "I_NEW", "type": "ISSUE",
+                                    "content": {"number": 9, "title": "Just made",
+                                                "state": "OPEN"},
+                                    "fieldValues": {"nodes": []}}]}}
+
+    monkeypatch.setattr(sync, "run_json", by_id)
+    return config, store, asked
+
+
+def test_a_pull_keeps_an_item_made_moments_ago_that_the_board_does_not_list_yet(
+        tmp_path, monkeypatch):
+    """GitHub lists a new item a few seconds after adding it. A sync in that
+    window replaced the snapshot without it, and the item vanished locally."""
+    from boardkit.store import now
+    config, store, asked = pulling(tmp_path, monkeypatch, {"I_NEW": now()})
+    sync.pull(config, store)
+    assert store.state().item(9) is not None
+    assert len(asked) == 1 and '"I_NEW"' in asked[0]
+
+
+def test_an_item_made_long_ago_is_not_read_by_id_again(tmp_path, monkeypatch):
+    """Missing from the board after minutes means removed, not unlisted."""
+    config, store, asked = pulling(tmp_path, monkeypatch,
+                                   {"I_NEW": "2020-01-01T00:00:00+00:00"})
+    sync.pull(config, store)
+    assert store.state().item(9) is None and asked == []
+    assert store.state().created == {}

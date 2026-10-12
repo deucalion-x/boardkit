@@ -3,7 +3,24 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
-## Unreleased
+## 0.3.0 — 2026-10-12
+
+### Lighter writes
+- A comment, edit, close, reopen, label or sub-issue change re-reads only the
+  issue it touched, and so does a new issue, draft or promoted card. Each used
+  to pull the whole board — every item and body on it — after landing. A
+  write is now one call to make it and one small one to read it back; the
+  whole board is pulled only by `board sync` and the read-age refresh, which
+  are what find other people's changes.
+- A new issue or draft no longer vanishes from the snapshot when a sync
+  follows within seconds. GitHub lists a new item on the board a moment after
+  adding it; until it does, boardkit reads it by id.
+- The credential check no longer runs `gh auth status` on every sync. That
+  command asks GitHub about every stored login — a second or more each time —
+  so the check is now cached under a fingerprint of the token in use, read
+  without a call, and repeated only when the token changes.
+- GitHub's "Could not resolve to a node" is reported as the refusal it is,
+  instead of as GitHub being unreachable.
 
 ### Usage
 - `board log --usage [days]`: GitHub calls and points spent per day and per

@@ -97,6 +97,10 @@ class Snapshot(BaseModel):
     # part of it the board does not list.
     repo_issues: tuple[ProjectItem, ...] = ()
     issues_synced_at: str = ""
+    # Items this checkout created, by id, with when. GitHub lists a new item
+    # on the board a few seconds after adding it, so a pull in that window
+    # does not return it; these are read by id instead, which works at once.
+    created: dict[str, str] = {}
 
     def known(self, ref: str | int) -> ProjectItem | None:
         """Anywhere in the snapshot: for reading about an item, and for

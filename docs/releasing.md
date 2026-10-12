@@ -58,6 +58,7 @@ having one. So it is run by hand, and the result goes in the table below.
 | Version | Run | Covered |
 |---|---|---|
 | 0.1.0 | 2026-10-03, full, pass | Project created and deleted; all eight fields and the view read back from GitHub; six field types written and read back on both a draft and a real issue; five cleared; every value re-written to confirm an already-true write settles; an iteration write refused; the issue deleted. |
+| 0.3.0 | 2026-10-12, reused project 3, pass (84s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. The first run of the lighter writes failed: a sync seconds after `board add` did not list the new issue, which is now read by id until the board lists it. One later run failed once on a visibility probe and passed when repeated. |
 
 Add a row per release. A release whose row says the run failed, or that it was
 skipped, is a release whose mutations were never confirmed against GitHub —
