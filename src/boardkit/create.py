@@ -55,15 +55,18 @@ def add(config: Config, store: Store, title: str, body: str,
     """Create an issue, put it on the board, and set any fields given.
 
     `parent=<n>` is not a board field: it makes the new issue a sub-issue.
+    `milestone=<title>` is not one either: it puts the issue in that phase.
     """
     if not title.strip():
         raise BoardError("an issue needs a title")
     values = dict(values)
     parent = values.pop("parent", "").lstrip("#")
+    # Not a board field either: the repository's milestone, which is the phase.
+    milestone = values.pop("milestone", "").strip()
     number = store.state().project_number or config.require("project")
 
     made = gh("issue", "create", "--repo", config.repo, "--title", title,
-              "--body", body or "")
+              "--body", body or "", *(["--milestone", milestone] if milestone else []))
     url = made.strip().splitlines()[-1]
     added = gh_json("project", "item-add", number, "--owner", config.owner,
                     "--url", url, "--format", "json")

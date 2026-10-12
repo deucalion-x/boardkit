@@ -114,6 +114,7 @@ board edit 18 --title "…" --body "…"     # refine the plan
 board set 18 labels "bug, ui"            # exactly these labels; also assignees
 board set 18 parent 12                   # make it a sub-issue ("" detaches)
 board add "Title" parent=12 status=Inbox # a new sub-issue
+board set 18 milestone "Recette"         # its phase ("" removes it)
 board close 18 --not-planned             # or --completed; board reopen 18
 ```
 
@@ -217,6 +218,13 @@ a person's judgement rather than a change you could make.
 
 "Where does the roadmap stand" is a question about parents: list the items
 with children and summarize each one's children by status.
+
+A phase of the project (framing, build, acceptance, rollout) is a milestone of
+the repository, not a field: dated, in order, and one per item. `board set
+<n> milestone "<title>"` puts an item in one, and `board json` carries it, so
+"what is left in this phase" is a filter. Which phases a project has is a
+person's decision; when an item has no milestone, leave it without one rather
+than guessing.
 
 Several areas of work may be deliberately in flight at once, and neither an
 issue number nor a column assigns priority. When none has been chosen, present

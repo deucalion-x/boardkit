@@ -161,3 +161,12 @@ def test_a_board_config_never_described_still_has_its_columns_read(world, monkey
         ProjectField(name="status", options=("Backlog", "Ready", "Done")),)}))
     issue.reopen(config, store, "7")
     assert [(w.field, w.value) for w in pushed[0]] == [("status", "Ready")]
+
+
+def test_a_milestone_is_set_by_title_and_removed_by_an_empty_one(world):
+    """A phase is a milestone of the repository, named as a person names it."""
+    config, store, sent = world
+    issue.set_meta(config, store, "7", "milestone", "Recette")
+    issue.set_meta(config, store, "7", "milestone", "")
+    assert sent == [("issue", "edit", "7", "--repo", "octo/widgets", "--milestone", "Recette"),
+                    ("issue", "edit", "7", "--repo", "octo/widgets", "--remove-milestone")]

@@ -20,7 +20,7 @@ from .trail import note
 # What `gh issue close --reason` takes, under the names the lifecycle uses.
 REASONS = {"completed": "completed", "not-planned": "not planned"}
 # Issue metadata that `board set` routes here rather than to a board field.
-META = ("labels", "assignees", "parent")
+META = ("labels", "assignees", "parent", "milestone")
 
 
 def number(store: Store, ref: str) -> int:
@@ -103,6 +103,11 @@ def perform(config: Config, store: Store, action: Action) -> None:
                    *(x for n in sorted(have - want) for x in (f"--remove-{flag}", n))]
         if changes:
             gh("issue", "edit", issue, *repo, *changes)
+    elif action.kind == "milestone":
+        # By title, which is how a person names a phase; "" takes it off.
+        value = args["value"].strip()
+        gh("issue", "edit", issue, *repo,
+           *(["--milestone", value] if value else ["--remove-milestone"]))
     elif action.kind == "parent":
         item = store.state().known(issue)
         value = args["value"].lstrip("#")
@@ -179,9 +184,10 @@ def names(value: str) -> list[str]:
 
 def set_meta(config: Config, store: Store, ref: str, field: str, value: str) -> int:
     """Labels and assignees become exactly the list given; parent makes this
-    issue a sub-issue of another, and "" detaches it."""
+    issue a sub-issue of another, milestone puts it in a phase, and "" undoes
+    either."""
     issue = number(store, ref)
-    shown = value if field == "parent" else ", ".join(sorted(names(value)))
+    shown = value if field in ("parent", "milestone") else ", ".join(sorted(names(value)))
     return record(config, store, field, str(issue),
                   f"#{issue} {field} = {shown or '(none)'}", value=value)
 

@@ -170,7 +170,7 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     docs; it should not have to use them either, hence commented."""
     from boardkit.setup import rendered
     text = rendered({"owner": "octo", "repo": "octo/places", "project_name": "P"})
-    assert "# [board.fields.area]" in text
+    assert "# [board.fields.workstream]" in text
     import tomllib
     board = tomllib.loads(text)["board"]
     assert board["status_order"][:2] == ["Inbox", "Todo"]

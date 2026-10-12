@@ -203,3 +203,12 @@ def test_a_board_that_returns_no_id_for_the_new_item_says_so(made):
     config, store, _ = made
     with pytest.raises(BoardError, match="did not return an id"):
         place(config, store, 42, "", "A thing", {"status": "Inbox"})
+
+
+def test_a_new_issue_is_created_in_its_milestone_not_as_a_board_field(made):
+    from boardkit.create import add
+    config, store, calls = made
+    add(config, store, "A phase task", "", {"milestone": "Cadrage"})
+    created = next(args for kind, args in calls if kind == "gh" and args[0] == "issue")
+    assert created[-2:] == ("--milestone", "Cadrage")
+    assert not any("milestone" in str(args) for kind, args in calls if kind == "gh_json")

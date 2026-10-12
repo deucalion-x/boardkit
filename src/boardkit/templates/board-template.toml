@@ -26,6 +26,11 @@ layout = "TABLE"
 fields = ["status"]
 
 # Any other field. One table per field, named as you will type it.
-# [board.fields.area]
+# A workstream is the topic an item serves, which is what work is grouped and
+# filtered by when there is more than one thing going on.
+# [board.fields.workstream]
 # data_type = "SINGLE_SELECT"   # or TEXT, NUMBER, DATE, MULTI_SELECT, ITERATION
-# options = ["Core", "API", "UI", "Infra", "Docs", "Tests"]
+# options = ["Search", "Evaluation", "Deployment"]
+#
+# A phase (framing, build, acceptance, rollout) is not a field: it is a
+# milestone of the repository, dated and in order. `board set <n> milestone`.
