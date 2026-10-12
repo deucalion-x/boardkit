@@ -115,7 +115,7 @@ board set 18 labels "bug, ui"            # exactly these labels; also assignees
 board set 18 parent 12                   # make it a sub-issue ("" detaches)
 board add "Title" type=Task parent=12 status=Inbox  # a new sub-issue
 board set 18 milestone "Recette"         # its phase ("" removes it)
-board set 18 type Task                   # Initiative, Task or Bug ("" clears)
+board set 18 type Task                   # Initiative, Feature, Task or Bug ("" clears)
 board close 18 --not-planned             # or --completed; board reopen 18
 ```
 
@@ -203,6 +203,7 @@ The board holds the roadmap beside the work, told apart by the issue's type:
 | Type | What it is |
 |---|---|
 | `Initiative` | A roadmap piece: an outcome whose sub-issues are the work. Never worked on itself. |
+| `Feature` | A capability of the product, built by its sub-issues. On the board beside the work, not on the roadmap. |
 | `Task` | Any work — code, a measurement, or a meeting with the customer. |
 | `Bug` | A defect in what was built. |
 
@@ -211,17 +212,17 @@ Project management — a meeting, a decision, a request to the customer's IT, an
 authorisation — is a `Task` too, and not labelled `dev`. An item found without
 a type is typed when it is next touched: `Task` or `Bug` by what it is; an
 item with children stays as it is until a person says whether it is an
-`Initiative`, because what is on the roadmap is theirs.
+`Initiative` or a `Feature`, because what is on the roadmap is theirs.
 
 `board json` carries each item's `issue_type`, `parent` and `labels`, so the
 rules below are one pass over it rather than a `board item` per row.
 
-Never propose an `Initiative`, or any item with open children, as next work:
-propose its startable children instead, and cite the parent so the reader sees
-what the child serves. Move a parent to `In Progress` once its first child
-starts. Breaking one down is `board add "Title" type=Task parent=<n>` for each
-piece. Create an `Initiative` only when a person asks for one: what is on the
-roadmap is their decision.
+Never propose an `Initiative`, a `Feature`, or any item with open children, as
+next work: propose its startable children instead, and cite the parent so the
+reader sees what the child serves. Move a parent to `In Progress` once its
+first child starts. Breaking one down is `board add "Title" type=Task
+parent=<n>` for each piece. Create an `Initiative` only when a person asks for
+one: what is on the roadmap is their decision.
 
 An item labelled `dev` is work a developer or an agent can carry out: code,
 a measurement, a build. An item without it is a person's: a decision, a

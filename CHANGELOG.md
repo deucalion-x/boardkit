@@ -9,7 +9,9 @@ All notable changes to boardkit are recorded here. Releases follow
 - The `board` skill: every new issue is created with a type, and an untyped
   one is typed when next touched. Project management (a meeting, a decision, a
   request to the customer's IT) is a `Task` too, not a type of its own.
-  Whether an untyped parent is an `Initiative` is left to a person.
+  Whether an untyped parent is an `Initiative` or a `Feature` is left to a
+  person: a `Feature` is a capability of the product, on the board beside the
+  work; an `Initiative` is an outcome on the roadmap.
 - An agent picks its own work only from items labelled `dev`: work a
   developer or an agent can carry out. Everything else is a person's, so a
   forgotten label leaves work with a person rather than handing it to an
