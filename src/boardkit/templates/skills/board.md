@@ -33,7 +33,7 @@ round trip and sees a different copy than the rest of your reasoning.
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| | Startable work is the `Todo` column with nothing in `blocked`. |
+| | Startable work is the `Todo` column with nothing in `blocked`, no open children, and, for an agent, no `human` label. |
 | `board item <ref>` | One item: its fields, labels, full text, and children. |
 | `board find <terms>` | Titles, bodies and labels containing every word. |
 | `board json` | Every item as one row, for jq or python. An unset field is `""`. |
@@ -190,6 +190,27 @@ the board is the place to ask about them.
 Columns are claims about refinement, not priority — `board` prints the ones
 this board has. A parent can sit in an in-flight column while every child of
 it is still unstartable, so check children before proposing a parent.
+
+## Epics and work only a person can do
+
+The board holds higher-level product work beside delivery work, and two rules
+keep "what next" pointing at things someone can actually start.
+
+An item with open children is a container, not a task. Never propose it as
+next work: propose its startable children instead, and cite the parent so the
+reader sees what the child serves. Move a parent to `In Progress` once its
+first child starts. Breaking an epic down is `board add "Title" parent=<n>`
+for each piece.
+
+An item labelled `human` is work only a person can do: a decision, a
+conversation, writing in their voice. When an agent asks itself what to work
+on, skip it. When a person asks, include it, because it is their next work
+too. Do not start, move, or record a result on a `human` item unless the
+person asks you to. Label an item `human` when you create one whose outcome is
+a person's judgement rather than a change you could make.
+
+"Where does the roadmap stand" is a question about parents: list the items
+with children and summarize each one's children by status.
 
 Several areas of work may be deliberately in flight at once, and neither an
 issue number nor a column assigns priority. When none has been chosen, present
