@@ -3,6 +3,27 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.2 — 2026-10-12
+
+### Phases and workstreams
+- `board set <n> milestone "<title>"` puts an item in a phase, and `""` takes
+  it out; `board add ... milestone=<title>` creates it in one. A phase is the
+  repository's milestone rather than a field: ordered, one per item, and
+  usable without a due date.
+- The starter template's example field is `workstream`, the topic an item
+  serves, in place of the vaguer `area`.
+
+### Who owns the board's shape
+- Written down in the README and the `board-admin` skill: the board owns what
+  it is now, and config owns the minimum a board must have. A manual change
+  is picked up, or warned about, and never reverted on its own; an agent
+  reports drift and asks rather than settling it.
+
+### Fixes
+- A change to an issue that GitHub refused — a milestone that does not exist,
+  say — was reported as "kept, it goes with the next sync", though it had
+  been dropped. It is now reported as refused, and the command exits 1.
+
 ## 0.3.1 — 2026-10-12
 
 ### Epics and work only a person can do

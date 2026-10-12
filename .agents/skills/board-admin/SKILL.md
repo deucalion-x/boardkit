@@ -9,7 +9,14 @@ description: Change the shape of this repository's GitHub Project board itself �
 # Changing the board
 
 Work items are moved with `board set`; this is for when the value you need
-does not exist. Both go through config: the board's shape is declared in
+does not exist.
+
+The board owns what it is now: every read uses the shape the last sync found,
+including whatever was added in the browser. Config owns the minimum a board
+must have — the columns, fields and views the skills rely on — and is what
+`board admin apply` builds, not an inventory. So an option, a label or a view
+someone adds as the work needs it is not missing from config, and is not
+yours to declare there unless asked. Both go through config: the board's shape is declared in
 the repo's boardkit config and applied, never clicked together in the browser, so the next
 repo that runs `board admin apply` gets the same board.
 
@@ -85,8 +92,8 @@ workflows. Configure these once in the Project's **Workflows** settings:
 These are mechanical consequences of the board shape. Work-item acceptance
 still belongs to the `board` skill.
 
-It never deletes. A field, option or view the board has and config does not is
-left alone, because deleting an option discards the value every item holds in
+Apply alone never deletes. A field, option or view the board has and config
+does not is left alone, because deleting an option discards the value every item holds in
 it. So removing something is a decision taken in the browser, by someone who
 can see what is in it.
 
@@ -98,9 +105,11 @@ items between columns is a change to contents, not shape.
 `board sync` says when config declares a field or an option the board does
 not have. Boards are edited in the browser, so this is ordinary, not an error.
 
-Default to fixing the config: delete the line from `[board]`. Someone changed
-the board deliberately, and recreating what they removed puts back a column
-they wanted gone.
+It is a person's call which side is right, so report it and ask; do not
+settle it to make the warning go away. When you recommend, default to fixing
+the config — delete the line from `[board]` — because someone changed the
+board deliberately, and recreating what they removed puts back a column they
+wanted gone.
 
 Run `board admin apply` instead only when the config line is new — written to
 create something and not yet applied.

@@ -95,6 +95,38 @@ remembered in the snapshot, which is what lets `board admin apply` run twice
 without making two projects. Set `project = "4"` only to pin an ambiguous
 title.
 
+### Who owns the board's shape
+
+Neither config nor GitHub is the whole truth; each owns a different thing.
+
+- **The board owns what it is now.** Every read and every agent decision uses
+  the shape the last sync found. A column, field, option or view added in the
+  browser is picked up and used; nothing has to be copied back into config.
+- **Config owns the minimum a board must have:** the columns, the `blocked`
+  field and the views the skills rely on. It is what `board admin apply`
+  builds, not an inventory of the board.
+
+So a vocabulary that grows with the work — a workstream's options, labels,
+milestones — lives on GitHub and is created there as it is needed. Config
+declares only what every board built from it should start with.
+
+When someone changes the board by hand:
+
+| Change | What happens |
+|---|---|
+| Adds a column, field, option or view | Picked up on sync, silently: this is normal |
+| Removes or renames something config declares | Every sync warns; `board admin apply` would recreate it, but only when someone runs it |
+| Reorders the columns | A warning; reads follow the board's order |
+
+Nothing is reverted on its own. A warning stays until a person decides: the
+change was right, so config is updated to match, or it was not, so `board
+admin apply` puts the standard back. An agent reports the warning and asks;
+it does not settle it.
+
+Phases are not a field: they are the repository's milestones, set per item
+with `board set <n> milestone "<title>"`. A milestone needs no due date to
+give order and progress; add one when there is a commitment to meet.
+
 ### Declaring a board
 
 Declare a field when `board admin apply` has to create it, or to fix print

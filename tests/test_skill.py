@@ -100,3 +100,9 @@ def test_what_next_skips_containers_and_work_only_a_person_can_do():
     ):
         assert rule in work
         assert rule not in admin
+
+
+def test_the_admin_skill_says_who_owns_the_shape_and_leaves_drift_to_a_person():
+    admin = flat(render("board-admin"))
+    assert "The board owns what it is now" in admin
+    assert "report it and ask" in admin
