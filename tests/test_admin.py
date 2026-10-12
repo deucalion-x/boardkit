@@ -569,3 +569,14 @@ def test_pruning_declares_nothing_when_config_names_no_views(monkeypatch):
     from boardkit.admin import ExistingView
     config = CONFIG.model_copy(update={"views": ()})
     assert admin.undeclared(config, {"Anything": ExistingView("V_1")}) == []
+
+
+def test_a_view_shows_githubs_own_fields_by_any_spelling_and_says_what_it_lacks(capsys):
+    """Parent issue and sub-issues progress are not in the snapshot, so a
+    view naming them was created without them, and nothing said so."""
+    from boardkit.admin import visible
+    from boardkit.config import View
+    roadmap = View(name="Roadmap", fields=("status", "Sub-issues progress", "phase"))
+    ids = {"status": "F_S", "subissuesprogress": "F_P"}
+    assert visible(roadmap, ids) == ["F_S", "F_P"]
+    assert "'phase'" in capsys.readouterr().out

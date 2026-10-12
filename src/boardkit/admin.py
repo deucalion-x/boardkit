@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from . import auth, credential
 from .config import CREATABLE, Config, ProjectField
 from .gh import BoardError, gh, gh_json, quoted, run_json
-from .sync import fetch_fields, find_project, parse_fields
+from .sync import BUILT_IN, fetch_fields, find_project, key, parse_fields
 from .trail import note
 
 
@@ -373,9 +373,12 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
 
     if not missing:
         print("  every configured field already exists.")
+    raw = fetch_fields(config, number)
     apply_views(config, number, project_id or (found[0] if found else ""),
-                parse_fields(fetch_fields(config, number), config),
-                reconcile=reconcile, created=created, prune=prune)
+                parse_fields(raw, config),
+                reconcile=reconcile, created=created, prune=prune,
+                built_in={key(entry.get("name", "")): entry["id"] for entry in raw
+                          if entry.get("id") and key(entry.get("name", "")) in BUILT_IN})
     return 0
 
 
@@ -401,6 +404,21 @@ def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
             for node in nodes if node}
 
 
+def visible(view, field_ids: dict[str, str]) -> list[str]:
+    """The ids of the fields a view shows, by config's name or any spelling
+    of GitHub's — "parent issue" finds `Parent issue`. A name that matches
+    nothing is said, not dropped: the view would otherwise just lack it."""
+    chosen = []
+    for name in view.fields:
+        found = field_ids.get(name) or field_ids.get(key(name))
+        if found:
+            chosen.append(found)
+        else:
+            print(f"  warning: view {view.name} names a field {name!r} the board "
+                  f"does not have; it is left out")
+    return chosen
+
+
 def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
     """Create one saved tab and return its id.
 
@@ -408,14 +426,14 @@ def make_view(project_id: str, view, field_ids: dict[str, str]) -> str:
     visible. It does not take a filter — that is a second mutation — and it
     takes no grouping at all, which stays a thing to set in the web UI.
     """
-    visible = ""
-    chosen = [field_ids[name] for name in view.fields if name in field_ids]
+    shown = ""
+    chosen = visible(view, field_ids)
     if chosen:
         listed = ", ".join(f'"{identity}"' for identity in chosen)
-        visible = f", configuration: {{visibleFieldIds: [{listed}]}}"
+        shown = f", configuration: {{visibleFieldIds: [{listed}]}}"
     query = ("mutation { createProjectV2View(input: {"
              f" projectId: {quoted(project_id)}, name: {quoted(view.name)},"
-             f" layout: {view.layout}_LAYOUT{visible}"
+             f" layout: {view.layout}_LAYOUT{shown}"
              " }) { projectV2View { id } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     return payload["data"]["createProjectV2View"]["projectV2View"]["id"]
@@ -430,15 +448,15 @@ def filter_view(view_id: str, expression: str) -> None:
 
 def configure_view(view_id: str, view, field_ids: dict[str, str]) -> None:
     """Turn GitHub's empty starter view into the template's first view."""
-    chosen = [field_ids[name] for name in view.fields if name in field_ids]
-    visible = ""
+    chosen = visible(view, field_ids)
+    shown = ""
     if chosen:
         listed = ", ".join(f'"{identity}"' for identity in chosen)
-        visible = f", configuration: {{visibleFieldIds: [{listed}]}}"
+        shown = f", configuration: {{visibleFieldIds: [{listed}]}}"
     query = ("mutation { updateProjectV2View(input: {"
              f" viewId: {quoted(view_id)}, name: {quoted(view.name)},"
              f" layout: {view.layout}_LAYOUT, filter: {quoted(view.filter)}"
-             f"{visible}"
+             f"{shown}"
              " }) { projectV2View { id } } }")
     run_json(["gh", "api", "graphql", "-f", f"query={query}"])
 
@@ -465,7 +483,8 @@ def undeclared(config: Config, standing: dict[str, ExistingView]) -> list[str]:
 
 def apply_views(config: Config, number: str, project_id: str,
                 fields: tuple[ProjectField, ...], reconcile: bool = False,
-                created: bool = False, prune: bool = False) -> None:
+                created: bool = False, prune: bool = False,
+                built_in: dict[str, str] | None = None) -> None:
     """Create declared views; explicitly reconcile and prune when asked.
 
     A project created in this call has one empty GitHub-seeded `View 1`; turn
@@ -484,7 +503,10 @@ def apply_views(config: Config, number: str, project_id: str,
     if not config.views:
         return
     standing = existing_views(config, number)
-    field_ids = {field.name: field.id for field in fields if field.id}
+    # GitHub's own fields — parent issue, sub-issues progress — are not in the
+    # snapshot, but a view may still show them.
+    field_ids = {**(built_in or {}),
+                 **{field.name: field.id for field in fields if field.id}}
     first = config.views[0]
     seeded = standing.get("View 1")
     if created and seeded and first.name not in standing:
