@@ -2,14 +2,18 @@
 
 Two different questions, answered two different ways:
 
-- **Scopes** come from `gh auth status`, which is local and costs no API call.
-  They decide whether a tier is permitted at all.
+- **Scopes** come from `gh auth status`. They decide whether a tier is
+  permitted at all.
 - **Visibility** — can this account see the repository, does the project exist
   — needs a real call, so it is probed once and cached.
 
-The cache is keyed by the token's scope string. A refreshed or revoked token
-changes the key, the old entry is never read again, and there is no expiry to
-tune.
+`gh auth status` is not local: it asks GitHub about every login it holds, a
+second or more on each command that checked it. So both answers are cached
+under a fingerprint of the token in use, which is read without a call. A new
+token — refreshed, re-scoped, switched — has a new fingerprint and is checked
+again; one whose scopes turn out unchanged keeps the probed visibility. A token
+revoked under an unchanged fingerprint is refused by the next real call, which
+names the renewal. There is no expiry to tune.
 
 Reads of the local store are never gated: they touch nothing. Pushes and admin
 verbs are, because a half-applied admin step leaves a board in a state nothing
@@ -18,6 +22,7 @@ cleans up.
 from __future__ import annotations
 
 import getpass
+import hashlib
 import json
 import os
 import re
@@ -137,19 +142,41 @@ def visibility(config: Config, capability: Capability) -> Capability:
                                          "can_see_project": project_ok})
 
 
+def fingerprint() -> str:
+    """Which token `gh` will send, without asking GitHub. Empty when unknown,
+    which never matches, so the slow check runs as it always did."""
+    try:
+        env = credential.environment()
+    except credential.Missing:
+        return ""
+    token = (env or os.environ).get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        ok, output = probe(["gh", "auth", "token"])
+        token = output.strip() if ok else ""
+    return hashlib.sha256(token.encode()).hexdigest()[:16] if token else ""
+
+
 def cached(config: Config) -> Capability | None:
     path = config.path(".boardkit") / CACHE
     if not path.exists():
         return None
     stored = json.loads(path.read_text(encoding="utf-8"))
     capability = Capability.model_validate(stored["capability"])
-    # The scopes moved, so what was probed under the old ones proves nothing.
-    return capability if stored.get("key") == status().key else None
+    token = fingerprint()
+    if token and stored.get("token") == token:
+        return capability
+    # A different token. The scopes moved, so what was probed under the old
+    # ones proves nothing; if they did not, the probe still holds for this one.
+    if stored.get("key") != status().key:
+        return None
+    save(config, capability, token)
+    return capability
 
 
-def save(config: Config, capability: Capability) -> None:
+def save(config: Config, capability: Capability, token: str | None = None) -> None:
     (directory(config) / CACHE).write_text(
         json.dumps({"key": capability.key,
+                    "token": fingerprint() if token is None else token,
                     "capability": capability.model_dump(mode="json")}, indent=2) + "\n",
         encoding="utf-8")
 

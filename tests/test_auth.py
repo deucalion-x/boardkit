@@ -72,15 +72,56 @@ def test_the_cache_is_dropped_when_the_token_scopes_change(tmp_path, monkeypatch
     settings = config(tmp_path)
     probed = Capability(account="octo", scopes=("repo", "project"),
                         can_see_repo=True, can_see_project=True)
+    monkeypatch.setattr(auth, "fingerprint", lambda: "first")
     auth.save(settings, probed)
 
-    monkeypatch.setattr(auth, "status", lambda: Capability(account="octo",
-                                                           scopes=("repo", "project")))
-    assert auth.cached(settings) is not None
-
     # A refreshed token: same account, different scopes, so the probe is void.
+    monkeypatch.setattr(auth, "fingerprint", lambda: "second")
     monkeypatch.setattr(auth, "status", lambda: Capability(account="octo",
                                                            scopes=("repo",)))
+    assert auth.cached(settings) is None
+
+
+def test_the_same_token_is_trusted_without_asking_github(tmp_path, monkeypatch):
+    """`gh auth status` asks GitHub about every login, a second or more on
+    each command that checked it, though the answer cannot have moved."""
+    settings = config(tmp_path)
+    monkeypatch.setattr(auth, "fingerprint", lambda: "same")
+    auth.save(settings, Capability(account="octo", scopes=("repo", "project"),
+                                   can_see_repo=True, can_see_project=True))
+
+    def asked():
+        raise AssertionError("gh auth status was asked")
+
+    monkeypatch.setattr(auth, "status", asked)
+    assert auth.cached(settings).can_see_project
+
+
+def test_a_new_token_with_the_same_scopes_keeps_the_probe_and_is_remembered(
+        tmp_path, monkeypatch):
+    """An app sign-in renews its token every few hours. The scopes do not move,
+    so the visibility probed under the old one still holds."""
+    settings = config(tmp_path)
+    scopes = ("repo", "project")
+    monkeypatch.setattr(auth, "fingerprint", lambda: "old")
+    auth.save(settings, Capability(account="octo", scopes=scopes,
+                                   can_see_repo=True, can_see_project=True))
+
+    asked = []
+    monkeypatch.setattr(auth, "fingerprint", lambda: "renewed")
+    monkeypatch.setattr(auth, "status",
+                        lambda: asked.append(1) or Capability(account="octo", scopes=scopes))
+    assert auth.cached(settings).can_see_project
+    assert auth.cached(settings).can_see_project
+    assert len(asked) == 1
+
+
+def test_an_unknown_token_always_takes_the_slow_check(tmp_path, monkeypatch):
+    settings = config(tmp_path)
+    monkeypatch.setattr(auth, "fingerprint", lambda: "")
+    auth.save(settings, Capability(account="octo", scopes=("repo",)))
+    monkeypatch.setattr(auth, "status", lambda: Capability(account="octo",
+                                                           scopes=("project",)))
     assert auth.cached(settings) is None
 
 

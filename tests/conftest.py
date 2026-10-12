@@ -19,3 +19,11 @@ def no_inherited_usage(monkeypatch):
     from boardkit import quota
     monkeypatch.setattr(quota, "_path", None)
     monkeypatch.setattr(quota, "_verb", "board")
+
+
+@pytest.fixture(autouse=True)
+def no_real_token(monkeypatch):
+    """Which token is in use is read with `gh auth token`. A test must not reach
+    the machine's own login for it, so it is unknown unless a test says."""
+    from boardkit import auth
+    monkeypatch.setattr(auth, "fingerprint", lambda: "")
