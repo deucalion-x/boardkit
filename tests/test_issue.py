@@ -125,7 +125,7 @@ def test_an_issue_off_the_board_is_still_read_back_by_a_pull(world, monkeypatch)
 
 def reopening(world, monkeypatch, status):
     """#7 sitting in `status` on a board with the starter columns."""
-    config, store, sent = world
+    config, store, _ = world
     config = config.model_copy(update={
         "status_order": ("Inbox", "Todo", "In Progress", "In Review", "Done")})
     store.save_state(store.state().model_copy(update={"items": tuple(
