@@ -170,3 +170,18 @@ def test_a_milestone_is_set_by_title_and_removed_by_an_empty_one(world):
     issue.set_meta(config, store, "7", "milestone", "")
     assert sent == [("issue", "edit", "7", "--repo", "octo/widgets", "--milestone", "Recette"),
                     ("issue", "edit", "7", "--repo", "octo/widgets", "--remove-milestone")]
+
+
+def test_a_refused_change_is_not_reported_as_kept(world, monkeypatch, capsys):
+    """GitHub refusing a change drops it; the line after said it was kept for
+    the next sync, which nothing would ever send."""
+    config, store, _ = world
+
+    def refuses(*args):
+        raise BoardError("'Nope' not found")
+
+    monkeypatch.setattr(issue, "gh", refuses)
+    assert issue.set_meta(config, store, "7", "milestone", "Nope") == 1
+    said = capsys.readouterr().out
+    assert "refused" in said and "kept" not in said
+    assert store.actions() == []

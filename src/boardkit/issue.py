@@ -49,6 +49,10 @@ def record(config: Config, store: Store, kind: str, ref: str, said: str, **args:
         # has no item to re-read, so the board is pulled instead.
         if not all(ids) or not sync.refresh(config, store, ids):
             sync.pull(config, store)
+    elif not why:
+        # Nothing landed and nothing is waiting: GitHub refused it, `send`
+        # said why and dropped it. Saying "kept" here was untrue.
+        return 1
     else:
         print(f"{said}: kept, {why}. It goes with the next sync, or `board sync push` now.")
     return 0
@@ -136,7 +140,8 @@ def close(config: Config, store: Store, ref: str, reason: str) -> int:
 
 def reopen(config: Config, store: Store, ref: str) -> int:
     issue = number(store, ref)
-    record(config, store, "reopen", str(issue), f"Reopened #{issue}")
+    if record(config, store, "reopen", str(issue), f"Reopened #{issue}"):
+        return 1
     return unfinish(config, store, str(issue))
 
 
