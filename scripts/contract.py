@@ -248,7 +248,8 @@ def check_shape(where: pathlib.Path) -> None:
     held(fields["sprint"]["data_type"] == "ITERATION",
          "the iteration field arrived as an iteration")
     held(state["views"] == wanted_views,
-         f"only the template views arrived: {wanted_views}")
+         f"only the template views arrived: {wanted_views}"
+         + ("" if state["views"] == wanted_views else f" (the board has {state['views']})"))
     kind = "organization" if declaration.get("owner_type") == "org" else "user"
     query = (f"{{ {kind}(login: {json.dumps(declaration['owner'])}) "
              f"{{ projectV2(number: {state['project_number']}) "

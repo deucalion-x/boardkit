@@ -71,6 +71,10 @@ class ProjectItem(BaseModel):
     on_board: bool = True
     assignees: tuple[str, ...] = ()
     milestone: str = ""
+    # The issue's type as the organisation names it — Initiative, Coordination,
+    # Task, Bug — or "" where none is set. Not `type`, which is the board's
+    # kind of item: issue, pull request or draft.
+    issue_type: str = ""
     # The issue this one is a sub-issue of, zero when it has none. Stored
     # upward because that is the direction GitHub will give us in bulk; the
     # question everyone asks is the downward one, and `children` inverts it.
@@ -137,6 +141,8 @@ class ProjectItem(BaseModel):
             row["assignees"] = ", ".join(self.assignees)
         if self.milestone:
             row["milestone"] = self.milestone
+        if self.issue_type:
+            row["issue_type"] = self.issue_type
         # What makes an item a container: an item some open row names here is
         # not startable itself, and the skill says so.
         if self.parent:
@@ -203,6 +209,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             labels=named(content.get("labels"), "name"),
             assignees=named(content.get("assignees"), "login"),
             milestone=(content.get("milestone") or {}).get("title", ""),
+            issue_type=(content.get("issueType") or {}).get("name", ""),
             parent=(content.get("parent") or {}).get("number") or 0,
             linked_prs=tuple(
                 f"#{pr['number']} {(pr.get('state') or '').lower()}"

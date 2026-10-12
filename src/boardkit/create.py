@@ -56,6 +56,7 @@ def add(config: Config, store: Store, title: str, body: str,
 
     `parent=<n>` is not a board field: it makes the new issue a sub-issue.
     `milestone=<title>` is not one either: it puts the issue in that phase.
+    `type=<name>` sets the issue's type, as the organisation names it.
     """
     if not title.strip():
         raise BoardError("an issue needs a title")
@@ -63,6 +64,8 @@ def add(config: Config, store: Store, title: str, body: str,
     parent = values.pop("parent", "").lstrip("#")
     # Not a board field either: the repository's milestone, which is the phase.
     milestone = values.pop("milestone", "").strip()
+    # Nor is its type, which the organisation defines.
+    kind = values.pop("type", "").strip()
     number = store.state().project_number or config.require("project")
 
     made = gh("issue", "create", "--repo", config.repo, "--title", title,
@@ -82,6 +85,14 @@ def add(config: Config, store: Store, title: str, body: str,
         # — GitHub takes a moment to index it — and the writes were being
         # rejected for an item that was plainly there.
         place(config, store, issue, added.get("id", ""), title, values)
+
+    if kind:
+        from .issue import retype
+        try:
+            retype(config, issue, kind)
+            print(f"  #{issue} is a {kind}")
+        except BoardError as refused:
+            print(f"  the issue was created; its type was not: {refused}")
 
     if parent:
         from .issue import link

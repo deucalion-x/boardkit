@@ -3,6 +3,26 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.3 — 2026-10-12
+
+### The roadmap beside the work
+- Issue types: `board set <n> type <name>` and `board add ... type=<name>`
+  set an issue's type as the organisation names it, and `board json` carries
+  it as `issue_type`. A name the organisation does not have is refused with
+  the ones it does.
+- The starter board has three tabs: `Current`, the work without the
+  Initiatives; `All`, everything; and `Roadmap`, the Initiatives alone with
+  their sub-issue progress and milestone. An organisation without an
+  `Initiative` type loses nothing: the filters hide nothing and show nothing.
+- The `board` skill: an `Initiative` is never proposed as next work, its
+  startable sub-issues are; `Task` is any work, a meeting with the customer
+  included; and only a person decides what goes on the roadmap.
+
+### Fixes
+- A view can show GitHub's own fields — parent issue, sub-issues progress —
+  which a declared view used to be created without, silently. A field name
+  that matches nothing is now said.
+
 ## 0.3.2 — 2026-10-12
 
 ### Phases and workstreams

@@ -20,7 +20,7 @@ from .trail import note
 # What `gh issue close --reason` takes, under the names the lifecycle uses.
 REASONS = {"completed": "completed", "not-planned": "not planned"}
 # Issue metadata that `board set` routes here rather than to a board field.
-META = ("labels", "assignees", "parent", "milestone")
+META = ("labels", "assignees", "parent", "milestone", "type")
 
 
 def number(store: Store, ref: str) -> int:
@@ -107,6 +107,8 @@ def perform(config: Config, store: Store, action: Action) -> None:
                    *(x for n in sorted(have - want) for x in (f"--remove-{flag}", n))]
         if changes:
             gh("issue", "edit", issue, *repo, *changes)
+    elif action.kind == "type":
+        retype(config, int(issue), args["value"].strip())
     elif action.kind == "milestone":
         # By title, which is how a person names a phase; "" takes it off.
         value = args["value"].strip()
@@ -192,9 +194,33 @@ def set_meta(config: Config, store: Store, ref: str, field: str, value: str) -> 
     issue a sub-issue of another, milestone puts it in a phase, and "" undoes
     either."""
     issue = number(store, ref)
-    shown = value if field in ("parent", "milestone") else ", ".join(sorted(names(value)))
+    shown = value if field in ("parent", "milestone", "type") else ", ".join(sorted(names(value)))
     return record(config, store, field, str(issue),
                   f"#{issue} {field} = {shown or '(none)'}", value=value)
+
+
+def retype(config: Config, issue: int, name: str) -> None:
+    """Set an issue's type by the name the organisation gave it, or clear it.
+
+    `gh issue edit` cannot set a type, so this is GraphQL: the types this
+    repository may use, then the change. A name the organisation does not
+    have is refused here, naming the ones it does.
+    """
+    owner, repo = config.repo.split("/", 1)
+    payload = graphql(f"{{ repository(owner: {quoted(owner)}, name: {quoted(repo)}) "
+                      f"{{ issueTypes(first: 25) {{ nodes {{ id name }} }} }} }}")
+    nodes = ((((payload.get("data") or {}).get("repository") or {})
+              .get("issueTypes") or {}).get("nodes")) or []
+    known = {node["name"].lower(): node["id"] for node in nodes if node}
+    chosen = "null"
+    if name:
+        if name.lower() not in known:
+            have = ", ".join(node["name"] for node in nodes if node) or "none"
+            raise BoardError(f"{config.repo} has no issue type {name!r} (it has: {have})")
+        chosen = quoted(known[name.lower()])
+    graphql("mutation { updateIssueIssueType(input: { "
+            f"issueId: {quoted(node_id(config, issue))}, issueTypeId: {chosen} }}) "
+            "{ issue { number } } }")
 
 
 def graphql(query: str) -> dict:

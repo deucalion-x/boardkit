@@ -36,7 +36,7 @@ round trip and sees a different copy than the rest of your reasoning.
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| | Startable work is the `Todo` column with nothing in `blocked`, no open children, and, for an agent, no `human` label. |
+| | Startable work is the `Todo` column with nothing in `blocked`, not an `Initiative`, no open children, and, for an agent, no `human` label. |
 | `board item <ref>` | One item: its fields, labels, full text, and children. |
 | `board find <terms>` | Titles, bodies and labels containing every word. |
 | `board json` | Every item as one row, for jq or python. An unset field is `""`. |
@@ -115,6 +115,7 @@ board set 18 labels "bug, ui"            # exactly these labels; also assignees
 board set 18 parent 12                   # make it a sub-issue ("" detaches)
 board add "Title" parent=12 status=Inbox # a new sub-issue
 board set 18 milestone "Recette"         # its phase ("" removes it)
+board set 18 type Task                   # Initiative, Task or Bug ("" clears)
 board close 18 --not-planned             # or --completed; board reopen 18
 ```
 
@@ -195,19 +196,25 @@ Columns are claims about refinement, not priority — `board` prints the ones
 this board has. A parent can sit in an in-flight column while every child of
 it is still unstartable, so check children before proposing a parent.
 
-## Epics and work only a person can do
+## Initiatives, tasks, and work only a person can do
 
-The board holds higher-level product work beside delivery work, and two rules
-keep "what next" pointing at things someone can actually start.
+The board holds the roadmap beside the work, told apart by the issue's type:
 
-`board json` carries each item's `parent` and `labels`, so both rules are
-one pass over it rather than a `board item` per row.
+| Type | What it is |
+|---|---|
+| `Initiative` | A roadmap piece: an outcome whose sub-issues are the work. Never worked on itself. |
+| `Task` | Any work — code, a measurement, or a meeting with the customer. |
+| `Bug` | A defect in what was built. |
 
-An item with open children is a container, not a task. Never propose it as
-next work: propose its startable children instead, and cite the parent so the
-reader sees what the child serves. Move a parent to `In Progress` once its
-first child starts. Breaking an epic down is `board add "Title" parent=<n>`
-for each piece.
+`board json` carries each item's `issue_type`, `parent` and `labels`, so the
+rules below are one pass over it rather than a `board item` per row.
+
+Never propose an `Initiative`, or any item with open children, as next work:
+propose its startable children instead, and cite the parent so the reader sees
+what the child serves. Move a parent to `In Progress` once its first child
+starts. Breaking one down is `board add "Title" type=Task parent=<n>` for each
+piece. Create an `Initiative` only when a person asks for one: what is on the
+roadmap is their decision.
 
 An item labelled `human` is work only a person can do: a decision, a
 conversation, writing in their voice. When an agent asks itself what to work
@@ -216,15 +223,16 @@ too. Do not start, move, or record a result on a `human` item unless the
 person asks you to. Label an item `human` when you create one whose outcome is
 a person's judgement rather than a change you could make.
 
-"Where does the roadmap stand" is a question about parents: list the items
-with children and summarize each one's children by status.
+"Where does the roadmap stand" is a question about the Initiatives — or,
+where there are none, the items with children: list them and summarize each
+one's children by status.
 
 A phase of the project (framing, build, acceptance, rollout) is a milestone of
-the repository, not a field: dated, in order, and one per item. `board set
-<n> milestone "<title>"` puts an item in one, and `board json` carries it, so
-"what is left in this phase" is a filter. Which phases a project has is a
-person's decision; when an item has no milestone, leave it without one rather
-than guessing.
+the repository, not a field: ordered, one per item, and dated only when there
+is a commitment to meet. `board set <n> milestone "<title>"` puts an item in
+one, and `board json` carries it, so "what is left in this phase" is a filter.
+Which phases a project has is a person's decision; when an item has no
+milestone, leave it without one rather than guessing.
 
 Several areas of work may be deliberately in flight at once, and neither an
 issue number nor a column assigns priority. When none has been chosen, present

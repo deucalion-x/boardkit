@@ -44,8 +44,9 @@ def test_the_declaration_is_valid_configuration(declared):
     assert declared.status_order == (
         "Inbox", "Todo", "In Progress", "In Review", "Done")
     assert [(view.name, view.layout, view.filter) for view in declared.views] == [
-        ("Current", "BOARD", ""),
+        ("Current", "BOARD", "-type:Initiative"),
         ("All", "TABLE", ""),
+        ("Roadmap", "TABLE", "type:Initiative"),
     ]
 
 

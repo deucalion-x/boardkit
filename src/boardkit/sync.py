@@ -114,7 +114,7 @@ ISSUE_FIELDS = (
     "number title url state stateReason closedAt body "
     "labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
-    "parent { number } milestone { title } "
+    "parent { number } milestone { title } issueType { name } "
     # The pull requests that close it, so "is there a PR, is it merged" is
     # answered from the snapshot.
     "closedByPullRequestsReferences(first: 10, includeClosedPrs: true) "

@@ -18,6 +18,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board edit <ref> [--title t] [--body b]
   board set <ref> labels|assignees "a, b"   or parent <n> (sub-issue)
                              or milestone "<title>" (its phase; "" removes)
+                             or type <name> (Initiative, Coordination, Task...)
   board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
                              --later: queue without trying
                              --anyway: move a draft out of the intake column

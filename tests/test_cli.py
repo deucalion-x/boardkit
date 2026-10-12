@@ -174,11 +174,13 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     import tomllib
     board = tomllib.loads(text)["board"]
     assert board["status_order"][:2] == ["Inbox", "Todo"]
-    assert [v["name"] for v in board["views"]] == ["Current", "All"]
+    assert [v["name"] for v in board["views"]] == ["Current", "All", "Roadmap"]
+    # The work without the roadmap pieces; everything; the roadmap pieces alone.
     assert board["views"][0]["layout"] == "BOARD"
-    assert "filter" not in board["views"][0]
+    assert board["views"][0]["filter"] == "-type:Initiative"
     assert board["views"][1]["layout"] == "TABLE"
     assert "filter" not in board["views"][1]
+    assert board["views"][2]["filter"] == "type:Initiative"
 
 
 def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
@@ -219,7 +221,7 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     assert load(packaged).repo == "octo/places"
     assert load(packaged).status_order == (
         "Inbox", "Todo", "In Progress", "In Review", "Done")
-    assert [v.name for v in load(packaged).views] == ["Current", "All"]
+    assert [v.name for v in load(packaged).views] == ["Current", "All", "Roadmap"]
 
 
 def test_the_starter_states_the_board_it_would_build(tmp_path):
