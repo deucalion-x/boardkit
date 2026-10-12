@@ -37,11 +37,18 @@ def number(store: Store, ref: str) -> int:
 def record(config: Config, store: Store, kind: str, ref: str, said: str, **args: str) -> int:
     """Queue one change to an issue, then try to send the queue now."""
     store.queue_action(kind, ref, **args)
+    # Every issue the send may touch: earlier queued changes go with this one.
+    touched = {action.ref for action in store.actions()}
     sent, why = send(config, store)
     if sent:
         print(said)
         from . import sync
-        sync.pull(config, store)
+        snapshot = store.state()
+        ids = [item.id if item else "" for item in map(snapshot.known, touched)]
+        # Only what was touched is re-read. An issue that is not on the board
+        # has no item to re-read, so the board is pulled instead.
+        if not all(ids) or not sync.refresh(config, store, ids):
+            sync.pull(config, store)
     else:
         print(f"{said}: kept, {why}. It goes with the next sync, or `board sync push` now.")
     return 0

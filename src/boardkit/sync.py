@@ -307,6 +307,56 @@ def fetch_some(config: Config, ids: list[str]) -> list[dict]:
     return [flatten(node) for node in payload["data"]["nodes"] if node]
 
 
+def refresh(config: Config, store: Store, ids: list[str]) -> bool:
+    """Re-read the named items in full and put them in the snapshot.
+
+    What a change to an issue needs afterwards: its comment, body, labels,
+    parent or state as GitHub now holds them. That is the item it touched,
+    read with the same fragment a pull reads every item with — not the whole
+    board again, which cost two queries and every body on it per comment.
+
+    False when an id could not be read back, so the caller can fall back to a
+    pull. Everything else in the snapshot is as fresh as it was.
+    """
+    ids = [identity for identity in ids if identity]
+    if not ids:
+        return False
+    snapshot = store.state()
+    listed = ", ".join(quoted(identity) for identity in ids)
+    query = ("fragment fieldName on ProjectV2FieldCommon { name } "
+             f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
+             + CONTENT
+             + f"fieldValues(first: {config.page_size}) "
+               f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} }}")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    errors = [e for e in payload.get("errors") or [] if not tolerated(e)]
+    rows = [flatten(node) for node in (payload.get("data") or {}).get("nodes") or []
+            if node]
+    if errors or len(rows) != len(ids):
+        return False
+    names = tuple(field.name for field in snapshot.fields)
+    still_open = {row["content"]["number"] for row in rows
+                  if row.get("content", {}).get("state") == "OPEN"}
+    fresh = normalize(rows, still_open, config, names, keep_closed=True)
+    ids_seen = {item.id for item in fresh}
+    numbers = {item.number for item in fresh if item.number}
+
+    def stays(item) -> bool:
+        return item.id not in ids_seen and not (item.number and item.number in numbers)
+
+    store.save_state(snapshot.model_copy(update={
+        "items": (*filter(stays, snapshot.items),
+                  *(item for item in fresh if not item.closed)),
+        "closed": (*filter(stays, snapshot.closed),
+                   *(item for item in fresh if item.closed)),
+        # On the board now, whatever it was before: a promoted card is new to
+        # the repository, and nothing on the board belongs in `elsewhere`.
+        "elsewhere": tuple(filter(stays, snapshot.elsewhere)),
+    }))
+    note("refreshed", items=len(fresh))
+    return True
+
+
 def fetch_fields(config: Config, number: str) -> list[dict]:
     """Just the fields, for `admin apply`, which asks before any item matters."""
     return fetch_board(config, number)["fields"]

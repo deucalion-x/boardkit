@@ -43,7 +43,8 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     from . import sync
     if values:
         place(config, store, 0, made.get("id", ""), title, values)
-    sync.pull(config, store)
+    if not sync.refresh(config, store, [made.get("id", "")]):
+        sync.pull(config, store)
     remember(store, made.get("id", ""), 0, title, body or "", values)
     return 0
 
@@ -82,7 +83,8 @@ def add(config: Config, store: Store, title: str, body: str,
         print(f"  #{issue} is a sub-issue of #{parent}")
 
     from . import sync
-    sync.pull(config, store)
+    if not sync.refresh(config, store, [added.get("id", "")]):
+        sync.pull(config, store)
     remember(store, added.get("id", ""), issue, title, body or "", values,
              parent=int(parent) if parent else 0)
     return 0
@@ -138,7 +140,9 @@ def promote(config: Config, store: Store, ref: str) -> int:
     note("promoted", was=ref, ref=str(number), url=url, item=item.id)
 
     from . import sync
-    sync.pull(config, store)
+    # The card keeps its item id, so it is re-read in place.
+    if not sync.refresh(config, store, [item.id]):
+        sync.pull(config, store)
     return 0
 
 

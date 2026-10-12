@@ -40,8 +40,11 @@ EXPIRED = re.compile(r"bad credentials|HTTP 401|token (has )?expired", re.IGNORE
 
 
 # What `gh` says when the network is the problem rather than the request.
+# "could not resolve host", not "could not resolve": GitHub answers an id or
+# a project it cannot find with "Could not resolve to a ...", which is a
+# refusal to report, not a network to wait out.
 OFFLINE = re.compile(
-    r"no such host|could not resolve|connection refused|network is unreachable|"
+    r"no such host|could not resolve host|connection refused|network is unreachable|"
     r"connection reset|timeout|timed out|dial tcp|TLS handshake|EOF",
     re.IGNORECASE)
 

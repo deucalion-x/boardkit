@@ -20,6 +20,7 @@ def world(tmp_path, monkeypatch):
     sent = []
     monkeypatch.setattr(issue, "gh", lambda *args: sent.append(args) or "")
     monkeypatch.setattr(sync, "pull", lambda config, store: None)
+    monkeypatch.setattr(sync, "refresh", lambda config, store, ids: True)
     return config, store, sent
 
 
@@ -100,3 +101,23 @@ def test_a_refused_change_is_dropped_with_the_reason(world, monkeypatch, capsys)
     issue.close(config, store, "7", "completed")
     assert store.actions() == []
     assert "refused" in capsys.readouterr().out
+
+
+def test_a_change_re_reads_the_issue_it_touched_not_the_board(world, monkeypatch):
+    config, store, _ = world
+    asked, pulled = [], []
+    monkeypatch.setattr(sync, "refresh", lambda c, s, ids: asked.append(ids) or True)
+    monkeypatch.setattr(sync, "pull", lambda c, s: pulled.append(1))
+    issue.comment(config, store, "#7", "Verified.")
+    assert asked == [["I_7"]] and pulled == []
+
+
+def test_an_issue_off_the_board_is_still_read_back_by_a_pull(world, monkeypatch):
+    """It has no board item to re-read, so the pull is what shows the change."""
+    config, store, _ = world
+    store.save_state(store.state().model_copy(update={"elsewhere": (
+        ProjectItem(number=9, title="Not on the board", on_board=False),)}))
+    pulled = []
+    monkeypatch.setattr(sync, "pull", lambda c, s: pulled.append(1))
+    issue.comment(config, store, "#9", "Seen.")
+    assert pulled == [1]

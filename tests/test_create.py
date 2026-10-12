@@ -82,6 +82,7 @@ def made(tmp_path, monkeypatch):
     monkeypatch.setattr(create, "gh", gh)
     monkeypatch.setattr(create, "gh_json", gh_json)
     monkeypatch.setattr(sync, "pull", lambda c, s: calls.append(("pull", ())))
+    monkeypatch.setattr(sync, "refresh", lambda c, s, ids: False)
     monkeypatch.setattr(sync, "apply_all", lambda writes, snap: list(writes))
     return config, store, calls
 
@@ -172,6 +173,7 @@ def test_the_project_number_comes_from_the_snapshot_when_it_has_one(tmp_path,
     monkeypatch.setattr(create, "gh_json",
                         lambda *a, **k: (seen.append(a[2]), {"id": "I_X"})[1])
     monkeypatch.setattr(sync, "pull", lambda c, s: None)
+    monkeypatch.setattr(sync, "refresh", lambda c, s, ids: False)
     create.add(config, store, "A thing", "", {})
     assert seen == ["9"]
 

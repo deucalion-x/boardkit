@@ -223,9 +223,12 @@ def test_a_failure_that_is_not_about_rate_is_raised_as_itself(monkeypatch):
         return subprocess.CompletedProcess(args, 1, "", "could not resolve to a Project")
 
     monkeypatch.setattr(plumbing, "once", refused)
-    with pytest.raises(BoardError, match="could not resolve"):
+    with pytest.raises(BoardError, match="could not resolve") as raised:
         plumbing.run(["gh", "project", "view"])
     assert len(calls) == 1
+    # GitHub's "Could not resolve to a ..." is a refusal, not the network:
+    # read as offline, it was queued and retried rather than reported.
+    assert not isinstance(raised.value, plumbing.Unreachable)
 
 
 def test_what_was_written_is_folded_in_rather_than_pulled_again():
@@ -798,3 +801,57 @@ def test_a_refused_check_rollup_does_not_fail_the_pull():
     assert sync.tolerated({"path": ["organization", "projectV2", "items", "nodes", 0,
                                     "content", "statusCheckRollup"]})
     assert not sync.tolerated({"path": ["organization", "projectV2", "items"]})
+
+
+def refreshing(tmp_path, monkeypatch, nodes):
+    """A store holding three issues, and GitHub answering `nodes` for a refresh."""
+    config = Config(root=tmp_path, owner="octo", project="4", repo="octo/widgets")
+    store = Store(config)
+    store.save_state(Snapshot(project_id="PVT_1", synced_at="2026-10-12T00:00:00Z",
+                              items=(ProjectItem(number=7, id="I_7", title="Seven"),
+                                     ProjectItem(number=8, id="I_8", title="Eight")),
+                              closed=(ProjectItem(number=3, id="I_3", title="Three",
+                                                  closed=True),)))
+    sent = []
+    monkeypatch.setattr(sync, "run_json",
+                        lambda args: (sent.append(args[-1]), {"data": {"nodes": nodes}})[1])
+    return config, store, sent
+
+
+def test_a_refresh_reads_only_the_item_it_names_and_keeps_the_rest(tmp_path, monkeypatch):
+    """A comment used to re-pull the whole board: two queries and every body
+    on it. The item it touched is all that moved."""
+    node = {"id": "I_7", "type": "ISSUE",
+            "content": {"number": 7, "title": "Seven", "state": "OPEN", "body": "",
+                        "comments": {"totalCount": 1, "nodes": [
+                            {"author": {"login": "octo"}, "createdAt": "2026-10-12",
+                             "body": "Verified."}]}},
+            "fieldValues": {"nodes": []}}
+    config, store, sent = refreshing(tmp_path, monkeypatch, [node])
+    assert sync.refresh(config, store, ["I_7"])
+    assert len(sent) == 1 and '"I_7"' in sent[0] and "items(" not in sent[0]
+    after = store.state()
+    assert [item.number for item in after.items] == [8, 7]
+    assert after.item(7).comments and after.item(8).title == "Eight"
+
+
+def test_an_item_closed_by_the_change_moves_to_closed(tmp_path, monkeypatch):
+    node = {"id": "I_7", "type": "ISSUE",
+            "content": {"number": 7, "title": "Seven", "state": "CLOSED",
+                        "stateReason": "NOT_PLANNED"},
+            "fieldValues": {"nodes": []}}
+    config, store, _ = refreshing(tmp_path, monkeypatch, [node])
+    assert sync.refresh(config, store, ["I_7"])
+    after = store.state()
+    assert after.item(7) is None
+    assert sorted(item.number for item in after.closed) == [3, 7]
+
+
+def test_an_item_that_cannot_be_read_back_leaves_the_snapshot_alone(tmp_path, monkeypatch):
+    """GitHub takes a moment to index a new item. Saying so lets the caller
+    pull instead, rather than dropping what the snapshot held."""
+    config, store, _ = refreshing(tmp_path, monkeypatch, [None])
+    before = store.state()
+    assert not sync.refresh(config, store, ["I_7"])
+    assert store.state() == before
+    assert not sync.refresh(config, store, [""])
