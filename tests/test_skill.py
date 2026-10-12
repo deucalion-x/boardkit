@@ -90,3 +90,13 @@ def test_a_hand_written_skill_beside_them_is_left_alone(tmp_path, capsys):
     install(config(tmp_path))
     assert "notes" not in capsys.readouterr().out
     assert mine.exists()
+
+
+def test_what_next_skips_containers_and_work_only_a_person_can_do():
+    work, admin = flat(render("board")), flat(render("board-admin"))
+    for rule in (
+        "An item with open children is a container, not a task.",
+        "An item labelled `human` is work only a person can do",
+    ):
+        assert rule in work
+        assert rule not in admin

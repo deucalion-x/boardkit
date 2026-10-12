@@ -49,6 +49,14 @@ def test_board_json_keeps_the_flat_shape_a_jq_pipeline_expects():
                            "effort": "M"}
 
 
+def test_board_json_names_a_parent_so_a_container_is_found_without_item():
+    """The skill says an item with open children is not startable. Without the
+    parent in the row, an agent had to open every item to learn that."""
+    item = ProjectItem(number=2, title="Email sequence", parent=1)
+    assert item.flat()["parent"] == 1
+    assert "parent" not in ProjectItem(number=1, title="Epic").flat()
+
+
 def test_status_is_reachable_as_a_field_like_any_other():
     item = normalize(ITEMS, {1}, CONFIG)[0]
     assert item.field("status") == "Ready"
