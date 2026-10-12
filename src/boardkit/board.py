@@ -137,6 +137,10 @@ class ProjectItem(BaseModel):
             row["assignees"] = ", ".join(self.assignees)
         if self.milestone:
             row["milestone"] = self.milestone
+        # What makes an item a container: an item some open row names here is
+        # not startable itself, and the skill says so.
+        if self.parent:
+            row["parent"] = self.parent
         return row
 
 

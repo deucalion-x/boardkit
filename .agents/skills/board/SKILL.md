@@ -199,6 +199,9 @@ it is still unstartable, so check children before proposing a parent.
 The board holds higher-level product work beside delivery work, and two rules
 keep "what next" pointing at things someone can actually start.
 
+`board json` carries each item's `parent` and `labels`, so both rules are
+one pass over it rather than a `board item` per row.
+
 An item with open children is a container, not a task. Never propose it as
 next work: propose its startable children instead, and cite the parent so the
 reader sees what the child serves. Move a parent to `In Progress` once its
