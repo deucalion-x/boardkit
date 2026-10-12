@@ -23,6 +23,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board rejected [--clear]   local changes that lost to a remote change
   board log [n] [--superuser]  what boardkit did; --superuser: uses of your
                              own login (--as-me, approved gh)
+  board log --usage [days]   API calls and points spent, reads answered locally
   board sync [push|status]   pull, drain the queue, or report
   --offline                  on any read: answer from the snapshot as it is
   board auth [--refresh]     which credential is used, and what it may do
@@ -55,6 +56,7 @@ from . import (
     issue_mirror,
     login,
     plan_links,
+    quota,
     setup,
     skill,
     sync,
@@ -104,6 +106,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     config = load()
     credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
+    quota.begin(command)
     # Named once per command, because three files can hold this configuration
     # and the costly confusion is editing one that is not the one being read.
     trail.note("configured", file=str(config.source), command=command,
@@ -179,6 +182,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             if said.startswith("gh ") or said == "gh":
                 superuser(config, "gh", said)
             return 0
+        if "--usage" in args:
+            return quota.report(next((int(a) for a in args if a.isdigit()), 7))
         limit = next((int(a) for a in args if a.isdigit()), 30)
         return history(store, limit, superuser_only="--superuser" in args)
     if command == "rejected":
@@ -323,13 +328,19 @@ def freshen(config, store: Store, offline: bool = False) -> Snapshot:
     # No snapshot is not staleness. A first read says to sync rather than
     # fetching one behind the caller's back, so that setting a repo up is
     # something they did and not something that happened to them.
-    if snapshot.empty or offline or not floor or snapshot.age <= floor:
+    if snapshot.empty:
+        return showing(store, snapshot)
+    if offline or not floor or snapshot.age <= floor:
+        quota.read("local")
         return showing(store, snapshot)
     try:
         auth.require(config, "read")
         drain(config, store)
-        return showing(store, sync.pull(config, store))
+        pulled = sync.pull(config, store)
+        quota.read("refreshed")
+        return showing(store, pulled)
     except (BoardError, RateLimited, Unreachable) as why:
+        quota.read("stale")
         print(f"note: answering from a snapshot {int(snapshot.age)}s old; "
               f"could not refresh it ({why})", file=sys.stderr)
         return showing(store, snapshot)

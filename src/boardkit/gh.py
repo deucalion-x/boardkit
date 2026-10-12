@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import time
 
-from . import credential
+from . import credential, quota
 from .trail import note
 
 # GitHub limits requests two ways. The hourly point budget is generous and
@@ -77,10 +77,16 @@ def once(args: list[str]) -> subprocess.CompletedProcess:
     # `check=False` throughout: a non-zero exit from `gh` is a result to
     # read, not a crash. The callers turn it into a message.
     env = environment(args)
+    sent = instrumented(args)
     try:
-        return subprocess.run(args, capture_output=True, text=True, check=False,
-                              timeout=TIMEOUT, env=env)
+        result = subprocess.run(sent, capture_output=True, text=True, check=False,
+                                timeout=TIMEOUT, env=env)
+        if args[0] == "gh":
+            account(args, result, stripped=sent is not args)
+        return result
     except subprocess.TimeoutExpired as expired:
+        if args[0] == "gh":
+            quota.call(" ".join(args[:3]), None, None, None)
         # Converted here because this is the one place every call goes
         # through. A timeout is a kind of unreachability — waiting is the
         # fix — and the queue is durable, so it costs nothing to stop. Left
@@ -91,6 +97,106 @@ def once(args: list[str]) -> subprocess.CompletedProcess:
         raise Unreachable(
             f"{args[0]} did not respond within {TIMEOUT}s. Queued changes are "
             f"kept; run this again when GitHub is answering.") from expired
+
+
+# Asked of every GraphQL query: GitHub prices the whole document, this field
+# included, and answers with the price. Aliased so it cannot collide with a
+# `rateLimit` the query asks for itself, and removed before the caller sees it.
+COST_ALIAS = "boardkitCost"
+COST = f"{COST_ALIAS}: rateLimit {{ cost }} "
+
+
+def instrumented(args: list[str]) -> list[str]:
+    """The call as sent: `gh api` with its headers, a query with its price.
+
+    The headers name the budget the call drew on and what it has left; the
+    price is what the query cost. Together they are what `board log --usage`
+    sums, and they cost nothing — no extra request, no extra points.
+
+    A call that already asks for its headers is left alone: `budget` reads
+    them itself.
+    """
+    if args[:2] != ["gh", "api"] or "--include" in args:
+        return args
+    sent = [*args[:2], "--include", *args[2:]]
+    for index, arg in enumerate(sent):
+        if arg.startswith("query=") and sent[index - 1] == "-f":
+            sent[index] = "query=" + priced(arg[len("query="):])
+    return sent
+
+
+def priced(document: str) -> str:
+    """The document with the cost field in its operation's selection set.
+
+    The operation is the definition at the top level that is not a fragment.
+    A mutation is returned unchanged: `rateLimit` is a field of the query
+    type, and GitHub would refuse the whole mutation over it.
+    """
+    depth, start, quoted_string, escaped = 0, 0, False, False
+    for index, char in enumerate(document):
+        if quoted_string:
+            if char == '"' and not escaped:
+                quoted_string = False
+            escaped = char == "\\" and not escaped
+            continue
+        if char == '"':
+            quoted_string = True
+        elif char == "{":
+            if depth == 0:
+                header = document[start:index].strip().split()
+                kind = header[0] if header else "query"
+                if kind in ("mutation", "subscription"):
+                    return document
+                if kind != "fragment":
+                    return f"{document[:index + 1]} {COST}{document[index + 1:]}"
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                start = index + 1
+    return document
+
+
+HEADER = re.compile(r"^([A-Za-z0-9-]+):\s*(.*?)\s*$")
+
+
+def account(args: list[str], result: subprocess.CompletedProcess,
+            stripped: bool) -> None:
+    """Record what a `gh` call cost, and hand back the body as if never asked.
+
+    `stripped` is whether `instrumented` asked for the headers and the price,
+    and so whether they are ours to take back out.
+
+    `gh auth` is not counted: it answers from the local login, so counting it
+    would charge a read for a call that never reached GitHub.
+    """
+    if args[1:2] == ["auth"]:
+        return
+    headers: dict[str, str] = {}
+    out = result.stdout or ""
+    if out.startswith("HTTP/"):
+        head, _, body = out.replace("\r\n", "\n").partition("\n\n")
+        for line in head.splitlines()[1:]:
+            found = HEADER.match(line)
+            if found:
+                headers[found.group(1).lower()] = found.group(2)
+        if stripped:
+            out = body
+    cost = None
+    if stripped and out.strip():
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            payload = None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict) and COST_ALIAS in data:
+            cost = (data.pop(COST_ALIAS) or {}).get("cost")
+            out = json.dumps(payload)
+    if stripped:
+        result.stdout = out
+    left = headers.get("x-ratelimit-remaining", "")
+    quota.call(" ".join(args[:3]), headers.get("x-ratelimit-resource"), cost,
+               int(left) if left.isdigit() else None)
 
 
 REMAINING = re.compile(r"^x-ratelimit-remaining:\s*(\d+)", re.IGNORECASE | re.MULTILINE)
@@ -204,6 +310,8 @@ def probe(args: list[str]) -> tuple[bool, str]:
     try:
         result = subprocess.run(args, capture_output=True, text=True,
                                 check=False, timeout=TIMEOUT, env=env)
+        if args[0] == "gh":
+            account(args, result, stripped=False)
     except subprocess.TimeoutExpired:
         # Failure being an answer here extends to this one: a probe that never
         # came back has not established what it was asked to establish.

@@ -26,7 +26,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import trail
+from . import quota, trail
 from .board import ProjectItem
 from .config import Config, ProjectField
 from .gh import BoardError
@@ -206,6 +206,7 @@ class Store:
         # Refusals are recorded beside the snapshot rather than printed and
         # lost, so an unexpected limit is noticed rather than reasoned about.
         trail.configure(self.directory / "log.jsonl")
+        quota.configure(self.directory / quota.NAME)
 
     def _read(self, name: str, default: str) -> Any:
         path = self.directory / name

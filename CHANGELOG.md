@@ -3,6 +3,16 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## Unreleased
+
+### Usage
+- `board log --usage [days]`: GitHub calls and points spent per day and per
+  command, the lowest budget seen, and the share of reads answered without
+  calling GitHub. Totals live in `.boardkit/usage.json` for 90 days.
+- Every GraphQL query asks for its own `rateLimit { cost }` and every
+  `gh api` call reads its rate-limit headers, so the measurement costs no
+  extra request and no extra points.
+
 ## 0.2.0 — 2026-10-11
 
 Agents work a repository through `board` alone, under that repository's own

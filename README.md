@@ -213,6 +213,7 @@ the next sync:
 | `board sync status` | Snapshot age, queue depth, rejections. |
 | `board rejected` / `--clear` | Changes that lost to a remote edit, with both values. |
 | `board log [n]` / `--superuser` | What boardkit did; `--superuser` lists each use of your own login. |
+| `board log --usage [days]` | API calls and points spent per day and per command, and the share of reads answered without calling GitHub. |
 
 The rest:
 
@@ -263,6 +264,15 @@ per-query limit.
 Every action — queued, pushed, rejected, pulled, created, refused — is one JSON
 object on a line in `.boardkit/log.jsonl`, rotated so it cannot grow without
 bound. `board log [n]` prints the tail.
+
+What talking to GitHub cost is kept beside it as daily totals in
+`.boardkit/usage.json`, for the last 90 days: reads answered from the snapshot
+or after a pull, every `gh` call, and the points GitHub said each one cost.
+`board log --usage [days]` prints them. The price comes from the calls
+themselves — each query also asks for its own `rateLimit { cost }`, and each
+`gh api` call returns its rate-limit headers — so measuring costs nothing.
+Mutations and `gh` subcommands report no price and are counted as unpriced,
+at least a point each. `BOARDKIT_LOG=off` turns the totals off with the log.
 
 It is standard `logging`: records go to `boardkit.trail`, under the `boardkit`
 namespace, at INFO. A host application that imports boardkit can capture or

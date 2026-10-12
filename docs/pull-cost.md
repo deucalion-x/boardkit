@@ -126,6 +126,10 @@ way to find out whether the shape above survives more than one session.
 
 ## How to re-measure
 
+Day to day, `board log --usage` already has the numbers: every query boardkit
+sends asks for its own price, and the totals are kept per day and per command.
+What follows is for measuring something boardkit does not send yet.
+
 Ask the API what a query costs, inside that query:
 
 ```bash
