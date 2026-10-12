@@ -7,13 +7,14 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ### Every item has a type
 - The `board` skill: every new issue is created with a type, and an untyped
-  one is typed when next touched. Project management (a meeting, a decision,
-  a request to the customer's IT) is a `Task` labelled `needs-human`, not a
-  type of its own. Whether an untyped parent is an `Initiative` is left to a
-  person.
-- The label for work only a person can do is `needs-human`, which says why it
-  is there; `human` did not. A repository already using `human` renames it in
-  place: `gh label edit human --name needs-human`.
+  one is typed when next touched. Project management (a meeting, a decision, a
+  request to the customer's IT) is a `Task` too, not a type of its own.
+  Whether an untyped parent is an `Initiative` is left to a person.
+- An agent picks its own work only from items labelled `dev`: work a
+  developer or an agent can carry out. Everything else is a person's, so a
+  forgotten label leaves work with a person rather than handing it to an
+  agent. This replaces the `human` label, which marked the opposite; a
+  repository using it labels its buildable items `dev` and deletes `human`.
 
 ## 0.3.3 — 2026-10-12
 

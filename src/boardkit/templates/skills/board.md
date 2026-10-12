@@ -33,7 +33,7 @@ round trip and sees a different copy than the rest of your reasoning.
 | Command | Answers |
 |---|---|
 | `board` | Every open item, by status. Start here. |
-| | Startable work is the `Todo` column with nothing in `blocked`, not an `Initiative`, no open children, and, for an agent, no `needs-human` label. |
+| | Startable work is the `Todo` column with nothing in `blocked`, not an `Initiative`, no open children, and, for an agent, the `dev` label. |
 | `board item <ref>` | One item: its fields, labels, full text, and children. |
 | `board find <terms>` | Titles, bodies and labels containing every word. |
 | `board json` | Every item as one row, for jq or python. An unset field is `""`. |
@@ -204,11 +204,11 @@ The board holds the roadmap beside the work, told apart by the issue's type:
 | `Bug` | A defect in what was built. |
 
 Every issue gets a type when it is created: `board add "Title" type=Task`.
-Project management — a meeting, a decision, a request to the customer's IT,
-an authorisation — is a `Task` labelled `needs-human`, not a type of its
-own. An item found without a type is typed when it is next touched: `Task`
-or `Bug` by what it is; an item with children stays as it is until a person says
-whether it is an `Initiative`, because what is on the roadmap is theirs.
+Project management — a meeting, a decision, a request to the customer's IT, an
+authorisation — is a `Task` too, and not labelled `dev`. An item found without
+a type is typed when it is next touched: `Task` or `Bug` by what it is; an
+item with children stays as it is until a person says whether it is an
+`Initiative`, because what is on the roadmap is theirs.
 
 `board json` carries each item's `issue_type`, `parent` and `labels`, so the
 rules below are one pass over it rather than a `board item` per row.
@@ -220,12 +220,15 @@ starts. Breaking one down is `board add "Title" type=Task parent=<n>` for each
 piece. Create an `Initiative` only when a person asks for one: what is on the
 roadmap is their decision.
 
-An item labelled `needs-human` is work only a person can do: a decision, a
+An item labelled `dev` is work a developer or an agent can carry out: code,
+a measurement, a build. An item without it is a person's: a decision, a
 conversation, writing in their voice. When an agent asks itself what to work
-on, skip it. When a person asks, include it, because it is their next work
-too. Do not start, move, or record a result on a `needs-human` item unless the
-person asks you to. Label an item `needs-human` when you create one whose
-outcome is a person's judgement rather than a change you could make.
+on, it takes only `dev` items. When a person asks, include the rest, because
+it is their next work too. Do not start, move, or record a result on an item
+without `dev` unless the person asks you to. Label an item `dev` when you
+create one whose outcome is a change you could make; leave it off when the
+outcome is a person's judgement. Forgetting the label leaves work with a
+person, which is the safe way to be wrong.
 
 "Where does the roadmap stand" is a question about the Initiatives — or,
 where there are none, the items with children: list them and summarize each
