@@ -3,6 +3,18 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## Unreleased
+
+### Every item has a type
+- The `board` skill: every new issue is created with a type, and an untyped
+  one is typed when next touched. Project management (a meeting, a decision,
+  a request to the customer's IT) is a `Task` labelled `needs-human`, not a
+  type of its own. Whether an untyped parent is an `Initiative` is left to a
+  person.
+- The label for work only a person can do is `needs-human`, which says why it
+  is there; `human` did not. A repository already using `human` renames it in
+  place: `gh label edit human --name needs-human`.
+
 ## 0.3.3 — 2026-10-12
 
 ### The roadmap beside the work

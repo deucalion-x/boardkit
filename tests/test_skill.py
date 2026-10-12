@@ -96,7 +96,7 @@ def test_what_next_skips_containers_and_work_only_a_person_can_do():
     work, admin = flat(render("board")), flat(render("board-admin"))
     for rule in (
         "Never propose an `Initiative`, or any item with open children, as next work",
-        "An item labelled `human` is work only a person can do",
+        "An item labelled `needs-human` is work only a person can do",
     ):
         assert rule in work
         assert rule not in admin
