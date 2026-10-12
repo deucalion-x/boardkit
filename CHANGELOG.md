@@ -3,7 +3,7 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
-## Unreleased
+## 0.3.4 — 2026-10-12
 
 ### Every item has a type
 - The `board` skill: every new issue is created with a type, and an untyped
