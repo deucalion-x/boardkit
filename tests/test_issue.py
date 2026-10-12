@@ -121,3 +121,31 @@ def test_an_issue_off_the_board_is_still_read_back_by_a_pull(world, monkeypatch)
     monkeypatch.setattr(sync, "pull", lambda c, s: pulled.append(1))
     issue.comment(config, store, "#9", "Seen.")
     assert pulled == [1]
+
+
+def reopening(world, monkeypatch, status):
+    """#7 sitting in `status` on a board with the starter columns."""
+    config, store, sent = world
+    config = config.model_copy(update={
+        "status_order": ("Inbox", "Todo", "In Progress", "In Review", "Done")})
+    store.save_state(store.state().model_copy(update={"items": tuple(
+        item.model_copy(update={"fields": {"status": status}}) if item.number == 7 else item
+        for item in store.state().items)}))
+    pushed = []
+    monkeypatch.setattr(sync, "push_now",
+                        lambda c, s: (pushed.append(s.pending()), (1, 0, ""))[1])
+    return config, store, pushed
+
+
+def test_a_reopened_item_leaves_the_closing_column(world, monkeypatch):
+    """Closing moves an issue to `Done` and nothing moved it back, so a
+    reopened issue read as finished on the board while open in the repo."""
+    config, store, pushed = reopening(world, monkeypatch, "Done")
+    issue.reopen(config, store, "7")
+    assert [(w.ref, w.field, w.value) for w in pushed[0]] == [("7", "status", "Todo")]
+
+
+def test_a_reopened_item_elsewhere_on_the_board_stays_put(world, monkeypatch):
+    config, store, pushed = reopening(world, monkeypatch, "In Review")
+    issue.reopen(config, store, "7")
+    assert pushed == []

@@ -162,6 +162,12 @@ def cached(config: Config) -> Capability | None:
         return None
     stored = json.loads(path.read_text(encoding="utf-8"))
     capability = Capability.model_validate(stored["capability"])
+    # Only a probe that saw both is worth keeping. One failed call — GitHub
+    # answering 502, a dropped connection — reads the same as being refused,
+    # and cached it said "cannot see the projects" until the token changed.
+    # Asking again costs one call, and only while something is wrong.
+    if capability.can_see_repo is False or capability.can_see_project is False:
+        return None
     token = fingerprint()
     if token and stored.get("token") == token:
         return capability

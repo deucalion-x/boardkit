@@ -131,7 +131,33 @@ def close(config: Config, store: Store, ref: str, reason: str) -> int:
 
 def reopen(config: Config, store: Store, ref: str) -> int:
     issue = number(store, ref)
-    return record(config, store, "reopen", str(issue), f"Reopened #{issue}")
+    record(config, store, "reopen", str(issue), f"Reopened #{issue}")
+    return unfinish(config, store, str(issue))
+
+
+def unfinish(config: Config, store: Store, ref: str) -> int:
+    """Take a reopened item out of the closing column.
+
+    The Project's automation moves a closed issue to the last column and
+    nothing moves it back, so a reopened issue sat in `Done` while open —
+    finished on the board, open in the repository. It goes to the column after
+    intake: it was refined once already, so it is ready rather than an idea.
+    A board with fewer than two columns, or an item not in the last one, is
+    left where it is.
+    """
+    from . import sync
+    columns = config.status_order
+    item = store.state().item(ref)
+    if len(columns) < 2 or item is None or item.field(config.status_field) != columns[-1]:
+        return 0
+    store.queue(ref, config.status_field, columns[1])
+    _pushed, lost, why = sync.push_now(config, store)
+    if why:
+        print(f"  {config.status_field} = {columns[1]}: kept, {why}. "
+              f"It goes with the next sync.")
+    elif not lost:
+        print(f"  {config.status_field} = {columns[1]} (was {columns[-1]})")
+    return 0
 
 
 def edit(config: Config, store: Store, ref: str, title: str | None, body: str | None) -> int:

@@ -183,3 +183,13 @@ def test_only_the_active_account_is_read():
               "  - Token scopes: 'project', 'repo'\n")
     found = parse_status(output)
     assert found.account == "octo" and found.scopes == () and found.fine_grained
+
+
+def test_a_failed_visibility_probe_is_asked_again_not_trusted(tmp_path, monkeypatch):
+    """One failed call reads the same as being refused. Cached, it reported
+    "cannot see the projects" on every command until the token changed."""
+    settings = config(tmp_path)
+    monkeypatch.setattr(auth, "fingerprint", lambda: "same")
+    auth.save(settings, Capability(account="octo", scopes=("repo", "project"),
+                                   can_see_repo=True, can_see_project=False))
+    assert auth.cached(settings) is None
