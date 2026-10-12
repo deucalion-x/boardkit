@@ -3,6 +3,26 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.1 — 2026-10-12
+
+### Epics and work only a person can do
+- The `board` skill keeps "what next" on startable work: an item with open
+  children is a container, so its startable children are proposed instead,
+  and an item labelled `human` is skipped when an agent picks its own work
+  but listed when a person asks. "Where does the roadmap stand" is answered
+  from the parents and their children's status.
+- `board json` carries each item's `parent`, so both rules are one pass over
+  it rather than a `board item` per row.
+
+### Fixes
+- `board reopen` takes the item out of the closing column. The Project's
+  automation moves a closed issue to `Done` and nothing moved it back, so a
+  reopened issue sat there while open. It now goes to the column after
+  intake (`Todo` on the starter board), read from config or from the board.
+- A failed visibility probe is asked again instead of cached. One failed call
+  read as being refused and reported "cannot see the projects" on every
+  command until the token changed.
+
 ## 0.3.0 — 2026-10-12
 
 ### Lighter writes

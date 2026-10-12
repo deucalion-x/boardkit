@@ -149,3 +149,15 @@ def test_a_reopened_item_elsewhere_on_the_board_stays_put(world, monkeypatch):
     config, store, pushed = reopening(world, monkeypatch, "In Review")
     issue.reopen(config, store, "7")
     assert pushed == []
+
+
+def test_a_board_config_never_described_still_has_its_columns_read(world, monkeypatch):
+    """A board made in the browser has no `status_order` in config; its own
+    column order is in the snapshot."""
+    from boardkit.config import ProjectField
+    config, store, pushed = reopening(world, monkeypatch, "Done")
+    config = config.model_copy(update={"status_order": ()})
+    store.save_state(store.state().model_copy(update={"fields": (
+        ProjectField(name="status", options=("Backlog", "Ready", "Done")),)}))
+    issue.reopen(config, store, "7")
+    assert [(w.field, w.value) for w in pushed[0]] == [("status", "Ready")]

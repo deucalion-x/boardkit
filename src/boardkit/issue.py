@@ -143,11 +143,15 @@ def unfinish(config: Config, store: Store, ref: str) -> int:
     finished on the board, open in the repository. It goes to the column after
     intake: it was refined once already, so it is ready rather than an idea.
     A board with fewer than two columns, or an item not in the last one, is
-    left where it is.
+    left where it is. The columns are config's, or the board's own order.
     """
     from . import sync
-    columns = config.status_order
-    item = store.state().item(ref)
+    snapshot = store.state()
+    # Config's order when it states one; otherwise the board's own, which a
+    # board made in the browser is the only record of.
+    field = snapshot.field(config.status_field)
+    columns = config.status_order or (field.options if field else ())
+    item = snapshot.item(ref)
     if len(columns) < 2 or item is None or item.field(config.status_field) != columns[-1]:
         return 0
     store.queue(ref, config.status_field, columns[1])
