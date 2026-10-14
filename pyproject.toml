@@ -50,6 +50,12 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+# uv rebuilds the editable install only when these change. Without the git
+# keys it never notices a new commit or tag, so `board --version` in this
+# checkout kept reporting whatever version the last rebuild happened to see.
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/boardkit"]
 
