@@ -22,11 +22,18 @@ status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
 name = "Current"
 layout = "BOARD"
 fields = ["status", "area", "effort"]
+filter = "-type:Initiative"
 
 [[board.views]]
 name = "All"
 layout = "TABLE"
 fields = ["status", "area", "effort"]
+
+[[board.views]]
+name = "Roadmap"
+layout = "TABLE"
+fields = ["status", "sub-issues progress", "milestone"]
+filter = "type:Initiative"
 
 # Any other field. One table per field, named as you will type it.
 # [board.fields.area]
