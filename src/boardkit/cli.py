@@ -18,7 +18,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board edit <ref> [--title t] [--body b]
   board set <ref> labels|assignees "a, b"   or parent <n> (sub-issue)
                              or milestone "<title>" (its phase; "" removes)
-                             or type <name> (Initiative, Coordination, Task...)
+                             or type <name> (Initiative, Feature, Task, Bug)
   board set <n> <field> <v>  change a field; pushed now, queued if it cannot be
                              --later: queue without trying
                              --anyway: move a draft out of the intake column
@@ -43,6 +43,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
   board install-skill        write the agent skills for Claude Code and Codex
+  board --version            which boardkit is installed
 """
 from __future__ import annotations
 
@@ -100,6 +101,11 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # Help needs no configuration, so it works outside a configured repo.
     if command in HELP:
         return usage(0)
+    # Likewise the version, which is how a person checks what a tag installed.
+    if command in ("--version", "version"):
+        from . import __version__
+        print(f"boardkit {__version__}")
+        return 0
     # A verb asked for help must not run: `install-skill --help` used to write
     # the skills. The value after `--body` is text, so it is not a flag.
     flags = [a for i, a in enumerate(args) if i == 0 or args[i - 1] != "--body"]

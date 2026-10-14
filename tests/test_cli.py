@@ -58,6 +58,14 @@ def test_help_exits_clean(repo):
     assert cli.main(["--help"]) == 0
 
 
+def test_version_needs_no_configuration(tmp_path, monkeypatch, capsys):
+    """Checking what a tag installed should not depend on where you stand."""
+    from boardkit import __version__
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["--version"]) == 0
+    assert capsys.readouterr().out == f"boardkit {__version__}\n"
+
+
 @pytest.mark.parametrize("argv", [["install-skill", "--help"], ["admin", "apply", "-h"],
                                   ["sync", "--help"]])
 def test_a_verb_asked_for_help_prints_it_rather_than_running(repo, monkeypatch, capsys, argv):

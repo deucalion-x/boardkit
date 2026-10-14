@@ -71,7 +71,7 @@ class ProjectItem(BaseModel):
     on_board: bool = True
     assignees: tuple[str, ...] = ()
     milestone: str = ""
-    # The issue's type as the organisation names it — Initiative, Coordination,
+    # The issue's type as the organisation names it — Initiative, Feature,
     # Task, Bug — or "" where none is set. Not `type`, which is the board's
     # kind of item: issue, pull request or draft.
     issue_type: str = ""
