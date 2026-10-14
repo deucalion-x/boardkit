@@ -182,13 +182,15 @@ def test_init_shows_how_to_declare_a_board_to_create(tmp_path, monkeypatch):
     import tomllib
     board = tomllib.loads(text)["board"]
     assert board["status_order"][:2] == ["Inbox", "Todo"]
-    assert [v["name"] for v in board["views"]] == ["Current", "All", "Roadmap"]
-    # The work without the roadmap pieces; everything; the roadmap pieces alone.
-    assert board["views"][0]["layout"] == "BOARD"
-    assert board["views"][0]["filter"] == "-type:Initiative"
-    assert board["views"][1]["layout"] == "TABLE"
-    assert "filter" not in board["views"][1]
-    assert board["views"][2]["filter"] == "type:Initiative"
+    # The views are the work preset's, named rather than restated.
+    assert board["preset"] == "work"
+    assert "views" not in board
+    (tmp_path / "boardkit.toml").write_text(text, encoding="utf-8")
+    from boardkit.config import load
+    views = load(tmp_path).views
+    # The work without the roadmap pieces; everything.
+    assert [(v.name, v.layout, v.filter) for v in views] == [
+        ("Current", "BOARD", "-type:Initiative"), ("All", "TABLE", "")]
 
 
 def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
@@ -229,7 +231,7 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     assert load(packaged).repo == "octo/places"
     assert load(packaged).status_order == (
         "Inbox", "Todo", "In Progress", "In Review", "Done")
-    assert [v.name for v in load(packaged).views] == ["Current", "All", "Roadmap"]
+    assert [v.name for v in load(packaged).views] == ["Current", "All"]
 
 
 def test_an_organisations_repo_starts_an_organisations_board(tmp_path, monkeypatch):

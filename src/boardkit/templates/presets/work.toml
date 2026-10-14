@@ -1,0 +1,38 @@
+# The work preset: doing the work in the repository. Every board needs it,
+# and the other presets build on it. The columns say how far along an item is; a `blocked` text
+# field is created beside them, because being blocked is not a stage. Current
+# is the work, as a board, without the Initiatives, which are roadmap pieces
+# whose sub-issues are the work; All is everything, as rows, nothing hidden.
+# A board whose organisation has no Initiative type loses nothing: the filter
+# then hides nothing.
+#
+# A repository takes it with `preset = "work"` under [board], which is what
+# `board init` writes. Its own [board] section still wins: a column order, a
+# field or a view it declares replaces the preset's by name, and anything else
+# it declares is added.
+
+# What GitHub's API cannot set, so `board admin apply` ends by telling the
+# person to do it in the browser, with a link to each place. `board admin
+# checklist` prints it again. `view` names a saved tab; `page` a project page.
+# A preset built on this one adds its own steps after these.
+[[checklist]]
+page = "workflows"
+do = "turn on \"Auto-close issue\", so an item set to Done closes its issue."
+
+[[checklist]]
+page = "workflows"
+do = "turn on \"Auto-archive items\" with the filter is:closed reason:\"not planned\", so dropped work leaves the board."
+
+[board]
+status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
+
+[[board.views]]
+name = "Current"
+layout = "BOARD"
+fields = ["status"]
+filter = "-type:Initiative"
+
+[[board.views]]
+name = "All"
+layout = "TABLE"
+fields = ["status"]

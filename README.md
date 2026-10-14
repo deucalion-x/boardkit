@@ -180,41 +180,33 @@ items in them would go too. Preview it with `-n` first; GitHub has no undo.
 
 ### Presets
 
-A preset is a board shape boardkit ships, for a repo to start from instead of
-writing it out. `board init --preset pm` writes a config naming it, in
-place of the starter template's views; on a board that already exists,
-`board admin apply --preset pm` adds whatever of it is missing and
-changes nothing else.
+A preset is a board shape boardkit ships, so a repo names it rather than
+writing it out. Presets stack: each one adds to the one it builds on.
+
+| Preset | For | Adds |
+|---|---|---|
+| `work` | Doing the work in the repository. What `board init` writes. | Columns Inbox, Todo, In Progress, In Review, Done; the `blocked` field; **Current** (BOARD, `-type:Initiative`: the work) and **All** (TABLE, unfiltered) |
+| `pm` | Planning that work and reporting on it. Builds on `work`. | `start` and `target` (DATE); **Roadmap** (TABLE, `type:Initiative`, with sub-issues progress and milestone); **Timeline** (ROADMAP, `has:parent-issue`: the work along time); **Initiatives** (ROADMAP, `type:Initiative`: the roadmap along time) |
 
 ```toml
 [board]
-preset = "pm"
+preset = "pm"     # work, then pm on top
 ```
 
-`pm` is a project-management board: the work by column, the Initiatives it
-serves with their progress, both along time, and what is blocked. `roadmap`,
-its first name, still works.
-
-| | |
-|---|---|
-| Columns | Inbox, Todo, In Progress, In Review, Done |
-| Fields | `start` and `target` (DATE), beside `blocked` |
-| Current | BOARD, `-type:Initiative`: the work |
-| All | TABLE, unfiltered |
-| Roadmap | TABLE, `type:Initiative`, with sub-issues progress and milestone |
-| Timeline | ROADMAP, `has:parent-issue`: the work along time |
-| Initiatives | ROADMAP, `type:Initiative`: the roadmap along time |
+`board init --preset pm` writes that line; plain `board init` writes `work`.
+On a board that already exists, `board admin apply --preset pm` adds whatever
+is missing and changes nothing else. `roadmap`, pm's first name, still works.
 
 The repo's own `[board]` section wins: a column order, field or view it
 declares replaces the preset's by name, and anything else it declares is
-added. `board report` reads the same `start` and `target` fields.
+added. `board report` reads pm's `start` and `target` fields.
 
 GitHub's API cannot set a view's grouping, sort or date fields, nor a
-Project's workflows, so after applying, boardkit prints what to set in the
-browser — group Timeline by Parent issue and sort it by Start, draw both
-roadmap views from Start to Target, close an issue when its item reaches Done,
-and auto-archive work closed as not planned. `board admin checklist` prints
-it again.
+Project's workflows. So `board init` and `board admin apply` end with numbered
+steps to do in the browser, each with a link: for `work`, close an issue when
+its item reaches Done and auto-archive work closed as not planned; `pm` adds
+grouping Timeline by Parent issue, sorting it by Start, and drawing both
+time views from Start to Target. `board admin checklist` prints them again.
 
 `board schema` prints the full shape as JSON Schema — every setting, its type
 and its default — so an agent can fill it in rather than guess.

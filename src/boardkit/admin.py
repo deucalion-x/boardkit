@@ -19,7 +19,8 @@ import datetime
 from dataclasses import dataclass
 
 from . import auth, credential
-from .config import CREATABLE, Config, ProjectField, preset_file
+from .config import CREATABLE, Config, ProjectField
+from .config import checklist as preset_steps
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .sync import BUILT_IN, fetch_fields, find_project, key, parse_fields
 from .trail import note
@@ -400,7 +401,7 @@ def checklist(config: Config, number: str = "") -> int:
         print("This board names no preset, so there is nothing boardkit knows "
               "to be left for the browser.")
         return 0
-    steps = preset_file(config.preset).get("checklist", [])
+    steps = preset_steps(config.preset)
     if not steps:
         return 0
     number = number or config.project
@@ -413,8 +414,7 @@ def checklist(config: Config, number: str = "") -> int:
             views = existing_views(config, number)
         except (BoardError, KeyError, TypeError):
             views = {}  # Links to the views are a help; the steps stand without them.
-    print(f"Finish the {config.preset} board in the browser; GitHub's API cannot "
-          f"set these:")
+    print("Finish the board in the browser; GitHub's API cannot set these:")
     for index, step in enumerate(steps, 1):
         if "view" in step:
             what = f"{step['view']} view"

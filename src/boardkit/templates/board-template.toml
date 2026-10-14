@@ -14,28 +14,13 @@ project_name = "$project_name"
 # being blocked is not a stage, so it is a field holding what is in the way.
 status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
 
-# Current is the work, as a board: every item but the Initiatives, which are
-# roadmap pieces whose sub-issues are the work. All is everything, as rows,
-# with nothing hidden. Roadmap is the Initiatives alone, with their progress
-# and phase. A board whose organisation has no Initiative type loses nothing:
-# the filters then hide nothing and show nothing. Grouping (by parent issue,
-# by milestone) is set in the browser; GitHub's API cannot.
-[[board.views]]
-name = "Current"
-layout = "BOARD"
-fields = ["status"]
-filter = "-type:Initiative"
-
-[[board.views]]
-name = "All"
-layout = "TABLE"
-fields = ["status"]
-
-[[board.views]]
-name = "Roadmap"
-layout = "TABLE"
-fields = ["status", "sub-issues progress", "milestone"]
-filter = "type:Initiative"
+# The views come from a preset, a board shape
+# boardkit ships. `work` is doing the work in the repository: Current (the
+# work, as a board) and All (every item, as rows). `pm` adds planning and
+# reporting on it: the Initiatives as a roadmap, and the work along time with
+# Start and Target dates. Anything declared in this section wins
+# over the preset by name, or adds to it.
+preset = "$preset"
 
 # Any other field. One table per field, named as you will type it.
 # A workstream is the topic an item serves, which is what work is grouped and

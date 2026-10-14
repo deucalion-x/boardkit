@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
-import tomllib
 
 import pytest
 
-from boardkit.config import CREATABLE, Config
+from boardkit.config import CREATABLE, Config, load
 
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "contract.py"
 
@@ -35,8 +34,7 @@ def declared(contract, tmp_path) -> Config:
     source = tmp_path / "boardkit.toml"
     source.write_text(contract.declaration("octo", "octo/widgets", "a board"),
                       encoding="utf-8")
-    table = tomllib.loads(source.read_text(encoding="utf-8"))
-    return Config(root=tmp_path, source=source, **table)
+    return load(tmp_path)
 
 
 def test_the_declaration_is_valid_configuration(declared):
@@ -46,7 +44,6 @@ def test_the_declaration_is_valid_configuration(declared):
     assert [(view.name, view.layout, view.filter) for view in declared.views] == [
         ("Current", "BOARD", "-type:Initiative"),
         ("All", "TABLE", ""),
-        ("Roadmap", "TABLE", "type:Initiative"),
     ]
 
 

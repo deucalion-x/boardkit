@@ -1,18 +1,17 @@
-# The pm preset: a project-management board. The work, by column; the
-# Initiatives it serves, as a roadmap with progress; both along time, from
-# Start to Target; and what is blocked. A repository takes it with
+# The pm preset: planning the work and reporting on it, on top of work. The
+# Initiatives the work serves, as a roadmap with progress; the work and the
+# roadmap along time, from Start to Target, which `board report` reads. On its
+# own it is a whole project-management board, since it brings work with it. A repository takes it with
 #
 #     [board]
 #     preset = "pm"
 #
-# and its own [board] section still wins: a column order, a field or a view it
-# declares replaces the preset's by name, and anything else it declares is
-# added. The shape comes from the first project that used it, which tracked a
-# series of workshops as Initiatives.
+# and its own [board] section still wins: a field or a view it declares
+# replaces the preset's by name, and anything else it declares is added.
+extends = "work"
 
-# What GitHub's API cannot set, so `board admin apply` ends by telling the
-# person to do it in the browser, with a link to each place. `board admin
-# checklist` prints it again. `view` names a saved tab; `page` a project page.
+# What GitHub's API cannot set, after work's own steps. `view` names a saved
+# tab; `page` a project page.
 [[checklist]]
 view = "Timeline"
 do = "group by Parent issue, sort by Start, and in its date settings draw Start → Target."
@@ -21,31 +20,7 @@ do = "group by Parent issue, sort by Start, and in its date settings draw Start 
 view = "Initiatives"
 do = "in its date settings draw Start → Target."
 
-[[checklist]]
-page = "workflows"
-do = "turn on \"Auto-close issue\", so an item set to Done closes its issue."
-
-[[checklist]]
-page = "workflows"
-do = "turn on \"Auto-archive items\" with the filter is:closed reason:\"not planned\", so dropped work leaves the board."
-
 [board]
-status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]
-
-# Current is the work, as a board: every item but the Initiatives, which are
-# roadmap pieces whose sub-issues are the work.
-[[board.views]]
-name = "Current"
-layout = "BOARD"
-fields = ["status"]
-filter = "-type:Initiative"
-
-# Everything, as rows, with nothing hidden.
-[[board.views]]
-name = "All"
-layout = "TABLE"
-fields = ["status"]
-
 # The Initiatives alone, with their progress and phase.
 [[board.views]]
 name = "Roadmap"

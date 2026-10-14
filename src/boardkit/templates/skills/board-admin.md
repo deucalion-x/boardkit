@@ -58,11 +58,15 @@ board sync                            # pull the new shape into the snapshot
 
 ## Starting from a preset
 
-A preset is a board shape boardkit ships. `pm` is the columns above;
-`start` and `target` dates; and the views Current (the work, as a board), All,
-Roadmap (the Initiatives, with progress and milestone), Timeline (the work
-along time, by parent) and Initiatives (the roadmap along time). Name it under
-`[board]`:
+A preset is a board shape boardkit ships, and presets stack:
+
+- `work` is doing the work in the repository: the columns above, `blocked`,
+  Current (the work, as a board) and All. `board init` writes it.
+- `pm` builds on `work` with planning and reporting: `start` and `target`
+  dates, Roadmap (the Initiatives, with progress and milestone), Timeline (the
+  work along time, by parent) and Initiatives (the roadmap along time).
+
+Name one under `[board]`:
 
 ```toml
 [board]

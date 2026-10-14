@@ -55,6 +55,30 @@ def test_a_preset_given_for_one_run_applies_without_the_file_naming_it(tmp_path)
     assert found.preset == "pm" and len(found.views) == 5
 
 
+def test_pm_is_work_with_the_management_views_on_top(tmp_path):
+    work = loaded(tmp_path, '[board]\npreset = "work"\n')
+    assert [v.name for v in work.views] == ["Current", "All"]
+    assert work.fields == ()
+    assert work.status_order[0] == "Inbox"
+    pm = loaded(tmp_path, '[board]\npreset = "pm"\n')
+    assert [v.name for v in pm.views][:2] == ["Current", "All"]
+    assert pm.status_order == work.status_order
+
+
+def test_work_alone_leaves_only_the_workflows_to_the_browser(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    admin.checklist(loaded(tmp_path, '[board]\npreset = "work"\n'))
+    out = capsys.readouterr().out
+    assert "Auto-close issue" in out and "Timeline" not in out
+
+
+def test_a_preset_that_extends_itself_is_refused(tmp_path, monkeypatch):
+    (tmp_path / "loop.toml").write_text('extends = "loop"\n', encoding="utf-8")
+    monkeypatch.setattr(config, "PRESETS", tmp_path)
+    with pytest.raises(BoardError, match="extends itself"):
+        config.layers("loop")
+
+
 def test_roadmap_is_still_accepted_as_the_pm_preset(tmp_path):
     found = loaded(tmp_path, '[board]\npreset = "roadmap"\n')
     assert found.preset == "pm" and len(found.views) == 5
@@ -65,7 +89,7 @@ def test_a_top_level_preset_is_lifted_like_any_board_setting(tmp_path):
 
 
 def test_an_unknown_preset_names_the_ones_that_exist(tmp_path):
-    with pytest.raises(BoardError, match="has pm"):
+    with pytest.raises(BoardError, match="has pm, work"):
         loaded(tmp_path, '[board]\npreset = "kanban"\n')
 
 
@@ -98,8 +122,10 @@ def test_the_checklist_links_each_step_to_where_it_is_done(tmp_path, monkeypatch
     admin.checklist(found)
     out = capsys.readouterr().out
     base = "https://github.com/users/octo/projects/4"
-    assert out.startswith("Finish the pm board in the browser")
-    assert "1. Timeline view: group by Parent issue, sort by Start" in out
+    assert out.startswith("Finish the board in the browser")
+    # Base's steps first, then the ones pm adds.
+    assert "1. Workflows: turn on \"Auto-close issue\"" in out
+    assert "3. Timeline view: group by Parent issue, sort by Start" in out
     assert f"{base}/views/4" in out and f"{base}/views/5" in out
     assert f"{base}/workflows" in out
     for said in ("Auto-close issue", 'is:closed reason:"not planned"'):

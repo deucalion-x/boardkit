@@ -52,26 +52,6 @@ def board_exists(settings: dict) -> bool:
                for entry in listed.get("projects", []))
 
 
-def with_preset_line(text: str, preset: str) -> str:
-    """The starter config with its views replaced by a preset that has them.
-
-    The starter's views are a subset of any preset's, and stating both would
-    leave a reader to work out which one wins. So the paragraphs declaring or
-    explaining views go, and one line naming the preset takes their place.
-    """
-    preset_file(preset)  # an unknown name is refused before anything is written
-    kept = [part for part in text.split("\n\n")
-            if "[[board.views]]" not in part and "# Current is the work" not in part]
-    text = "\n\n".join(kept)
-    line = (f"\n\n# The columns, fields and views of boardkit's {preset} preset; "
-            f"anything\n# declared here wins over it by name, or adds to it.\n"
-            f'preset = "{preset}"')
-    marker = "status_order = "
-    at = text.index(marker)
-    end = text.index("\n", at)
-    return text[:end] + line + text[end:]
-
-
 def rendered(settings: dict, exists: bool = True, nested: bool = False,
              preset: str = "") -> str:
     """The starter config for this repo.
@@ -84,11 +64,11 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
     reads, which is a silent way to lose the whole section.
     """
     import string
-    settings = {"owner_type": "user", **settings}
+    # Refused before anything is written, rather than by the first load.
+    preset_file(preset or "work")
+    settings = {"owner_type": "user", **settings, "preset": preset or "work"}
     text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
         **{key: str(value) for key, value in settings.items()})
-    if preset:
-        text = with_preset_line(text, preset)
     if nested:
         text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
         text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")

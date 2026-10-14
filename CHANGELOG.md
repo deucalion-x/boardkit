@@ -3,6 +3,20 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.12 — 2026-10-14
+
+### Changes
+- Presets stack. `work` is doing the work in the repository: the columns,
+  `blocked`, Current and All. `pm` builds on it (`extends = "work"`) with
+  planning and reporting: Start and Target dates, Roadmap, Timeline and
+  Initiatives. `board init` now writes `preset = "work"` instead of spelling
+  the views out, so the default shape lives in one place.
+- The Roadmap view moves from the starter template into `pm`. A board that
+  already has it keeps it: apply never deletes.
+- The workflow steps (close an issue at Done, auto-archive dropped work) are
+  `work`'s browser checklist, so every board is told about them; `pm` adds its
+  view steps after them.
+
 ## 0.3.11 — 2026-10-14
 
 ### Changes

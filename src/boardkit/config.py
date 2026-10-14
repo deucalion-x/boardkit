@@ -423,6 +423,30 @@ def preset_file(name: str) -> dict:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
+def layers(name: str) -> list[dict]:
+    """A preset and the ones it extends, the one it builds on first.
+
+    Composition is by `extends`: `pm` names `work`, so a board taking `pm`
+    gets work's columns and views and then pm's own on top.
+    """
+    chain: list[dict] = []
+    seen: set[str] = set()
+    while name:
+        name = PRESET_ALIASES.get(name, name)
+        if name in seen:
+            raise BoardError(f"preset {name!r} extends itself")
+        seen.add(name)
+        found = preset_file(name)
+        chain.insert(0, found)
+        name = found.get("extends", "")
+    return chain
+
+
+def checklist(name: str) -> list[dict]:
+    """What the preset and every one under it leave to the browser, in order."""
+    return [step for layer in layers(name) for step in layer.get("checklist", [])]
+
+
 def named_entries(value) -> list[dict]:
     """Fields or views in any of the forms config accepts, as entries with a
     name, so a preset's and a repo's can be matched by it."""
@@ -446,14 +470,22 @@ def over(base: list[dict], own: list[dict]) -> list[dict]:
 
 
 def with_preset(table: dict, name: str) -> dict:
-    """`table` with the named preset's board shape under it.
+    """`table` with the named preset's board shape under it, the presets it
+    extends included.
 
     Every setting the repo states wins. Fields and views merge by name; any
     other setting, such as the column order, is the preset's only where the
     repo says nothing. Settings stay wherever the repo wrote them — at the top
     level or under [board] — so lifting [board] never finds one twice.
     """
-    shape = preset_file(name).get("board", {})
+    shape: dict = {}
+    for layer in layers(name):
+        for setting, given in layer.get("board", {}).items():
+            if setting in ("fields", "views"):
+                shape[setting] = over(named_entries(shape.get(setting)),
+                                      named_entries(given))
+            else:
+                shape[setting] = given
     table = dict(table)
     board = dict(table.get("board") or {})
     for setting, given in shape.items():
