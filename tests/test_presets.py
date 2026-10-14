@@ -14,9 +14,9 @@ def loaded(tmp_path, text, **kwargs):
     return config.load(tmp_path, **kwargs)
 
 
-def test_the_roadmap_preset_declares_the_columns_dates_and_five_views(tmp_path):
-    found = loaded(tmp_path, '[board]\npreset = "roadmap"\n')
-    assert found.preset == "roadmap"
+def test_the_pm_preset_declares_the_columns_dates_and_five_views(tmp_path):
+    found = loaded(tmp_path, '[board]\npreset = "pm"\n')
+    assert found.preset == "pm"
     assert found.status_order == ("Inbox", "Todo", "In Progress", "In Review", "Done")
     assert [(f.name, f.data_type) for f in found.fields] == [
         ("start", "DATE"), ("target", "DATE")]
@@ -33,7 +33,7 @@ def test_the_roadmap_preset_declares_the_columns_dates_and_five_views(tmp_path):
 def test_the_repo_wins_by_name_and_adds_to_the_preset(tmp_path):
     found = loaded(tmp_path, (
         'status_order = ["Backlog", "Doing", "Done"]\n'
-        '[board]\npreset = "roadmap"\n'
+        '[board]\npreset = "pm"\n'
         '[[board.views]]\nname = "Current"\nlayout = "TABLE"\n'
         '[[board.views]]\nname = "Mine"\nfilter = "assignee:@me"\n'
         '[board.fields.area]\noptions = ["Core", "UI"]\n'))
@@ -46,38 +46,43 @@ def test_the_repo_wins_by_name_and_adds_to_the_preset(tmp_path):
 
 
 def test_naming_a_preset_field_only_keeps_its_definition(tmp_path):
-    found = loaded(tmp_path, '[board]\npreset = "roadmap"\nfields = ["target"]\n')
+    found = loaded(tmp_path, '[board]\npreset = "pm"\nfields = ["target"]\n')
     assert found.field("target").data_type == "DATE"
 
 
 def test_a_preset_given_for_one_run_applies_without_the_file_naming_it(tmp_path):
-    found = loaded(tmp_path, "", preset="roadmap")
-    assert found.preset == "roadmap" and len(found.views) == 5
+    found = loaded(tmp_path, "", preset="pm")
+    assert found.preset == "pm" and len(found.views) == 5
+
+
+def test_roadmap_is_still_accepted_as_the_pm_preset(tmp_path):
+    found = loaded(tmp_path, '[board]\npreset = "roadmap"\n')
+    assert found.preset == "pm" and len(found.views) == 5
 
 
 def test_a_top_level_preset_is_lifted_like_any_board_setting(tmp_path):
-    assert loaded(tmp_path, 'preset = "roadmap"\n').preset == "roadmap"
+    assert loaded(tmp_path, 'preset = "pm"\n').preset == "pm"
 
 
 def test_an_unknown_preset_names_the_ones_that_exist(tmp_path):
-    with pytest.raises(BoardError, match="roadmap"):
+    with pytest.raises(BoardError, match="has pm"):
         loaded(tmp_path, '[board]\npreset = "kanban"\n')
 
 
 def test_init_with_a_preset_names_it_instead_of_the_starter_views():
     text = setup.rendered({"owner": "o", "repo": "o/r", "project_name": "r"},
-                          exists=False, preset="roadmap")
+                          exists=False, preset="pm")
     parsed = tomllib.loads(text)
-    assert parsed["board"]["preset"] == "roadmap"
+    assert parsed["board"]["preset"] == "pm"
     assert "views" not in parsed["board"]
     assert parsed["board"]["status_order"][0] == "Inbox"
 
 
 def test_init_with_a_preset_nests_it_in_pyproject():
     text = setup.rendered({"owner": "o", "repo": "o/r", "project_name": "r"},
-                          nested=True, preset="roadmap")
+                          nested=True, preset="pm")
     parsed = tomllib.loads(text)
-    assert parsed["tool"]["boardkit"]["board"]["preset"] == "roadmap"
+    assert parsed["tool"]["boardkit"]["board"]["preset"] == "pm"
 
 
 def test_init_refuses_an_unknown_preset_before_writing():
@@ -89,11 +94,11 @@ def test_the_checklist_links_each_step_to_where_it_is_done(tmp_path, monkeypatch
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {
         "Timeline": admin.ExistingView("V4", number=4),
         "Initiatives": admin.ExistingView("V5", number=5)})
-    found = loaded(tmp_path, '[board]\npreset = "roadmap"\n')
+    found = loaded(tmp_path, '[board]\npreset = "pm"\n')
     admin.checklist(found)
     out = capsys.readouterr().out
     base = "https://github.com/users/octo/projects/4"
-    assert out.startswith("Finish the roadmap board in the browser")
+    assert out.startswith("Finish the pm board in the browser")
     assert "1. Timeline view: group by Parent issue, sort by Start" in out
     assert f"{base}/views/4" in out and f"{base}/views/5" in out
     assert f"{base}/workflows" in out
@@ -106,7 +111,7 @@ def test_the_checklist_stands_without_links_when_views_cannot_be_read(
     def refuse(config, number):
         raise BoardError("offline")
     monkeypatch.setattr(admin, "existing_views", refuse)
-    admin.checklist(loaded(tmp_path, '[board]\npreset = "roadmap"\n'))
+    admin.checklist(loaded(tmp_path, '[board]\npreset = "pm"\n'))
     out = capsys.readouterr().out
     assert "Timeline view:" in out and "/views/" not in out
 
@@ -118,7 +123,7 @@ def test_the_checklist_without_a_preset_says_so(tmp_path, capsys):
 
 def test_admin_checklist_is_a_verb(tmp_path, monkeypatch, capsys):
     (tmp_path / "boardkit.toml").write_text(
-        IDENTITY + '[board]\npreset = "roadmap"\n', encoding="utf-8")
+        IDENTITY + '[board]\npreset = "pm"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
     assert cli.main(["admin", "checklist"]) == 0
@@ -126,8 +131,8 @@ def test_admin_checklist_is_a_verb(tmp_path, monkeypatch, capsys):
 
 
 def test_the_preset_flag_takes_its_value_out_of_the_arguments():
-    assert cli.option(["apply", "--preset", "roadmap", "-n"], "--preset") == (
-        "roadmap", ["apply", "-n"])
+    assert cli.option(["apply", "--preset", "pm", "-n"], "--preset") == (
+        "pm", ["apply", "-n"])
     assert cli.option(["apply"], "--preset") == ("", ["apply"])
     with pytest.raises(BoardError):
         cli.option(["apply", "--preset"], "--preset")

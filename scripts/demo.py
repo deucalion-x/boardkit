@@ -1,7 +1,7 @@
 """Stock a board with a small, believable roadmap, to look at rather than test.
 
 The contract run proves the API calls; its board ends up with one draft card,
-which shows nothing of what the roadmap preset is for. This fills a board with
+which shows nothing of what the pm preset is for. This fills a board with
 a project as a person would run it: a root Initiative over four phases, each
 with its tasks, dated around today so Timeline and Initiatives always show
 something past, something current and something ahead, and so `board report`
@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     where = pathlib.Path(tempfile.mkdtemp(prefix="boardkit-demo-"))
     (where / "boardkit.toml").write_text(
         f'owner = "{args.owner}"\nowner_type = "org"\nrepo = "{args.repo}"\n'
-        f'project = "{args.project}"\n\n[board]\npreset = "roadmap"\n',
+        f'project = "{args.project}"\n\n[board]\npreset = "pm"\n',
         encoding="utf-8")
     board(where, "admin", "link")
     board(where, "sync")

@@ -1,8 +1,9 @@
-# The roadmap preset: the work on a board, the Initiatives it serves as a
-# roadmap, and both along time. A repository takes it with
+# The pm preset: a project-management board. The work, by column; the
+# Initiatives it serves, as a roadmap with progress; both along time, from
+# Start to Target; and what is blocked. A repository takes it with
 #
 #     [board]
-#     preset = "roadmap"
+#     preset = "pm"
 #
 # and its own [board] section still wins: a column order, a field or a view it
 # declares replaces the preset's by name, and anything else it declares is

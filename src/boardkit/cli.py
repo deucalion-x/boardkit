@@ -36,11 +36,11 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login instead of
                              this repo's credential; approved and logged
-  board init [-n] [--preset roadmap] [title]
+  board init [-n] [--preset pm] [title]
                              write the three settings a repo must decide;
                              --preset starts the board from a shipped shape
   board schema               the configuration's shape, as JSON schema
-  board admin apply [-n] [--reconcile] [--prune-views] [--preset roadmap]
+  board admin apply [-n] [--reconcile] [--prune-views] [--preset pm]
                              add missing shape; optionally update view filters
   board admin checklist      what the preset leaves to set in the browser
   board admin link           attach the project to the repository

@@ -45,6 +45,9 @@ BOARD_SETTINGS = ("fields", "views", "status_order", "status_descriptions",
 # repo's own settings are merged over it, so a preset is where a board starts
 # rather than a cage.
 PRESETS = pathlib.Path(__file__).with_name("templates") / "presets"
+# Earlier names for a preset, still accepted. `pm` was first called `roadmap`,
+# which named one of its views rather than what the board is for.
+PRESET_ALIASES = {"roadmap": "pm"}
 # What the generated skills are called, in every repo: an agent should find
 # the same names wherever it is working. The admin one takes a suffix.
 SKILL_NAME = "board"
@@ -413,7 +416,7 @@ def presets() -> tuple[str, ...]:
 
 def preset_file(name: str) -> dict:
     """A preset as written: its `[board]` table and its browser checklist."""
-    path = PRESETS / f"{name}.toml"
+    path = PRESETS / f"{PRESET_ALIASES.get(name, name)}.toml"
     if not name or not path.is_file():
         raise BoardError(f"no preset {name!r}; boardkit has "
                          f"{', '.join(presets()) or 'none'}")
@@ -459,7 +462,7 @@ def with_preset(table: dict, name: str) -> dict:
             home[setting] = over(named_entries(given), named_entries(home.get(setting)))
         elif setting not in home:
             home[setting] = given
-    board["preset"] = name
+    board["preset"] = PRESET_ALIASES.get(name, name)
     table.pop("preset", None)
     table["board"] = board
     return table

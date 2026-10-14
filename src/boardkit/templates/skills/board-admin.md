@@ -58,7 +58,7 @@ board sync                            # pull the new shape into the snapshot
 
 ## Starting from a preset
 
-A preset is a board shape boardkit ships. `roadmap` is the columns above;
+A preset is a board shape boardkit ships. `pm` is the columns above;
 `start` and `target` dates; and the views Current (the work, as a board), All,
 Roadmap (the Initiatives, with progress and milestone), Timeline (the work
 along time, by parent) and Initiatives (the roadmap along time). Name it under
@@ -66,12 +66,12 @@ along time, by parent) and Initiatives (the roadmap along time). Name it under
 
 ```toml
 [board]
-preset = "roadmap"
+preset = "pm"
 ```
 
 Anything the repo declares beside it wins by name — a view called `Current`
 replaces the preset's — and anything else it declares is added. `board admin
-apply --preset roadmap` applies a preset to an existing board for one run,
+apply --preset pm` applies a preset to an existing board for one run,
 adding only what is missing; add the line to keep it.
 
 A preset needs a few settings the API cannot make: a view's grouping, sort and

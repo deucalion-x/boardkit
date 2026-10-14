@@ -47,7 +47,7 @@ unless it says otherwise.
    and fine-grained tokens no access to a personal account's board. A free
    organisation is enough.
 2. **Configure the repository:** `board init` writes `owner`, `repo` and the
-   board's title. Add `--preset roadmap` for a board that tracks Initiatives
+   board's title. Add `--preset pm` for a board that tracks Initiatives
    along time; see [Presets](#presets).
 3. **Create the board**, if it does not exist yet: `board admin apply --as-me`.
    Creating a project is beyond any one repository, so it uses your own `gh`
@@ -181,17 +181,19 @@ items in them would go too. Preview it with `-n` first; GitHub has no undo.
 ### Presets
 
 A preset is a board shape boardkit ships, for a repo to start from instead of
-writing it out. `board init --preset roadmap` writes a config naming it, in
+writing it out. `board init --preset pm` writes a config naming it, in
 place of the starter template's views; on a board that already exists,
-`board admin apply --preset roadmap` adds whatever of it is missing and
+`board admin apply --preset pm` adds whatever of it is missing and
 changes nothing else.
 
 ```toml
 [board]
-preset = "roadmap"
+preset = "pm"
 ```
 
-`roadmap` is a board for work that serves a roadmap of Initiatives:
+`pm` is a project-management board: the work by column, the Initiatives it
+serves with their progress, both along time, and what is blocked. `roadmap`,
+its first name, still works.
 
 | | |
 |---|---|

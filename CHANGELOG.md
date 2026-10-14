@@ -3,6 +3,13 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.11 — 2026-10-14
+
+### Changes
+- The `roadmap` preset is now called `pm`: it is a project-management board,
+  of which the roadmap is one view. `preset = "roadmap"` and `--preset
+  roadmap` still work and mean `pm`.
+
 ## 0.3.10 — 2026-10-14
 
 ### Fixes

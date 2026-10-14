@@ -12,7 +12,7 @@ deletes, so nothing it does touches the real board.
     uv run python scripts/contract.py --no-issue  # drafts only, no repo residue
     uv run python scripts/contract.py --project 3  # reuse a standing board
     uv run python scripts/contract.py --seed 20     # stock it with dummy cards
-    uv run python scripts/contract.py --preset roadmap --keep --no-issue
+    uv run python scripts/contract.py --preset pm --keep --no-issue
                                                     # the template, then a preset over it
 
 It is deliberately not a pytest test. It needs a token that can create and
