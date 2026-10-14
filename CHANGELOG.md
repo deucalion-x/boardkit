@@ -3,6 +3,15 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.10 — 2026-10-14
+
+### Fixes
+- A preset's browser steps are the last thing `board init` and `board admin
+  apply` print, numbered, each with a link to the view or the workflows page
+  where it is done. `board init` printed them in the middle of its output,
+  before the sync and its closing lines. The board-admin skill now tells an
+  agent to hand the steps to the person word for word.
+
 ## 0.3.9 — 2026-10-14
 
 ### Fixes

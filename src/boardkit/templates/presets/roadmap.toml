@@ -9,14 +9,24 @@
 # added. The shape comes from the first project that used it, which tracked a
 # series of workshops as Initiatives.
 
-# What GitHub's API cannot set, so `board admin apply` says to do it in the
-# browser. `board admin checklist` prints it again.
-checklist = [
-    "Timeline view: group by Parent issue, sort by Start, and in its date settings draw Start → Target.",
-    "Initiatives view: in its date settings draw Start → Target.",
-    "Workflows: turn on \"Auto-close issue\", so an item set to Done closes its issue.",
-    "Workflows: turn on \"Auto-archive items\" with the filter is:closed reason:\"not planned\", so dropped work leaves the board.",
-]
+# What GitHub's API cannot set, so `board admin apply` ends by telling the
+# person to do it in the browser, with a link to each place. `board admin
+# checklist` prints it again. `view` names a saved tab; `page` a project page.
+[[checklist]]
+view = "Timeline"
+do = "group by Parent issue, sort by Start, and in its date settings draw Start → Target."
+
+[[checklist]]
+view = "Initiatives"
+do = "in its date settings draw Start → Target."
+
+[[checklist]]
+page = "workflows"
+do = "turn on \"Auto-close issue\", so an item set to Done closes its issue."
+
+[[checklist]]
+page = "workflows"
+do = "turn on \"Auto-archive items\" with the filter is:closed reason:\"not planned\", so dropped work leaves the board."
 
 [board]
 status_order = ["Inbox", "Todo", "In Progress", "In Review", "Done"]

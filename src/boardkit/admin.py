@@ -270,7 +270,7 @@ def apply_options(config: Config, number: str, field: ProjectField,
 
 
 def apply(config: Config, dry: bool = False, reconcile: bool = False,
-          prune: bool = False) -> int:
+          prune: bool = False, browser: bool = True) -> int:
     """Bring the board into line with what this repo declares.
 
     Named for what it does rather than for the first time it runs: it creates
@@ -379,7 +379,9 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
                 reconcile=reconcile, created=created, prune=prune,
                 built_in={key(entry.get("name", "")): entry["id"] for entry in raw
                           if entry.get("id") and key(entry.get("name", "")) in BUILT_IN})
-    if config.preset:
+    # Last, so it is the last thing read. `init` asks for it after its own
+    # closing lines instead, for the same reason.
+    if config.preset and browser:
         print()
         checklist(config, number)
     return 0
@@ -387,8 +389,13 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
 
 def checklist(config: Config, number: str = "") -> int:
     """What the preset needs that GitHub's API cannot set, to do in the
-    browser. Printed after every apply, because nothing can tell from the API
-    whether it was done; and on request, for whoever does it later."""
+    browser, each step with a link to where it is done.
+
+    Printed at the end of every apply, because nothing can tell from the API
+    whether it was done; and on request, for whoever does it later. An agent
+    that runs apply is not the one who can click, so the wording is meant to
+    be handed on as it stands.
+    """
     if not config.preset:
         print("This board names no preset, so there is nothing boardkit knows "
               "to be left for the browser.")
@@ -398,12 +405,28 @@ def checklist(config: Config, number: str = "") -> int:
         return 0
     number = number or config.project
     kind = "orgs" if config.owner_type == "org" else "users"
-    where = (f" at https://github.com/{kind}/{config.owner}/projects/{number}"
-             if number else "")
-    print(f"The {config.preset} preset needs these set in the browser{where}; "
-          f"GitHub's API cannot. `board admin checklist` prints them again.")
-    for step in steps:
-        print(f"  - {step}")
+    base = (f"https://github.com/{kind}/{config.owner}/projects/{number}"
+            if number else "")
+    views: dict[str, ExistingView] = {}
+    if base:
+        try:
+            views = existing_views(config, number)
+        except (BoardError, KeyError, TypeError):
+            views = {}  # Links to the views are a help; the steps stand without them.
+    print(f"Finish the {config.preset} board in the browser; GitHub's API cannot "
+          f"set these:")
+    for index, step in enumerate(steps, 1):
+        if "view" in step:
+            what = f"{step['view']} view"
+            found = views.get(step["view"])
+            link = f"{base}/views/{found.number}" if base and found and found.number else base
+        else:
+            what = "Workflows" if step.get("page") == "workflows" else step.get("page", "")
+            link = f"{base}/{step['page']}" if base and step.get("page") else base
+        print(f"  {index}. {what}: {step['do']}")
+        if link:
+            print(f"     {link}")
+    print("`board admin checklist` prints this again.")
     return 0
 
 
@@ -412,6 +435,8 @@ class ExistingView:
     id: str
     filter: str = ""
     layout: str = ""
+    # The tab's number in its URL, `.../projects/4/views/2`.
+    number: int = 0
 
 
 def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
@@ -420,12 +445,13 @@ def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
     query = (f"{{ {kind}(login: {quoted(config.owner)}) "
              f"{{ projectV2(number: {number}) "
              f"{{ views(first: {config.page_size}) "
-             "{ nodes { id name filter layout } } } } }")
+             "{ nodes { id name filter layout number } } } } }")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     nodes = payload["data"][kind]["projectV2"]["views"]["nodes"]
     return {node["name"]: ExistingView(
                 node["id"], node.get("filter") or "",
-                (node.get("layout") or "").removesuffix("_LAYOUT"))
+                (node.get("layout") or "").removesuffix("_LAYOUT"),
+                node.get("number") or 0)
             for node in nodes if node}
 
 

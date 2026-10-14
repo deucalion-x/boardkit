@@ -137,7 +137,7 @@ def init(title: str = "", dry: bool = False, preset: str = "") -> int:
     from .store import Store
     config = load(where)
     store = Store(config)
-    admin.apply(config)
+    admin.apply(config, browser=False)
     sync.pull(config, store)
     # From the snapshot, not config: the number is discovered, and config has
     # deliberately never been told it.
@@ -146,6 +146,9 @@ def init(title: str = "", dry: bool = False, preset: str = "") -> int:
     print(f"\nReady: https://github.com/{kind}/{config.owner}/projects/{number}\n"
           f"Add a column or a field by editing [board] and running "
           f"`board admin apply` again; it never removes anything.")
+    if config.preset:
+        print()
+        admin.checklist(config, number)
     return 0
 
 

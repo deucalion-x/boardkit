@@ -188,7 +188,7 @@ def test_existing_views_sends_a_balanced_graphql_document(monkeypatch):
     assert found["Open"].layout == "TABLE"
     assert sent == [
         ('query={ user(login: "octo") { projectV2(number: 4) '
-         '{ views(first: 100) { nodes { id name filter layout } } } } }')
+         '{ views(first: 100) { nodes { id name filter layout number } } } } }')
     ]
 
 

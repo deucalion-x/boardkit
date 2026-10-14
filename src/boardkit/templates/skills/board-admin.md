@@ -72,10 +72,15 @@ preset = "roadmap"
 Anything the repo declares beside it wins by name — a view called `Current`
 replaces the preset's — and anything else it declares is added. `board admin
 apply --preset roadmap` applies a preset to an existing board for one run,
-adding only what is missing; add the line to keep it. After applying, `board`
-prints what the preset needs that the API cannot set (a view's grouping, sort
-and date fields; the Project workflows). `board admin checklist` prints that
-again. Pass it on to the person: only the browser can do it.
+adding only what is missing; add the line to keep it.
+
+A preset needs a few settings the API cannot make: a view's grouping, sort and
+date fields, and the Project workflows. `board init` and `board admin apply`
+end by printing them as numbered steps, each with a link. You cannot click
+them, and nothing tells boardkit whether they were done, so give that list to
+the person word for word, links included, as the last thing in your reply. Do
+not summarise it or say the board is ready without it. `board admin checklist`
+prints it again, whenever someone asks how to finish the board.
 
 These run under the repository's own credential. Creating a project reaches
 beyond it, so `board admin apply` refuses and asks for `--as-me`, which uses

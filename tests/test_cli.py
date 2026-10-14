@@ -202,7 +202,7 @@ def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
     monkeypatch.setattr(setup, "root", lambda: tmp_path)
     import boardkit.admin
     import boardkit.sync
-    monkeypatch.setattr(boardkit.admin, "apply", lambda config, dry=False: done.append("apply"))
+    monkeypatch.setattr(boardkit.admin, "apply", lambda config, dry=False, **_: done.append("apply"))
     monkeypatch.setattr(boardkit.sync, "pull", lambda config, store: done.append("pull"))
     (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
     setup.init()

@@ -85,14 +85,30 @@ def test_init_refuses_an_unknown_preset_before_writing():
         setup.rendered({"owner": "o", "repo": "o/r"}, preset="nope")
 
 
-def test_the_checklist_names_what_only_the_browser_can_set(tmp_path, capsys):
+def test_the_checklist_links_each_step_to_where_it_is_done(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {
+        "Timeline": admin.ExistingView("V4", number=4),
+        "Initiatives": admin.ExistingView("V5", number=5)})
     found = loaded(tmp_path, '[board]\npreset = "roadmap"\n')
     admin.checklist(found)
     out = capsys.readouterr().out
-    assert "https://github.com/users/octo/projects/4" in out
-    for said in ("group by Parent issue", "sort by Start", "Auto-close issue",
-                 'is:closed reason:"not planned"', "Initiatives view"):
+    base = "https://github.com/users/octo/projects/4"
+    assert out.startswith("Finish the roadmap board in the browser")
+    assert "1. Timeline view: group by Parent issue, sort by Start" in out
+    assert f"{base}/views/4" in out and f"{base}/views/5" in out
+    assert f"{base}/workflows" in out
+    for said in ("Auto-close issue", 'is:closed reason:"not planned"'):
         assert said in out
+
+
+def test_the_checklist_stands_without_links_when_views_cannot_be_read(
+        tmp_path, monkeypatch, capsys):
+    def refuse(config, number):
+        raise BoardError("offline")
+    monkeypatch.setattr(admin, "existing_views", refuse)
+    admin.checklist(loaded(tmp_path, '[board]\npreset = "roadmap"\n'))
+    out = capsys.readouterr().out
+    assert "Timeline view:" in out and "/views/" not in out
 
 
 def test_the_checklist_without_a_preset_says_so(tmp_path, capsys):
@@ -104,6 +120,7 @@ def test_admin_checklist_is_a_verb(tmp_path, monkeypatch, capsys):
     (tmp_path / "boardkit.toml").write_text(
         IDENTITY + '[board]\npreset = "roadmap"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
     assert cli.main(["admin", "checklist"]) == 0
     assert "Auto-archive items" in capsys.readouterr().out
 
