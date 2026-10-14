@@ -3,6 +3,14 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.7 — 2026-10-14
+
+### Fixes
+- A field declared with a capital letter, such as `[board.fields.Start]`,
+  keeps its value through `board sync`; it read as empty in the snapshot and in
+  `board json` because the value was looked up by the declared spelling while
+  the sync stored it lowercased (#74).
+
 ## 0.3.6 — 2026-10-14
 
 ### Fixes

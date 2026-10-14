@@ -11,20 +11,11 @@ from __future__ import annotations
 
 import datetime
 
-from .board import MISSING, normalize
+from .board import MISSING, key, normalize
 from .config import Config, DataType, ProjectField
 from .gh import BoardError, RateLimited, Unreachable, gh_json, quoted, run_json
 from .store import Snapshot, Store, Write, now
 from .trail import note
-
-
-# `item-list` names a field by camelCasing it, while `field-list` reports the
-# name as configured. Comparing them stripped and lowercased matches "Status"
-# to "status" and "Target date" to "targetDate" without guessing which
-# transformation gh applied.
-def key(name: str) -> str:
-    return "".join(character for character in name if character.isalnum()).lower()
-
 
 # The fields every project has, projected from the issue and not worth
 # carrying: a board that declares nothing should still not end up with eleven

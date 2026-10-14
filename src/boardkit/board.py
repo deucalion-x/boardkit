@@ -171,6 +171,14 @@ def as_text(value) -> str:
     return str(value)
 
 
+# `item-list` names a field by camelCasing it, while `field-list` reports the
+# name as configured. Comparing them stripped and lowercased matches "Status"
+# to "status" and "Target date" to "targetDate" without guessing which
+# transformation gh applied.
+def key(name: str) -> str:
+    return "".join(character for character in name if character.isalnum()).lower()
+
+
 def normalize(payload: list[dict], still_open: set[int], config: Config,
               names: tuple[str, ...] = (), keep_closed: bool = False) -> list[ProjectItem]:
     """Project payload to items, dropping anything no longer open unless
@@ -191,7 +199,9 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
         fields = {}
         for field in (names or config.synced_names):
             default = MISSING
-            fields[field] = as_text(entry.get(field, default))
+            # A payload is keyed by `key` of each name, so a field declared as
+            # "Start" is found under "start".
+            fields[field] = as_text(entry.get(key(field), default))
         items.append(ProjectItem(
             closed=closed,
             number=number or 0,

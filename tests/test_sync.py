@@ -428,6 +428,21 @@ def test_a_draft_survives_the_pull_that_used_to_drop_it():
     assert len(kept) == 1 and kept[0].ref.startswith("~")
 
 
+def test_a_field_declared_with_a_capital_keeps_its_value():
+    """`flatten` keys values by `key(name)`; config keeps "Start" as written,
+    so reading it back by the declared spelling always found nothing."""
+    from boardkit.board import normalize
+    from boardkit.sync import flatten
+    config = Config(root=pathlib.Path("."), owner="o", repo="o/p",
+                    fields=(ProjectField(name="Start", data_type="DATE"),))
+    node = {"id": "PVTI_1", "type": "ISSUE",
+            "content": {"number": 7, "title": "Dated"},
+            "fieldValues": {"nodes": [{"field": {"name": "Start"},
+                                       "date": "2026-10-14"}]}}
+    item = normalize([flatten(node)], {7}, config)[0]
+    assert item.field("Start") == "2026-10-14"
+
+
 def test_a_field_config_declares_and_the_board_lacks_is_reported():
     """Boards are edited in the browser; config quietly becoming fiction is
     what `admin apply` would then act on."""
