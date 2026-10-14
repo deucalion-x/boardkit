@@ -3,6 +3,21 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.5 — 2026-10-14
+
+### Fixes
+- `board init` in an organisation's repository configures an organisation's
+  board. It recorded every owner as a user, so the app was later created on a
+  personal account and the board was unreachable.
+- `board auth app create` refuses an app GitHub created under a different
+  account than the configured owner (a browser signed in as someone else), and
+  records nothing, instead of failing three commands later.
+- `board json` rows always carry `labels`, `assignees`, `milestone`,
+  `issue_type` and `parent`, `""` when unset.
+- `board add ... labels=… assignees=…` sets them on the new issue; they were
+  looked up as board fields, which dropped every field given.
+- `board json | head` no longer prints a `BrokenPipeError` traceback.
+
 ## 0.3.4 — 2026-10-12
 
 ### Every item has a type
