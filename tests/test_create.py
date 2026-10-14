@@ -212,3 +212,14 @@ def test_a_new_issue_is_created_in_its_milestone_not_as_a_board_field(made):
     created = next(args for kind, args in calls if kind == "gh" and args[0] == "issue")
     assert created[-2:] == ("--milestone", "Cadrage")
     assert not any("milestone" in str(args) for kind, args in calls if kind == "gh_json")
+
+
+def test_labels_and_assignees_are_given_to_the_create_not_to_the_board(made):
+    """`labels=dev` used to be looked up as a project field, which no board
+    has, so the issue was made and its fields were all dropped."""
+    from boardkit.create import add
+    config, store, calls = made
+    add(config, store, "A dev task", "", {"labels": "dev, bug", "assignees": "octo"})
+    created = next(args for kind, args in calls if kind == "gh" and args[0] == "issue")
+    assert created[-6:] == ("--label", "dev", "--label", "bug", "--assignee", "octo")
+    assert not any("labels" in str(args) for kind, args in calls if kind == "gh_json")

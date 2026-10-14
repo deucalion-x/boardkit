@@ -46,7 +46,8 @@ def test_board_json_keeps_the_flat_shape_a_jq_pipeline_expects():
     item = normalize(ITEMS, {1}, CONFIG)[0]
     assert item.flat() == {"ref": "1", "number": 1, "title": "Corridor",
                            "url": "u1", "status": "Ready", "workstream": "Maps",
-                           "effort": "M"}
+                           "effort": "M", "labels": "", "assignees": "",
+                           "milestone": "", "issue_type": "", "parent": ""}
 
 
 def test_board_json_names_a_parent_so_a_container_is_found_without_item():
@@ -54,7 +55,7 @@ def test_board_json_names_a_parent_so_a_container_is_found_without_item():
     parent in the row, an agent had to open every item to learn that."""
     item = ProjectItem(number=2, title="Email sequence", parent=1)
     assert item.flat()["parent"] == 1
-    assert "parent" not in ProjectItem(number=1, title="Epic").flat()
+    assert ProjectItem(number=1, title="Epic").flat()["parent"] == ""
 
 
 def test_status_is_reachable_as_a_field_like_any_other():
@@ -131,11 +132,13 @@ def test_issue_metadata_an_agent_reads_travels_with_the_item():
     assert item.assignees == ("agerardin",) and item.milestone == "v1"
 
 
-def test_json_carries_labels_but_omits_what_an_item_does_not_have():
+def test_json_carries_labels_and_reads_empty_for_what_an_item_does_not_have():
+    """The skill filters on labels and issue_type in one pass; a key missing
+    from some rows made that pass raise on the first bare item."""
     row = normalize(LABELLED, {1}, CONFIG)[0].flat()
     assert row["labels"] == "feature, concept:offline" and row["milestone"] == "v1"
     bare = normalize([{"content": {"number": 2, "title": "T"}}], {2}, CONFIG)[0].flat()
-    assert "labels" not in bare and "milestone" not in bare
+    assert bare["labels"] == bare["milestone"] == bare["issue_type"] == ""
 
 
 DRAFT = [{"id": "PVTI_lAHOabcdef123456", "type": "DRAFT_ISSUE",

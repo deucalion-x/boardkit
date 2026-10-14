@@ -133,21 +133,17 @@ class ProjectItem(BaseModel):
         # it only applies to some rows.
         values = {name: ("" if value == MISSING else value)
                   for name, value in self.fields.items()}
-        row = {"ref": self.ref, "number": self.number, "title": self.title,
-               "url": self.url, **values}
-        if self.labels:
-            row["labels"] = ", ".join(self.labels)
-        if self.assignees:
-            row["assignees"] = ", ".join(self.assignees)
-        if self.milestone:
-            row["milestone"] = self.milestone
-        if self.issue_type:
-            row["issue_type"] = self.issue_type
-        # What makes an item a container: an item some open row names here is
-        # not startable itself, and the skill says so.
-        if self.parent:
-            row["parent"] = self.parent
-        return row
+        # Every row carries every key, so `r["labels"]` never raises on the
+        # one item that has none — the skill promises "" for unset.
+        # `parent` is what makes an item a container: an item some open row
+        # names there is not startable itself, and the skill says so.
+        return {"ref": self.ref, "number": self.number, "title": self.title,
+                "url": self.url, **values,
+                "labels": ", ".join(self.labels),
+                "assignees": ", ".join(self.assignees),
+                "milestone": self.milestone or "",
+                "issue_type": self.issue_type or "",
+                "parent": self.parent or ""}
 
 
 def named(connection, key: str) -> tuple[str, ...]:

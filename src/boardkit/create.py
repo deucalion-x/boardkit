@@ -66,10 +66,18 @@ def add(config: Config, store: Store, title: str, body: str,
     milestone = values.pop("milestone", "").strip()
     # Nor is its type, which the organisation defines.
     kind = values.pop("type", "").strip()
+    # Labels and assignees belong to the issue too, so they are given to the
+    # create itself: a label that does not exist then stops it before anything
+    # is made, rather than leaving an issue behind without it.
+    meta = [flag
+            for name, option in (("labels", "--label"), ("assignees", "--assignee"))
+            for one in values.pop(name, "").split(",") if one.strip()
+            for flag in (option, one.strip())]
     number = store.state().project_number or config.require("project")
 
     made = gh("issue", "create", "--repo", config.repo, "--title", title,
-              "--body", body or "", *(["--milestone", milestone] if milestone else []))
+              "--body", body or "", *(["--milestone", milestone] if milestone else []),
+              *meta)
     url = made.strip().splitlines()[-1]
     added = gh_json("project", "item-add", number, "--owner", config.owner,
                     "--url", url, "--format", "json")

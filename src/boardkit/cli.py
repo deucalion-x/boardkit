@@ -47,6 +47,7 @@ Reads answer from the local store; only the sync verbs touch GitHub.
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 from . import (
@@ -84,6 +85,12 @@ def main(argv: list[str] | None = None) -> int:
     except BoardError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    except BrokenPipeError:
+        # `board json | head` closed the pipe; that reader got what it wanted.
+        # Point stdout at nothing so the interpreter's own flush at exit does
+        # not raise a second time.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 141
 
 
 HELP = {"-h", "--help", "help"}
