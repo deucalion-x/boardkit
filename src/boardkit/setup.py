@@ -24,9 +24,11 @@ def detect() -> dict:
     """Owner, repo and a default title, from the repository we are standing in."""
     found = gh_json("repo", "view", "--json", "nameWithOwner,owner,name")
     owner = found["owner"]["login"]
+    # `gh repo view` names the owner but not its kind, so ask the users
+    # endpoint, which answers for organisations too.
+    kind = gh_json("api", f"users/{owner}").get("type")
     return {"owner": owner,
-            "owner_type": "org" if found["owner"].get("__typename") == "Organization"
-            else "user",
+            "owner_type": "org" if kind == "Organization" else "user",
             "repo": found["nameWithOwner"],
             "project_name": found["name"]}
 
@@ -61,6 +63,7 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False) -> str:
     reads, which is a silent way to lose the whole section.
     """
     import string
+    settings = {"owner_type": "user", **settings}
     text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
         **{key: str(value) for key, value in settings.items()})
     if nested:

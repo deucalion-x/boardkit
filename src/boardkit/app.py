@@ -75,7 +75,26 @@ def convert(code: str) -> dict:
     with urllib.request.urlopen(request, timeout=30) as response:
         made = json.loads(response.read())
     # Client secret, private key and webhook secret are never kept.
-    return {key: made.get(key, "") for key in ("client_id", "slug", "html_url")}
+    kept = {key: made.get(key, "") for key in ("client_id", "slug", "html_url")}
+    kept["owner"] = (made.get("owner") or {}).get("login", "")
+    return kept
+
+
+def check_owner(config: Config, made: dict) -> None:
+    """Refuse an app the browser created under some other account.
+
+    The browser decides who owns the app: signed in as an account outside the
+    organisation, GitHub quietly falls back to a personal app. Nothing fails
+    until `board admin apply`, so the mismatch is named here, before the
+    config records the wrong app.
+    """
+    if made["owner"].lower() != config.owner.lower():
+        raise BoardError(
+            f"{made['slug']} was created under {made['owner'] or 'an unknown account'}, "
+            f"not {config.owner}, so it cannot reach this board; nothing was "
+            f"recorded. Sign into github.com as an account that can administer "
+            f"{config.owner}, delete {made['slug']} from "
+            f"https://github.com/settings/apps, and run this again.")
 
 
 def remember(config: Config, client_id: str) -> None:
@@ -131,6 +150,7 @@ def create(config: Config) -> int:
         print("No app came back from GitHub; nothing was changed.")
         return 1
     made = convert(caught["code"])
+    check_owner(config, made)
     remember(config, made["client_id"])
     settings = (f"https://github.com/organizations/{config.owner}/settings/apps/{made['slug']}"
                 if config.owner_type == "org" else

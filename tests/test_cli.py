@@ -224,6 +224,21 @@ def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     assert [v.name for v in load(packaged).views] == ["Current", "All", "Roadmap"]
 
 
+def test_an_organisations_repo_starts_an_organisations_board(tmp_path, monkeypatch):
+    """`gh repo view` names the owner but not its kind; without asking, every
+    org board was configured as a personal one."""
+    from boardkit import setup
+    from boardkit.config import load
+    answers = {("repo", "view"): {"nameWithOwner": "octo/places", "name": "places",
+                                  "owner": {"id": "O_1", "login": "octo"}},
+               ("api", "users/octo"): {"login": "octo", "type": "Organization"}}
+    monkeypatch.setattr(setup, "gh_json", lambda *args: answers[args[:2]])
+    settings = setup.detect()
+    assert settings["owner_type"] == "org"
+    (tmp_path / "boardkit.toml").write_text(setup.rendered(settings), encoding="utf-8")
+    assert load(tmp_path).owner_type == "org"
+
+
 def test_the_starter_states_the_board_it_would_build(tmp_path):
     """Stated rather than commented: a board that exists ignores it, and a new
     one is built from it."""

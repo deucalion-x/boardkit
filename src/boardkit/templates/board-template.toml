@@ -1,5 +1,6 @@
 # Which board this is.
 owner = "$owner"
+owner_type = "$owner_type"
 repo = "$repo"
 project_name = "$project_name"
 

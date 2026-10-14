@@ -29,11 +29,28 @@ def test_long_names_fit_githubs_limit(tmp_path):
 
 def test_the_exchange_keeps_no_secret(monkeypatch):
     answer = {"client_id": "Iv23x", "slug": "boardkit-octo-widgets", "html_url": "u",
+              "owner": {"login": "octo", "type": "Organization"},
               "client_secret": "s", "pem": "-----BEGIN", "webhook_secret": "w"}
     monkeypatch.setattr(app.urllib.request, "urlopen",
                         lambda request, timeout: io.BytesIO(json.dumps(answer).encode()))
     kept = app.convert("code")
-    assert kept == {"client_id": "Iv23x", "slug": "boardkit-octo-widgets", "html_url": "u"}
+    assert kept == {"client_id": "Iv23x", "slug": "boardkit-octo-widgets", "html_url": "u",
+                    "owner": "octo"}
+
+
+def test_an_app_made_under_another_account_is_refused(tmp_path):
+    """The browser, not the form, decides who owns the app; a personal app
+    cannot reach an organisation's board, so it must not be recorded."""
+    import pytest
+
+    from boardkit.gh import BoardError
+    config = config_at(tmp_path)
+    made = {"client_id": "Iv23x", "slug": "boardkit-octo-widgets", "html_url": "u",
+            "owner": "someone-else"}
+    with pytest.raises(BoardError, match=r"someone-else, not octo"):
+        app.check_owner(config, made)
+    assert "app_client_id" not in config.source.read_text()
+    app.check_owner(config, {**made, "owner": "Octo"})
 
 
 def test_the_client_id_is_written_into_the_config(tmp_path):

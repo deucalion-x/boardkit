@@ -116,16 +116,16 @@ def declaration(owner: str, repo: str, title: str, project: str = "",
     standing acceptance board instead of creating another one. It goes in
     beside the other top-level keys, which in TOML means before `[board]`.
     """
-    settings = {"owner": owner, "repo": repo, "project_name": title}
+    # An organisation's board, as boardkit is used: GitHub links a board only
+    # to its owner's repositories, and offers apps no personal-board access.
+    settings = {"owner": owner, "owner_type": owner_type, "repo": repo,
+                "project_name": title}
     config = rendered(settings, exists=False) + "\n" + CONTRACT_FIELDS
     if project:
         marker = f'project_name = "{title}"'
         assert marker in config, "the template stopped naming the project"
         config = config.replace(marker, f'{marker}\nproject = "{project}"', 1)
-    # An organisation's board, as boardkit is used: GitHub links a board only
-    # to its owner's repositories, and offers apps no personal-board access.
-    marker = f'project_name = "{title}"'
-    return config.replace(marker, f'{marker}\nowner_type = "{owner_type}"', 1)
+    return config
 
 
 class Failed(RuntimeError):
