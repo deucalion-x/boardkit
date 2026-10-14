@@ -3,6 +3,17 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.6 — 2026-10-14
+
+### Fixes
+- `board --version` prints the installed release, from any folder and without
+  a boardkit config.
+- `board set --help` names the issue types that exist: `Initiative`,
+  `Feature`, `Task` and `Bug`, not the retired `Coordination`.
+- A development checkout's `board --version` follows new commits and tags; uv
+  rebuilt the editable install only when `pyproject.toml` changed, so it kept
+  reporting the version of its last rebuild.
+
 ## 0.3.5 — 2026-10-14
 
 ### Fixes
