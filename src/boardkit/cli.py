@@ -275,8 +275,14 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         report_queue(store)
     elif command == "item":
         ref = args[0].lstrip("#")
-        board_module.show([index[ref]] if ref in index else [], view)
         found = index.get(ref)
+        if found is None:
+            # The snapshot holds every issue of the repository, so absent
+            # means it does not exist here — deleted, or never made.
+            print(f"#{ref} does not exist in {config.repo}: no issue or card "
+                  f"by that reference.")
+            return 1
+        board_module.show([found], view)
         if found is not None:
             about = [f"pull requests: {', '.join(found.linked_prs)}" if found.linked_prs else "",
                      f"review: {found.review}" if found.review else "",

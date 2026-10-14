@@ -796,9 +796,9 @@ def test_repo_issues_are_cached_whole_and_refreshed_by_change(tmp_path, monkeypa
                         "number": 65, "state": "CLOSED", "title": "Archived",
                         "stateReason": "COMPLETED"}},
                     {"id": "", "type": "ISSUE", "content": {
-                        "number": 66, "state": "OPEN", "title": "Old"}}]
+                        "number": 66, "state": "OPEN", "title": "Old"}}], 2
         return [{"id": "", "type": "ISSUE", "content": {
-                    "number": 66, "state": "CLOSED", "title": "Old, now done"}}]
+                    "number": 66, "state": "CLOSED", "title": "Old, now done"}}], 2
     monkeypatch.setattr(sync, "fetch_repo_issues", issues)
 
     first, at = sync.repo_issues(config, store, ())
@@ -810,6 +810,37 @@ def test_repo_issues_are_cached_whole_and_refreshed_by_change(tmp_path, monkeypa
     assert [(i.number, i.closed, i.title) for i in second] == [
         (65, True, "Archived"), (66, True, "Old, now done")]
     assert all(not i.on_board for i in second)
+
+def test_an_issue_deleted_on_github_leaves_the_cache(tmp_path, monkeypatch):
+    """A refresh by change never hears of a deletion. The repository's total
+    does: fewer issues than cached means re-reading the list, once."""
+    from boardkit import sync
+    from boardkit.store import Store
+    config = Config(root=tmp_path, owner="octo", repo="octo/widgets", project="4")
+    store = Store(config)
+    held = [17, 18]
+    asked = []
+
+    def issues(config, since=""):
+        asked.append(since)
+        rows = [{"id": "", "type": "ISSUE", "content": {
+                    "number": n, "state": "OPEN", "title": f"Issue {n}"}}
+                for n in held]
+        return ([] if since else rows), len(held)
+    monkeypatch.setattr(sync, "fetch_repo_issues", issues)
+
+    first, at = sync.repo_issues(config, store, ())
+    store.save_state(store.state().model_copy(update={
+        "repo_issues": first, "issues_synced_at": at, "synced_at": "now"}))
+    held.remove(18)
+    second, _ = sync.repo_issues(config, store, ())
+    assert [i.number for i in second] == [17]
+    assert asked == ["", at, ""]
+    store.save_state(store.state().model_copy(update={"repo_issues": second}))
+    asked.clear()
+    sync.repo_issues(config, store, ())
+    assert asked == [at], "a cache that matches the total is only refreshed"
+
 
 def test_a_refused_check_rollup_does_not_fail_the_pull():
     from boardkit import sync

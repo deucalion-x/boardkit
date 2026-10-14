@@ -443,24 +443,33 @@ def off_board(config: Config, names: tuple[str, ...], rows: list[dict]):
         yield item.model_copy(update={"on_board": False, "fields": {}})
 
 
-def fetch_repo_issues(config: Config, since: str = "") -> list[dict]:
-    """Every issue updated since `since`, or every issue at all."""
+def fetch_repo_issues(config: Config, since: str = "") -> tuple[list[dict], int | None]:
+    """Every issue updated since `since`, or every issue at all, and how many
+    issues the repository holds in all.
+
+    The total rides along in the same request. A refresh by change cannot see
+    a deletion — a deleted issue is never "updated" — so the total is what
+    tells the cache it holds an issue GitHub no longer does.
+    """
     owner, name = config.repo.split("/", 1)
     window = f", filterBy: {{since: {quoted(since)}}}" if since else ""
-    rows, after = [], ""
+    rows, after, total = [], "", None
     while True:
         cursor = f", after: {quoted(after)}" if after else ""
         query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
-                 f"{{ issues(first: {REPO_ISSUES}{cursor}{window}, orderBy: "
+                 f"{{ all: issues {{ totalCount }} "
+                 f"issues(first: {REPO_ISSUES}{cursor}{window}, orderBy: "
                  f"{{field: UPDATED_AT, direction: ASC}}) "
                  f"{{ pageInfo {{ hasNextPage endCursor }} nodes {{ {ISSUE_FIELDS} }} }} }} }}")
         payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
-        found = ((payload.get("data") or {}).get("repository") or {}).get("issues") or {}
+        repository = (payload.get("data") or {}).get("repository") or {}
+        found = repository.get("issues") or {}
+        total = (repository.get("all") or {}).get("totalCount", total)
         rows += [{"id": "", "type": "ISSUE", "content": {**node, "type": "ISSUE"}}
                  for node in found.get("nodes") or [] if node]
         page = found.get("pageInfo") or {}
         if not page.get("hasNextPage"):
-            return rows
+            return rows, total
         after = page.get("endCursor") or ""
 
 
@@ -469,10 +478,18 @@ def repo_issues(config: Config, store: Store, names: tuple[str, ...]):
     previous = store.state()
     started = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=OVERLAP_SECONDS)
     since = previous.issues_synced_at if previous.repo_issues else ""
-    fresh = {item.number: item for item in off_board(config, names,
-                                                      fetch_repo_issues(config, since))}
+    rows, total = fetch_repo_issues(config, since)
     kept = {item.number: item for item in previous.repo_issues}
-    kept.update(fresh)
+    kept.update({item.number: item for item in off_board(config, names, rows)})
+    # More cached than GitHub has means some were deleted or transferred
+    # away. Which ones, a refresh by change cannot say, so this pull reads
+    # the whole list again; that is as rare as deleting an issue.
+    if since and total is not None and len(kept) > total:
+        rows, total = fetch_repo_issues(config, "")
+        fresh = {item.number: item for item in off_board(config, names, rows)}
+        gone = sorted(set(kept) - set(fresh))
+        note("dropped_issues", numbers=gone)
+        kept = fresh
     return (tuple(sorted(kept.values(), key=lambda item: item.number)),
             started.strftime("%Y-%m-%dT%H:%M:%SZ"))
 

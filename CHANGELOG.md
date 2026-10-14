@@ -3,6 +3,17 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.9 — 2026-10-14
+
+### Fixes
+- An issue deleted (or transferred away) on GitHub leaves the snapshot at the
+  next sync. The refresh asks only for issues updated since the last one,
+  which a deletion never is, so a deleted sub-issue stayed forever and was
+  counted by `board report`. Each refresh now also reads the repository's
+  issue total in the same request, and re-reads the list when the snapshot
+  holds more. `board item` for a missing reference says it does not exist
+  (#75).
+
 ## 0.3.8 — 2026-10-14
 
 ### Features

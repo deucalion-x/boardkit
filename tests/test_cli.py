@@ -636,3 +636,8 @@ def test_report_answers_from_the_snapshot(seeded, capsys):
     assert cli.main(["report", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["initiatives"] == []
+
+
+def test_an_item_that_does_not_exist_says_so(seeded, capsys):
+    assert cli.main(["item", "99"]) == 1
+    assert "#99 does not exist in octo/widgets" in capsys.readouterr().out
