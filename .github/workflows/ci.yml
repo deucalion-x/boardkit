@@ -10,12 +10,6 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The floor and the ceiling of `requires-python`. The versions
-        # between them are not interesting enough to pay for.
-        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,9 +19,12 @@ jobs:
         with:
           enable-cache: true
 
+      # The floor of `requires-python`: newer syntax or stdlib slipping in
+      # breaks here first, and a newer interpreter has not been worth a
+      # second run.
       - run: uv sync --locked --dev
         env:
-          UV_PYTHON: ${{ matrix.python }}
+          UV_PYTHON: "3.12"
 
       - name: lint
         run: uv run ruff check src tests scripts
