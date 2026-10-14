@@ -110,10 +110,16 @@ class Snapshot(BaseModel):
             (i for i in (*self.closed, *self.elsewhere) if i.ref == wanted), None)
 
     def item(self, ref: str | int) -> ProjectItem | None:
-        """By issue number or by a draft's handle; both arrive as text from a
-        command line, and an issue number is accepted either way."""
+        """A card on the board, by issue number or by a draft's handle; both
+        arrive as text from a command line.
+
+        Closed cards count. A closed issue is still a card until the board
+        archives it, and its column is still written: closing an accepted
+        issue in the browser leaves it in review until someone sets `Done`,
+        which refusing here made impossible from `board`.
+        """
         wanted = str(ref)
-        return next((i for i in self.items if i.ref == wanted), None)
+        return next((i for i in (*self.items, *self.closed) if i.ref == wanted), None)
 
     def field(self, name: str) -> ProjectField | None:
         return next((f for f in self.fields if f.name == name), None)

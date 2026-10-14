@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime
 
-from .board import MISSING, key, normalize
+from .board import MISSING, ProjectItem, key, normalize
 from .config import Config, DataType, ProjectField
 from .gh import BoardError, RateLimited, Unreachable, gh_json, quoted, run_json
 from .store import Snapshot, Store, Write, now
@@ -840,11 +840,13 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
     changes: dict[str, dict[str, str]] = {}
     for write in writes:
         changes.setdefault(write.ref, {})[write.field] = write.value
-    items = tuple(
-        item.model_copy(update={"fields": {**item.fields, **changes[item.ref]}})
-        if item.ref in changes else item
-        for item in snapshot.items)
-    return snapshot.model_copy(update={"items": items})
+    def folded(items: tuple[ProjectItem, ...]) -> tuple[ProjectItem, ...]:
+        return tuple(
+            item.model_copy(update={"fields": {**item.fields, **changes[item.ref]}})
+            if item.ref in changes else item
+            for item in items)
+    return snapshot.model_copy(update={"items": folded(snapshot.items),
+                                       "closed": folded(snapshot.closed)})
 
 
 def unresolved(snapshot: Snapshot, writes: list[Write]) -> list[Write]:

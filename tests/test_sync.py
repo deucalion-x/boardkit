@@ -889,7 +889,7 @@ def test_an_item_closed_by_the_change_moves_to_closed(tmp_path, monkeypatch):
     config, store, _ = refreshing(tmp_path, monkeypatch, [node])
     assert sync.refresh(config, store, ["I_7"])
     after = store.state()
-    assert after.item(7) is None
+    assert all(item.number != 7 for item in after.items)
     assert sorted(item.number for item in after.closed) == [3, 7]
 
 
@@ -943,3 +943,18 @@ def test_an_item_made_long_ago_is_not_read_by_id_again(tmp_path, monkeypatch):
     sync.pull(config, store)
     assert store.state().item(9) is None and asked == []
     assert store.state().created == {}
+
+
+def test_a_write_to_a_closed_card_still_applies():
+    """A closed card is still on the board, so its write is pushed, not
+    recorded as lost."""
+    from boardkit import sync
+    from boardkit.board import ProjectItem
+    from boardkit.store import Snapshot, Write
+    remote = Snapshot(closed=(ProjectItem(number=9, id="I_9", closed=True,
+                                          fields={"status": "In Review"}),))
+    write = Write(ref="9", field="status", value="Done", was="In Review")
+    applies, lost = sync.plan([write], remote)
+    assert applies == [write] and lost == []
+    folded = sync.patched(remote, [write])
+    assert folded.closed[0].fields["status"] == "Done"

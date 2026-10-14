@@ -612,10 +612,6 @@ def test_the_listing_still_shows_open_work_only(with_closed, capsys):
     assert "Corridor survey" not in capsys.readouterr().out
 
 
-def test_a_closed_item_cannot_be_written(with_closed, capsys):
-    assert cli.main(["set", "3", "status", "Todo"]) != 0
-
-
 def test_the_superuser_hatch_is_logged(repo, monkeypatch, capsys):
     import io
 
@@ -643,3 +639,29 @@ def test_report_answers_from_the_snapshot(seeded, capsys):
 def test_an_item_that_does_not_exist_says_so(seeded, capsys):
     assert cli.main(["item", "99"]) == 1
     assert "#99 does not exist in octo/widgets" in capsys.readouterr().out
+
+
+def test_a_closed_card_can_be_moved_to_done(seeded, monkeypatch, capsys):
+    """Closing an accepted issue in the browser can leave its card in review.
+    It is still a card, so `board set` moves it rather than refusing."""
+    from boardkit import sync
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={"closed": (
+        ProjectItem(number=9, id="I_9", title="Accepted", closed=True,
+                    state_reason="COMPLETED",
+                    fields={"status": "Todo", "workstream": "Maps"}),)}))
+    monkeypatch.setattr(sync, "push_now", lambda config, store: (0, 0, "offline"))
+    assert cli.main(["set", "9", "status", "In progress"]) == 0
+    [write] = seeded.pending()
+    assert (write.ref, write.value, write.was) == ("9", "In progress", "Todo")
+    capsys.readouterr()
+    assert cli.main(["item", "9", "--offline"]) == 0
+    assert capsys.readouterr().out.splitlines()[1].startswith("In progress")
+
+
+def test_an_issue_off_the_board_is_still_refused(seeded, capsys):
+    state = seeded.state()
+    seeded.save_state(state.model_copy(update={"elsewhere": (
+        ProjectItem(number=12, title="Archived", on_board=False),)}))
+    assert cli.main(["set", "12", "status", "Done"]) == 1
+    assert "#12 is not on the board" in capsys.readouterr().out

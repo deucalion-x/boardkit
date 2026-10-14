@@ -3,6 +3,14 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## 0.3.13 — 2026-10-14
+
+### Fixes
+- `board set` writes to a closed card, so an issue closed in the browser
+  while its card sat in review can be moved to `Done` from `board`. It
+  answered "not on the board", although the card was. An issue off the board
+  is still refused.
+
 ## 0.3.12 — 2026-10-14
 
 ### Changes
