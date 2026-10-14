@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-from .config import CONFIG_FILES, Config, ProjectField
+from .config import CONFIG_FILES, Config, ProjectField, preset_file
 from .gh import BoardError, gh_json, git
 
 TABLE = "[tool.boardkit]"
@@ -52,7 +52,28 @@ def board_exists(settings: dict) -> bool:
                for entry in listed.get("projects", []))
 
 
-def rendered(settings: dict, exists: bool = True, nested: bool = False) -> str:
+def with_preset_line(text: str, preset: str) -> str:
+    """The starter config with its views replaced by a preset that has them.
+
+    The starter's views are a subset of any preset's, and stating both would
+    leave a reader to work out which one wins. So the paragraphs declaring or
+    explaining views go, and one line naming the preset takes their place.
+    """
+    preset_file(preset)  # an unknown name is refused before anything is written
+    kept = [part for part in text.split("\n\n")
+            if "[[board.views]]" not in part and "# Current is the work" not in part]
+    text = "\n\n".join(kept)
+    line = (f"\n\n# The columns, fields and views of boardkit's {preset} preset; "
+            f"anything\n# declared here wins over it by name, or adds to it.\n"
+            f'preset = "{preset}"')
+    marker = "status_order = "
+    at = text.index(marker)
+    end = text.index("\n", at)
+    return text[:end] + line + text[end:]
+
+
+def rendered(settings: dict, exists: bool = True, nested: bool = False,
+             preset: str = "") -> str:
     """The starter config for this repo.
 
     One template, with the columns commented out when the board already exists
@@ -66,6 +87,8 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False) -> str:
     settings = {"owner_type": "user", **settings}
     text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
         **{key: str(value) for key, value in settings.items()})
+    if preset:
+        text = with_preset_line(text, preset)
     if nested:
         text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
         text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")
@@ -81,7 +104,9 @@ def target(where: pathlib.Path) -> pathlib.Path:
     return pyproject if pyproject.exists() else where / "boardkit.toml"
 
 
-def init(title: str = "", dry: bool = False) -> int:
+def init(title: str = "", dry: bool = False, preset: str = "") -> int:
+    if preset:
+        preset_file(preset)
     where = root()
     for name in CONFIG_FILES:
         if (where / name).exists() and "boardkit" in (where / name).read_text():
@@ -93,7 +118,8 @@ def init(title: str = "", dry: bool = False) -> int:
         settings["project_name"] = title
     file = target(where)
     exists = board_exists(settings)
-    body = rendered(settings, exists, nested=file.name == "pyproject.toml")
+    body = rendered(settings, exists, nested=file.name == "pyproject.toml",
+                    preset=preset)
 
     if dry:
         print(f"Would write to {file.relative_to(where)}:\n\n{body}")

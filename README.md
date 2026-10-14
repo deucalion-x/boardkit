@@ -47,7 +47,8 @@ unless it says otherwise.
    and fine-grained tokens no access to a personal account's board. A free
    organisation is enough.
 2. **Configure the repository:** `board init` writes `owner`, `repo` and the
-   board's title. Add `owner_type = "org"`.
+   board's title. Add `--preset roadmap` for a board that tracks Initiatives
+   along time; see [Presets](#presets).
 3. **Create the board**, if it does not exist yet: `board admin apply --as-me`.
    Creating a project is beyond any one repository, so it uses your own `gh`
    login, once.
@@ -176,6 +177,42 @@ for views alone: a view holds no items and no field values, so losing one
 costs the grouping and sorting that config cannot express, which is real but
 is not data. A field or a column is never deleted, because the values and the
 items in them would go too. Preview it with `-n` first; GitHub has no undo.
+
+### Presets
+
+A preset is a board shape boardkit ships, for a repo to start from instead of
+writing it out. `board init --preset roadmap` writes a config naming it, in
+place of the starter template's views; on a board that already exists,
+`board admin apply --preset roadmap` adds whatever of it is missing and
+changes nothing else.
+
+```toml
+[board]
+preset = "roadmap"
+```
+
+`roadmap` is a board for work that serves a roadmap of Initiatives:
+
+| | |
+|---|---|
+| Columns | Inbox, Todo, In Progress, In Review, Done |
+| Fields | `start` and `target` (DATE), beside `blocked` |
+| Current | BOARD, `-type:Initiative`: the work |
+| All | TABLE, unfiltered |
+| Roadmap | TABLE, `type:Initiative`, with sub-issues progress and milestone |
+| Timeline | ROADMAP, `has:parent-issue`: the work along time |
+| Initiatives | ROADMAP, `type:Initiative`: the roadmap along time |
+
+The repo's own `[board]` section wins: a column order, field or view it
+declares replaces the preset's by name, and anything else it declares is
+added. `board report` reads the same `start` and `target` fields.
+
+GitHub's API cannot set a view's grouping, sort or date fields, nor a
+Project's workflows, so after applying, boardkit prints what to set in the
+browser — group Timeline by Parent issue and sort it by Start, draw both
+roadmap views from Start to Target, close an issue when its item reaches Done,
+and auto-archive work closed as not planned. `board admin checklist` prints
+it again.
 
 `board schema` prints the full shape as JSON Schema — every setting, its type
 and its default — so an agent can fill it in rather than guess.

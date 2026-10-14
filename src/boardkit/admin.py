@@ -19,7 +19,7 @@ import datetime
 from dataclasses import dataclass
 
 from . import auth, credential
-from .config import CREATABLE, Config, ProjectField
+from .config import CREATABLE, Config, ProjectField, preset_file
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .sync import BUILT_IN, fetch_fields, find_project, key, parse_fields
 from .trail import note
@@ -379,6 +379,31 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
                 reconcile=reconcile, created=created, prune=prune,
                 built_in={key(entry.get("name", "")): entry["id"] for entry in raw
                           if entry.get("id") and key(entry.get("name", "")) in BUILT_IN})
+    if config.preset:
+        print()
+        checklist(config, number)
+    return 0
+
+
+def checklist(config: Config, number: str = "") -> int:
+    """What the preset needs that GitHub's API cannot set, to do in the
+    browser. Printed after every apply, because nothing can tell from the API
+    whether it was done; and on request, for whoever does it later."""
+    if not config.preset:
+        print("This board names no preset, so there is nothing boardkit knows "
+              "to be left for the browser.")
+        return 0
+    steps = preset_file(config.preset).get("checklist", [])
+    if not steps:
+        return 0
+    number = number or config.project
+    kind = "orgs" if config.owner_type == "org" else "users"
+    where = (f" at https://github.com/{kind}/{config.owner}/projects/{number}"
+             if number else "")
+    print(f"The {config.preset} preset needs these set in the browser{where}; "
+          f"GitHub's API cannot. `board admin checklist` prints them again.")
+    for step in steps:
+        print(f"  - {step}")
     return 0
 
 

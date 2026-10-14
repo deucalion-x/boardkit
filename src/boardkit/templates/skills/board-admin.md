@@ -56,6 +56,27 @@ board admin apply --prune-views       # delete tabs config does not name
 board sync                            # pull the new shape into the snapshot
 ```
 
+## Starting from a preset
+
+A preset is a board shape boardkit ships. `roadmap` is the columns above;
+`start` and `target` dates; and the views Current (the work, as a board), All,
+Roadmap (the Initiatives, with progress and milestone), Timeline (the work
+along time, by parent) and Initiatives (the roadmap along time). Name it under
+`[board]`:
+
+```toml
+[board]
+preset = "roadmap"
+```
+
+Anything the repo declares beside it wins by name — a view called `Current`
+replaces the preset's — and anything else it declares is added. `board admin
+apply --preset roadmap` applies a preset to an existing board for one run,
+adding only what is missing; add the line to keep it. After applying, `board`
+prints what the preset needs that the API cannot set (a view's grouping, sort
+and date fields; the Project workflows). `board admin checklist` prints that
+again. Pass it on to the person: only the browser can do it.
+
 These run under the repository's own credential. Creating a project reaches
 beyond it, so `board admin apply` refuses and asks for `--as-me`, which uses
 the person's own gh login. Ask the person before adding `--as-me`; never add it

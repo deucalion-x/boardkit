@@ -36,10 +36,13 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login instead of
                              this repo's credential; approved and logged
-  board init [-n] [title]    write the three settings a repo must decide
+  board init [-n] [--preset roadmap] [title]
+                             write the three settings a repo must decide;
+                             --preset starts the board from a shipped shape
   board schema               the configuration's shape, as JSON schema
-  board admin apply [-n] [--reconcile] [--prune-views]
+  board admin apply [-n] [--reconcile] [--prune-views] [--preset roadmap]
                              add missing shape; optionally update view filters
+  board admin checklist      what the preset leaves to set in the browser
   board admin link           attach the project to the repository
 
   board mirror write|check   the issue-text mirror in git
@@ -117,11 +120,14 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
 
     # These two run before configuration exists, which is their whole point.
     if command == "init":
-        return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args)
+        preset, args = option(args, "--preset")
+        return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args,
+                          preset=preset)
     if command == "schema":
         return setup.schema()
 
-    config = load()
+    preset, args = option(args, "--preset") if command == "admin" else ("", args)
+    config = load(preset=preset)
     credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
     quota.begin(command)
@@ -140,11 +146,17 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     if command == "admin":
         verb = args[0] if args else "apply"
         if verb == "apply":
-            return admin.apply(config, dry="-n" in args,
+            code = admin.apply(config, dry="-n" in args,
                                reconcile="--reconcile" in args,
                                prune="--prune-views" in args)
+            if preset and load().preset != preset:
+                print(f'\nTo keep it, add preset = "{preset}" under [board] in '
+                      f"{config.where}; this run applied it once.")
+            return code
         if verb == "link":
             return admin.link(config)
+        if verb == "checklist":
+            return admin.checklist(config)
         return usage()
     if command == "auth":
         if args[:1] == ["setup"]:
@@ -330,6 +342,16 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
                   sys.stdout, indent=2)
         print()
     return 0
+
+
+def option(args: list[str], flag: str) -> tuple[str, list[str]]:
+    """The value after `flag`, and the arguments without either."""
+    if flag not in args:
+        return "", args
+    at = args.index(flag)
+    if at + 1 >= len(args):
+        raise BoardError(f"{flag} needs a value")
+    return args[at + 1], args[:at] + args[at + 2:]
 
 
 def freshen(config, store: Store, offline: bool = False) -> Snapshot:

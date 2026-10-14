@@ -40,7 +40,11 @@ ENV_PREFIX = "BOARDKIT_"
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
 BOARD_SETTINGS = ("fields", "views", "status_order", "status_descriptions",
-                  "status_field", "default_status", "blocked_field")
+                  "status_field", "default_status", "blocked_field", "preset")
+# A board shape shipped with boardkit, named by `preset` under [board]. The
+# repo's own settings are merged over it, so a preset is where a board starts
+# rather than a cage.
+PRESETS = pathlib.Path(__file__).with_name("templates") / "presets"
 # What the generated skills are called, in every repo: an agent should find
 # the same names wherever it is working. The admin one takes a suffix.
 SKILL_NAME = "board"
@@ -208,6 +212,10 @@ class Config(BaseModel):
     # Saved tabs. Declared for the same reason a field is: `admin apply` has to
     # create them, and nothing else needs them stated.
     views: tuple[View, ...] = ()
+    # Which preset the board shape starts from, already merged into the
+    # settings above by `load`. Kept so `admin` can say what the preset leaves
+    # to the browser.
+    preset: str = ""
     # `mirror` and `links` are optional; a repo may want the board reader alone.
     # Records per request, not a cap: a pull pages until the board is
     # exhausted. 100 is GitHub's own ceiling — `first: 150` is refused with
@@ -399,9 +407,80 @@ def from_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
     return found
 
 
-def load(start: pathlib.Path | None = None) -> Config:
+def presets() -> tuple[str, ...]:
+    return tuple(sorted(path.stem for path in PRESETS.glob("*.toml")))
+
+
+def preset_file(name: str) -> dict:
+    """A preset as written: its `[board]` table and its browser checklist."""
+    path = PRESETS / f"{name}.toml"
+    if not name or not path.is_file():
+        raise BoardError(f"no preset {name!r}; boardkit has "
+                         f"{', '.join(presets()) or 'none'}")
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def named_entries(value) -> list[dict]:
+    """Fields or views in any of the forms config accepts, as entries with a
+    name, so a preset's and a repo's can be matched by it."""
+    if isinstance(value, dict):
+        return [{"name": name, **spec} for name, spec in value.items()]
+    return [{"name": item} if isinstance(item, str) else dict(item)
+            for item in value or ()]
+
+
+def over(base: list[dict], own: list[dict]) -> list[dict]:
+    """The preset's entries with the repo's laid over them by name.
+
+    A repo entry that only names something — `fields = ["start"]` — states an
+    order, not a shape, so it keeps the preset's definition of it.
+    """
+    mine = {entry["name"]: entry for entry in own}
+    merged = [mine[entry["name"]] if set(mine.get(entry["name"], {})) - {"name"}
+              else entry for entry in base]
+    return merged + [entry for entry in own
+                     if not any(e["name"] == entry["name"] for e in base)]
+
+
+def with_preset(table: dict, name: str) -> dict:
+    """`table` with the named preset's board shape under it.
+
+    Every setting the repo states wins. Fields and views merge by name; any
+    other setting, such as the column order, is the preset's only where the
+    repo says nothing. Settings stay wherever the repo wrote them — at the top
+    level or under [board] — so lifting [board] never finds one twice.
+    """
+    shape = preset_file(name).get("board", {})
+    table = dict(table)
+    board = dict(table.get("board") or {})
+    for setting, given in shape.items():
+        home = table if setting in table else board
+        if setting in ("fields", "views"):
+            home[setting] = over(named_entries(given), named_entries(home.get(setting)))
+        elif setting not in home:
+            home[setting] = given
+    board["preset"] = name
+    table.pop("preset", None)
+    table["board"] = board
+    return table
+
+
+def chosen_preset(table: dict, overrides: dict) -> str:
+    board = table.get("board")
+    if not isinstance(board, dict):
+        board = {}
+    return overrides.get("preset") or table.get("preset") or board.get("preset") or ""
+
+
+def load(start: pathlib.Path | None = None, preset: str = "") -> Config:
+    """The repo's configuration. `preset` applies one for this run, over
+    whatever the file names, as `board admin apply --preset` does."""
     root, table, source = find_config(start)
     overrides = from_env()
+    name = preset or chosen_preset(table, overrides)
+    if name:
+        table = with_preset(table, name)
+        overrides.pop("preset", None)
     try:
         return Config(root=root, source=source, **{**table, **overrides})
     except ValidationError as error:

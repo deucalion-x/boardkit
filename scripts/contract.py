@@ -12,6 +12,8 @@ deletes, so nothing it does touches the real board.
     uv run python scripts/contract.py --no-issue  # drafts only, no repo residue
     uv run python scripts/contract.py --project 3  # reuse a standing board
     uv run python scripts/contract.py --seed 20     # stock it with dummy cards
+    uv run python scripts/contract.py --preset roadmap --keep --no-issue
+                                                    # the template, then a preset over it
 
 It is deliberately not a pytest test. It needs a token that can create and
 delete projects, it costs rate-limit points, and an unmocked run against a
@@ -35,6 +37,7 @@ import sys
 import tempfile
 import tomllib
 
+from boardkit.config import load
 from boardkit.setup import rendered
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -106,7 +109,7 @@ CLEARABLE = ("note", "size", "due", "area", "tags")
 
 
 def declaration(owner: str, repo: str, title: str, project: str = "",
-                owner_type: str = "org") -> str:
+                owner_type: str = "org", preset: str = "") -> str:
     """The canonical starter config, extended only with contract fields.
 
     Pure, so a unit test can parse it and check it still declares one field of
@@ -120,7 +123,7 @@ def declaration(owner: str, repo: str, title: str, project: str = "",
     # to its owner's repositories, and offers apps no personal-board access.
     settings = {"owner": owner, "owner_type": owner_type, "repo": repo,
                 "project_name": title}
-    config = rendered(settings, exists=False) + "\n" + CONTRACT_FIELDS
+    config = rendered(settings, exists=False, preset=preset) + "\n" + CONTRACT_FIELDS
     if project:
         marker = f'project_name = "{title}"'
         assert marker in config, "the template stopped naming the project"
@@ -224,16 +227,20 @@ def check_shape(where: pathlib.Path) -> None:
          "a second `admin apply` finds every field, option and view present")
 
     state = snapshot(where)
-    declaration = tomllib.loads(
-        (where / "boardkit.toml").read_text(encoding="utf-8"))
-    wanted_columns = declaration["board"]["status_order"]
-    declared_views = declaration["board"]["views"]
-    wanted_views = [view["name"] for view in declared_views]
+    # Read through boardkit's own loading, so a preset's columns and views
+    # are expected as well as the ones the file spells out.
+    declared = load(where)
+    wanted_columns = list(declared.status_order)
+    wanted_views = [view.name for view in declared.views]
     fields = {field["name"]: field for field in state["fields"]}
     for name in ("status", "area", "tags", "note", "size", "due", "sprint",
-                 "blocked"):
+                 "blocked", *declared.field_names):
         held(name in fields and bool(fields[name]["id"]),
              f"`{name}` exists on the board with an id")
+    for field in declared.fields:
+        if field.data_type == "DATE":
+            held(fields[field.name]["data_type"] == "DATE",
+                 f"`{field.name}` arrived as a date")
     # GitHub seeds Todo, In Progress and Done. The template reuses those
     # options by name (case-insensitively) and adds Inbox and In Review, so the
     # resulting order should exactly match the template without duplicate
@@ -250,17 +257,15 @@ def check_shape(where: pathlib.Path) -> None:
     held(state["views"] == wanted_views,
          f"only the template views arrived: {wanted_views}"
          + ("" if state["views"] == wanted_views else f" (the board has {state['views']})"))
-    kind = "organization" if declaration.get("owner_type") == "org" else "user"
-    query = (f"{{ {kind}(login: {json.dumps(declaration['owner'])}) "
+    kind = "organization" if declared.owner_type == "org" else "user"
+    query = (f"{{ {kind}(login: {json.dumps(declared.owner)}) "
              f"{{ projectV2(number: {state['project_number']}) "
              "{ views(first: 100) { nodes { name layout filter } } } } }")
     payload = json.loads(gh("api", "graphql", "-f", f"query={query}"))
     live_views = [(node["name"], node["layout"], node.get("filter") or "")
                   for node in payload["data"][kind]["projectV2"]["views"]["nodes"]]
-    wanted_live_views = [
-        (view["name"], f"{view.get('layout', 'TABLE').upper()}_LAYOUT",
-         view.get("filter", ""))
-        for view in declared_views]
+    wanted_live_views = [(view.name, f"{view.layout}_LAYOUT", view.filter)
+                         for view in declared.views]
     held(live_views == wanted_live_views,
          f"the template view layouts arrived: {wanted_live_views}")
 
@@ -412,8 +417,32 @@ def titled(owner: str, number: str) -> str:
     return str(seen.get("title", ""))
 
 
+def check_preset(where: pathlib.Path, owner: str, repo: str, title: str,
+                 standing: str, preset: str) -> None:
+    """The preset laid over a board the template already built: only what
+    the template lacks is added, and the browser checklist is printed."""
+    plain = load(where)
+    (where / "boardkit.toml").write_text(
+        declaration(owner, repo, title, project=standing, preset=preset),
+        encoding="utf-8")
+    shaped = load(where)
+    said = board(where, "admin", "apply")
+    new_views = [v.name for v in shaped.views
+                 if v.name not in {view.name for view in plain.views}]
+    new_fields = [f.display for f in shaped.fields
+                  if f.name not in plain.field_names]
+    for name in new_views:
+        held(f"added view {name} " in said, f"the preset added view {name}")
+    for name in new_fields:
+        held(f"added {name} [" in said, f"the preset added field {name}")
+    held(not any(f"added view {view.name} " in said for view in plain.views),
+         "the preset added none of the views the board already had")
+    held("board admin checklist" in said and "Auto-close issue" in said,
+         "the browser checklist was printed after apply")
+
+
 def run(owner: str, repo: str, keep: bool, with_issue: bool,
-        standing: str = "", stock: int = 0) -> int:
+        standing: str = "", stock: int = 0, preset: str = "") -> int:
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
     title = titled(owner, standing) if standing else f"boardkit contract {stamp}"
     where = pathlib.Path(tempfile.mkdtemp(prefix="boardkit-contract-"))
@@ -437,6 +466,9 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool,
                            if line.startswith("Created project ")), "")
             held(bool(number), f"the project was created (number {number})")
         board(where, "admin", "link")
+        if preset:
+            print(f"\n== the {preset} preset over the board the template built")
+            check_preset(where, owner, repo, title, standing, preset)
         board(where, "sync")
 
         print("\n== what arrived, read back from GitHub")
@@ -549,12 +581,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project", default="", metavar="NUMBER",
                         help="reconcile this standing board instead of "
                              "creating one; it is never deleted")
+    parser.add_argument("--preset", default="", metavar="NAME",
+                        help="after building from the template, apply this "
+                             "preset over it and check only the rest is added")
     parser.add_argument("--seed", type=int, default=0, metavar="COUNT",
                         help="stock the board with this many dummy drafts, "
                              "spread across every column")
     args = parser.parse_args(argv)
     return run(args.owner, args.repo, args.keep, not args.no_issue,
-               standing=args.project, stock=args.seed)
+               standing=args.project, stock=args.seed, preset=args.preset)
 
 
 if __name__ == "__main__":

@@ -3,9 +3,17 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
-## Unreleased
+## 0.3.8 — 2026-10-14
 
 ### Features
+- Board presets. `preset = "roadmap"` under `[board]` gives a board the five
+  columns, `start` and `target` dates, and the views Current, All, Roadmap,
+  Timeline and Initiatives; the repo's own `[board]` settings win by name and
+  add to it. `board init --preset roadmap` writes a config naming it, and
+  `board admin apply --preset roadmap` adds what is missing to an existing
+  board. After applying, boardkit prints what only the browser can set — view
+  grouping, sort and dates, and the Project workflows — and `board admin
+  checklist` prints it again (#76).
 - `board report` says where each Initiative stands, from the snapshot: one
   line per Initiative with its sub-issues done over total, the percentage and
   its start → target dates; the Initiatives under way, with what in them is in
