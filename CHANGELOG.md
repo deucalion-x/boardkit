@@ -3,6 +3,17 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## Unreleased
+
+### Features
+- `board report` says where each Initiative stands, from the snapshot: one
+  line per Initiative with its sub-issues done over total, the percentage and
+  its start → target dates; the Initiatives under way, with what in them is in
+  progress or blocked; and open items past their target. An Initiative whose
+  sub-issues are Initiatives heads the report as the project. Work closed as
+  not planned counts neither as done nor as left. `--json` carries the same
+  numbers for a skill to publish elsewhere (#77).
+
 ## 0.3.7 — 2026-10-14
 
 ### Fixes

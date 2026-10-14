@@ -41,6 +41,7 @@ round trip and sees a different copy than the rest of your reasoning.
 | `board find <terms>` | Titles, bodies and labels containing every word. |
 | `board json` | Every item as one row, for jq or python. An unset field is `""`. |
 | `board views` | The saved tabs the board has. |
+| `board report` | Where each Initiative stands: done / total, dates, the active ones with what is blocked, what is past its target. `--json` for the same numbers as data. |
 
 The snapshot carries each item's body, so `board item` shows the acceptance
 criteria without a call. Do not fetch an issue to read it.
@@ -234,9 +235,14 @@ create one whose outcome is a change you could make; leave it off when the
 outcome is a person's judgement. Forgetting the label leaves work with a
 person, which is the safe way to be wrong.
 
-"Where does the roadmap stand" is a question about the Initiatives — or,
-where there are none, the items with children: list them and summarize each
-one's children by status.
+"Where are we" and "where does the roadmap stand" are answered by `board
+report`: one line per Initiative with its sub-issues done over total and its
+dates, the Initiatives under way with what in them is in progress or blocked,
+and the open items past their target. Quote its numbers rather than counting
+`board json` yourself, and use `board report --json` when the numbers go on to
+somewhere else — a status page, a message — so every telling agrees. On a
+board with no Initiatives, list the items with children instead and summarize
+each one's children by status.
 
 A phase of the project (framing, build, acceptance, rollout) is a milestone of
 the repository, not a field: ordered, one per item, and dated only when there

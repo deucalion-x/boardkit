@@ -628,3 +628,11 @@ def test_the_superuser_hatch_is_logged(repo, monkeypatch, capsys):
     supers = [d for action, d in noted if action == "superuser"]
     assert [s["via"] for s in supers] == ["gh", "--as-me"]
     assert supers[0]["command"] == "gh issue view 3 --repo other/repo"
+
+
+def test_report_answers_from_the_snapshot(seeded, capsys):
+    assert cli.main(["report"]) == 0
+    assert "No Initiatives" in capsys.readouterr().out
+    assert cli.main(["report", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["initiatives"] == []

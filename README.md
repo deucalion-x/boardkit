@@ -210,6 +210,7 @@ Reads answer from the local snapshot and touch nothing:
 | `board find <terms>` | Titles, bodies, labels and comments holding every word given; open work first, then closed. |
 | `board json` | Normalized work items, for jq or python. |
 | `board views` | The saved tabs the board has. |
+| `board report [--json]` | Where each Initiative stands: sub-issues done / total, percent, start → target; the active ones with what is in progress or blocked; open items past their target. |
 
 Every one of them answers from the snapshot. A Project board does not record
 which issue is a sub-issue of which, so each item carries its own parent

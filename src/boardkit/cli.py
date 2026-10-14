@@ -7,6 +7,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board find <terms>         search titles, bodies and labels in the snapshot
   board json                 normalized items on stdout, for jq or python
   board views                the saved tabs the board has
+  board report [--json]      where each Initiative stands: done/total, dates,
+                             the active ones with what is blocked, what is late
 
   board add <title> [f=v]    create an issue and put it on the board
                              --body <text> for its text
@@ -61,6 +63,7 @@ from . import (
     login,
     plan_links,
     quota,
+    report,
     setup,
     skill,
     sync,
@@ -71,7 +74,7 @@ from .config import load
 from .gh import BoardError, RateLimited, Unreachable
 from .store import Snapshot, Store, Write
 
-BOARD_COMMANDS = {"list", "item", "find", "json", "views"}
+BOARD_COMMANDS = {"list", "item", "find", "json", "views", "report"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
@@ -242,6 +245,12 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # notice the first time, which is the thing that does not work.
     #
     # Not on `json`: that output feeds jq, where a header is a parse error.
+    if command == "report":
+        built = report.build(everything, view, config.blocked_field,
+                             board=snapshot.project_url)
+        print(report.as_json(built) if "--json" in args else
+              "\n".join(filter(None, [snapshot.project_url, report.render(built)])))
+        return 0
     if command != "json" and snapshot.project_url:
         print(snapshot.project_url)
     if command == "views":
