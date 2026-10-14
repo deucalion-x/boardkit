@@ -1,9 +1,11 @@
 {
   "permissions": {
-    "ask": [
+    "allow": [
       "Bash(gh *)",
-      "Bash(board --as-me*)",
-      "Bash(board * --as-me*)"
+      "Bash(GH_TOKEN=* gh *)",
+      "Bash(board *)",
+      "Bash(GH_TOKEN=* board *)",
+      "Bash(GH_TOKEN=* uv *)"
     ]
   },
   "hooks": {
