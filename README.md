@@ -354,11 +354,8 @@ BOARDKIT_LOG=/tmp/audit.jsonl board sync   # keep it somewhere else
 
 ## Permissions
 
-The simplest way in is to sign in through the repository's own GitHub App,
-named by `app_client_id` in its boardkit config. Give each repository its own
-app, installed on that repository alone: GitHub limits a sign-in to the repos
-its app is installed on, so each sign-in reaches one repository. Once per
-repository and machine:
+The simplest way in is to sign in through a GitHub App, named by
+`app_client_id` in the repository's boardkit config:
 
 ```bash
 board auth login    # shows a code; approve it on GitHub
@@ -369,6 +366,45 @@ boardkit then acts for you, marked "via" the app, on the repositories the
 app is installed on, with only the app's permissions. The token lasts eight
 hours and renews itself. The app works for organisation-owned boards; GitHub
 offers no project permission on a personal account's board.
+
+boardkit looks after the board and its issues, and nothing else. Code,
+branches and pull requests are written through your own git and `gh`
+credentials, or by a coding agent, never through boardkit. So the app asks
+only for what boardkit's own calls use:
+
+| Permission | boardkit uses it for |
+|---|---|
+| Issues: read and write | create, edit, comment, close, reopen, sub-issues, issue type |
+| Organisation projects: read and write | moving cards, `board admin apply` |
+| Pull requests: read | which pull request closes an issue, and a pull request card's review state |
+| Checks and Commit statuses: read | a pull request card's checks; without them sync leaves that one field empty |
+| Metadata: read | required by GitHub for every app |
+
+### One app per repository, or one for the organisation
+
+GitHub limits a sign-in to the repositories its app is installed on, and
+boardkit files a sign-in in the keychain under the app's client ID. Which
+repositories share an app therefore decides both what a sign-in reaches and
+how many sign-ins there are. Two setups follow from that.
+
+**One app per repository.** `board auth app create` makes it, named
+`boardkit-<org>-<repo>`, and records its client ID. Install it on that
+repository alone. Each sign-in reaches one repository's issues and its
+organisation's boards. The cost is an app, an install and a `board auth
+login` for every repository and machine.
+
+**One app for the organisation.** Create one app by hand in the
+organisation's settings, enable Device Flow on it, and install it on the
+repositories that have a board ("Only select repositories", not "All", so a
+new repository is reached only once someone adds it). Every repository sets
+the same `app_client_id`. A new repository then needs one install and one
+config line; a machine already signed in for any of them needs no new
+sign-in, and `board auth logout` in one signs out of all of them.
+
+The cost is that a sign-in reaches the issues of every repository the app is
+installed on. Since the app holds no code permission, that is issues and
+boards, not code. Give a shared app the same permissions as above, and no
+more.
 
 Without an app, boardkit's `gh` calls run under a **token for this repository
 alone**, never under your personal `gh` login, which reaches every repository
@@ -402,10 +438,9 @@ approved raw `gh` command the same way. `board log --superuser` lists them:
 who used their own login, when, in which repository, for what.
 
 For an organisation's board, `board auth setup` opens a pre-filled
-fine-grained token form for agent work on one repository: contents, issues and
-pull requests read-write, Actions read, and the organisation's projects. It is
-everything an agent needs to plan and do the work there, and nothing outside
-that repository and board. A **user-owned** board cannot be reached that way — fine-grained
+fine-grained token form for one repository's board work: issues read-write,
+pull requests read, and the organisation's projects. No code permission, and
+nothing outside that repository and its organisation's boards. A **user-owned** board cannot be reached that way — fine-grained
 tokens offer no Projects permission on a personal account — so for one it opens
 a classic token form with only the `project` scope (add `repo` for a private
 repository). That reaches every board of the account, but no code.
@@ -432,9 +467,10 @@ global state.
 - **Projects access is organisation-wide.** GitHub has no per-board scope, so a
   repository's app can reach every board of its organisation. boardkit itself
   only touches the board its config names.
-- **Inside its repository, the agent can do a lot**: everything the app's
-  permissions allow. Branch protection on `main` (a paid plan for private
-  organisation repositories) is what stops a force-push or a deleted branch.
+- **boardkit's credential does not limit the agent's code work.** Pushes and
+  pull requests go through your own git and `gh` credentials, so what stops a
+  force-push or a deleted branch is branch protection on `main` (a paid plan
+  for private organisation repositories), not boardkit.
 - **The approvals and the log are Claude Code settings.** Another tool, or a
   script on the same machine, can still use your `gh` login or read the
   keychain. They are a guard for agents, not a security boundary.

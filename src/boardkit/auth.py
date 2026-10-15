@@ -276,22 +276,20 @@ CLASSIC = "https://github.com/settings/tokens/new?scopes=project&description=boa
 def prefilled(config: Config) -> str:
     """GitHub's fine-grained token form with everything it lets a link set.
 
-    The token is an agent's working credential for one repository: plan on
-    the board, write issues and pull requests, push branches. The limit that
-    keeps it safe is the one repository and its organisation's board, not a
-    crippled agent inside it. The repository itself cannot be pre-selected, so
-    that one choice is left to the person.
+    The token is boardkit's credential for one repository's board work: its
+    issues, its pull requests read, and the organisation's board. No code
+    permission: pushes and pull requests go through the person's own git and
+    `gh`. The repository itself cannot be pre-selected, so that one choice is
+    left to the person.
     """
     return FINE_GRAINED + "?" + urlencode({
         "name": f"boardkit {config.repo}"[:40],
-        "description": f"Agent token for {config.repo} only: code, issues, pull "
-                       f"requests and the organisation's project board.",
+        "description": f"boardkit token for {config.repo} only: issues, pull "
+                       f"requests read and the organisation's project board.",
         "target_name": config.owner,
         "expires_in": 90,
-        "contents": "write",
         "issues": "write",
-        "pull_requests": "write",
-        "actions": "read",
+        "pull_requests": "read",
         # The GitHub App name for an organisation's Projects permission; the
         # form is documented to validate what it is given.
         "organization_projects": "write",

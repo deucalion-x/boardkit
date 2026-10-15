@@ -3,6 +3,23 @@
 All notable changes to boardkit are recorded here. Releases follow
 [Semantic Versioning](https://semver.org/) and use tags such as `v0.1.0`.
 
+## Unreleased
+
+### Changes
+- boardkit asks only for what its own calls use: issues and the
+  organisation's projects read-write, pull requests, checks and commit
+  statuses read. `board auth app create` and the `board auth setup` token form
+  no longer ask for contents write, pull requests write or Actions read. Code
+  and pull requests are written through your own git and `gh`, never
+  boardkit. An existing app keeps its permissions until they are lowered in
+  its settings.
+
+### Docs
+- The README describes the two ways to use a GitHub App: one app per
+  repository, which `board auth app create` makes, or one app for the
+  organisation, installed on the repositories that have a board, which shares
+  one sign-in across them.
+
 ## 0.3.13 — 2026-10-14
 
 ### Fixes

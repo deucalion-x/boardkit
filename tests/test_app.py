@@ -14,11 +14,15 @@ def config_at(tmp_path: pathlib.Path) -> Config:
                   repo="octo/widgets")
 
 
-def test_the_manifest_names_the_app_and_asks_only_for_agent_permissions(tmp_path):
+def test_the_manifest_names_the_app_and_asks_only_for_board_permissions(tmp_path):
     made = app.manifest(config_at(tmp_path), "http://127.0.0.1:1/done")
+    asked = made["default_permissions"]
     assert made["name"] == "boardkit-octo-widgets" and made["public"] is False
-    assert made["default_permissions"]["checks"] == "read"
-    assert "administration" not in made["default_permissions"]
+    assert asked["issues"] == "write" and asked["organization_projects"] == "write"
+    assert asked["pull_requests"] == "read" and asked["checks"] == "read"
+    # Code is written through the person's git and gh, never boardkit.
+    assert "contents" not in asked and "administration" not in asked
+    assert "write" not in {asked[k] for k in asked if k not in ("issues", "organization_projects")}
     assert made["hook_attributes"]["active"] is False
 
 

@@ -25,10 +25,13 @@ import webbrowser
 from .config import Config
 from .gh import BoardError
 
-# What an agent working one repository needs, and nothing that administers it.
+# What boardkit's own calls use: the board and its issues. Code and pull
+# requests are written through the person's git and `gh`, never boardkit, so
+# the app holds no write on them. Checks and statuses are read only for a pull
+# request card's checks, which a pull tolerates missing.
 PERMISSIONS = {
-    "contents": "write", "issues": "write", "pull_requests": "write",
-    "actions": "read", "checks": "read", "statuses": "read", "metadata": "read",
+    "issues": "write", "pull_requests": "read",
+    "checks": "read", "statuses": "read", "metadata": "read",
     "organization_projects": "write",
 }
 WAIT_SECONDS = 600
@@ -43,8 +46,8 @@ def manifest(config: Config, redirect: str) -> dict:
     return {
         "name": name_for(config),
         "url": f"https://github.com/{config.repo}",
-        "description": f"Lets boardkit agents plan and do the work on {config.repo}, "
-                       f"acting for the person signed in.",
+        "description": f"Lets boardkit read and update the board and issues of "
+                       f"{config.repo}, acting for the person signed in.",
         "redirect_url": redirect,
         "public": False,
         "hook_attributes": {"url": "https://example.invalid/unused", "active": False},

@@ -7,10 +7,11 @@ fills in a token form or regenerates anything. No secret ships with boardkit:
 the device flow needs the app's client ID alone, which is public, and a token
 it produced refreshes without the client secret.
 
-Each repository names its own app in its config, and each app is installed
-on that repository alone, so a sign-in reaches one repository: GitHub limits
-it to the repos its own app is installed on. Sign-ins are filed in the
-keychain under the app's client ID, one per app.
+Each repository names its app in its config. GitHub limits a sign-in to the
+repos its app is installed on, so an app installed on one repository keeps
+the sign-in to that repository. Sign-ins are filed in the keychain under the
+app's client ID, one per app: repositories that share an organisation's app
+share its sign-in.
 """
 from __future__ import annotations
 

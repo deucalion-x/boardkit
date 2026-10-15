@@ -62,7 +62,7 @@ def test_creating_a_board_needs_as_me(monkeypatch):
         admin.apply(config)
 
 
-def test_the_token_form_is_prefilled_for_agent_work_on_one_repo():
+def test_the_token_form_is_prefilled_for_board_work_on_one_repo():
     import pathlib
     from urllib.parse import parse_qs, urlsplit
 
@@ -72,7 +72,7 @@ def test_the_token_form_is_prefilled_for_agent_work_on_one_repo():
     asked = parse_qs(urlsplit(link).query)
     assert asked["target_name"] == ["octo"]
     assert asked["issues"] == ["write"]
-    assert asked["contents"] == ["write"] and asked["pull_requests"] == ["write"]
+    assert asked["pull_requests"] == ["read"] and "contents" not in asked
     assert asked["organization_projects"] == ["write"]
     assert len(asked["name"][0]) <= 40
 
