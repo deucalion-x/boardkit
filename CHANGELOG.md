@@ -5,6 +5,11 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Features
+- `board init --app <client-id>` writes `app_client_id` into the new config,
+  for an organisation whose boards share one GitHub App. A value that is not
+  a client ID is refused before anything is written.
+
 ### Changes
 - boardkit asks only for what its own calls use: issues and the
   organisation's projects read-write, pull requests, checks and commit

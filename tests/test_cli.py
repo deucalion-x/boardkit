@@ -212,6 +212,29 @@ def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
     assert "[tool.boardkit.board]" in (tmp_path / "pyproject.toml").read_text()
 
 
+def test_init_names_a_shared_app_beside_the_repo(tmp_path):
+    from boardkit.config import load
+    from boardkit.setup import rendered
+    settings = {"owner": "octo", "owner_type": "org", "repo": "octo/places",
+                "project_name": "Places", "app_client_id": "Iv23liABCDEF12345678"}
+    for nested, name in ((False, "boardkit.toml"), (True, "pyproject.toml")):
+        where = tmp_path / name
+        where.mkdir()
+        (where / name).write_text(rendered(settings, nested=nested), encoding="utf-8")
+        assert load(where).app_client_id == "Iv23liABCDEF12345678"
+    assert "app_client_id" not in rendered({**settings, "app_client_id": ""})
+
+
+def test_init_refuses_what_is_not_a_client_id_before_writing(tmp_path, monkeypatch):
+    from boardkit import setup
+    from boardkit.gh import BoardError
+    monkeypatch.setattr(setup, "root", lambda: tmp_path)
+    for wrong in ("ghp_secret0123456789", 'Iv23li"; x = "', "Iv1"):
+        with pytest.raises(BoardError, match="not a GitHub App client ID"):
+            setup.init(app=wrong)
+    assert not (tmp_path / "boardkit.toml").exists()
+
+
 def test_the_starter_config_is_read_back_wherever_it_is_written(tmp_path):
     """In pyproject every table has to sit under [tool.boardkit]; a bare
     [board] there is a different table that nothing reads."""

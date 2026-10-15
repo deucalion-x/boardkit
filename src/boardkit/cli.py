@@ -36,9 +36,10 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth setup           or store a token for this repo alone
   --as-me                    on any verb: use your own gh login instead of
                              this repo's credential; approved and logged
-  board init [-n] [--preset pm] [title]
+  board init [-n] [--preset pm] [--app <client-id>] [title]
                              write the three settings a repo must decide;
-                             --preset starts the board from a shipped shape
+                             --preset starts the board from a shipped shape;
+                             --app names the organisation's shared app
   board schema               the configuration's shape, as JSON schema
   board admin apply [-n] [--reconcile] [--prune-views] [--preset pm]
                              add missing shape; optionally update view filters
@@ -121,8 +122,9 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # These two run before configuration exists, which is their whole point.
     if command == "init":
         preset, args = option(args, "--preset")
+        app, args = option(args, "--app")
         return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args,
-                          preset=preset)
+                          preset=preset, app=app)
     if command == "schema":
         return setup.schema()
 

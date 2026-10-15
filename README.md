@@ -397,8 +397,8 @@ login` for every repository and machine.
 organisation's settings, enable Device Flow on it, and install it on the
 repositories that have a board ("Only select repositories", not "All", so a
 new repository is reached only once someone adds it). Every repository sets
-the same `app_client_id`. A new repository then needs one install and one
-config line; a machine already signed in for any of them needs no new
+the same `app_client_id`, which `board init --app <client-id>` writes for a new
+one. A new repository then needs one install and that one flag; a machine already signed in for any of them needs no new
 sign-in, and `board auth logout` in one signs out of all of them.
 
 The cost is that a sign-in reaches the issues of every repository the app is

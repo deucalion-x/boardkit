@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 from .config import CONFIG_FILES, Config, ProjectField, preset_file
 from .gh import BoardError, gh_json, git
@@ -38,6 +39,10 @@ def root() -> pathlib.Path:
 
 
 TEMPLATE = pathlib.Path(__file__).with_name("templates") / "board-template.toml"
+# A GitHub App's client ID: `Iv1.` and hex for older apps, `Iv23` and
+# alphanumerics for newer ones. Checked so a typo, or a pasted secret, is
+# refused before it is written into a committed file.
+CLIENT_ID = re.compile(r"Iv[0-9A-Za-z.]{8,30}")
 
 
 def board_exists(settings: dict) -> bool:
@@ -69,6 +74,11 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
     settings = {"owner_type": "user", **settings, "preset": preset or "work"}
     text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
         **{key: str(value) for key, value in settings.items()})
+    if settings.get("app_client_id"):
+        # Beside `repo`, where `board auth app create` records it too.
+        text = re.sub(r"^(repo = .*)$",
+                      lambda line: f'{line[1]}\napp_client_id = "{settings["app_client_id"]}"',
+                      text, count=1, flags=re.MULTILINE)
     if nested:
         text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
         text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")
@@ -84,9 +94,17 @@ def target(where: pathlib.Path) -> pathlib.Path:
     return pyproject if pyproject.exists() else where / "boardkit.toml"
 
 
-def init(title: str = "", dry: bool = False, preset: str = "") -> int:
+def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") -> int:
+    """`app` is the client ID of a GitHub App the repository signs in
+    through, for an organisation that shares one app across its boards.
+    Without it the config names no app: `board auth app create` makes one for
+    this repository alone, or `board auth setup` stores a token."""
     if preset:
         preset_file(preset)
+    if app and not CLIENT_ID.fullmatch(app):
+        raise BoardError(
+            f"{app!r} is not a GitHub App client ID, which looks like "
+            f"Iv23li… or Iv1.…; it is on the app's settings page. Nothing was written.")
     where = root()
     for name in CONFIG_FILES:
         if (where / name).exists() and "boardkit" in (where / name).read_text():
@@ -96,6 +114,8 @@ def init(title: str = "", dry: bool = False, preset: str = "") -> int:
     settings = detect()
     if title:
         settings["project_name"] = title
+    if app:
+        settings["app_client_id"] = app
     file = target(where)
     exists = board_exists(settings)
     body = rendered(settings, exists, nested=file.name == "pyproject.toml",
@@ -126,6 +146,9 @@ def init(title: str = "", dry: bool = False, preset: str = "") -> int:
     print(f"\nReady: https://github.com/{kind}/{config.owner}/projects/{number}\n"
           f"Add a column or a field by editing [board] and running "
           f"`board admin apply` again; it never removes anything.")
+    if app:
+        print(f"Signs in through app {app}: install it on {config.repo}, then "
+              f"`board auth login` unless this machine is already signed in to it.")
     if config.preset:
         print()
         admin.checklist(config, number)
