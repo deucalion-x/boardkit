@@ -32,16 +32,21 @@ do = "turn off \"Auto-add sub-issues to project\", \"Auto-close issue\" and \"It
 [board]
 # Every Initiative along time, one bar each from Start to Target. No visible
 # fields: GitHub refuses them on a roadmap layout.
+#
+# Every view filters on the type as well. The sync keeps the board to
+# Initiatives, but a project workflow can put their sub-issues on it between
+# two syncs, and a bird's-eye view should not show them even then.
 [[board.views]]
 name = "Roadmap"
 layout = "ROADMAP"
+filter = "type:Initiative"
 
 # The open Initiatives as rows, with how far along each is.
 [[board.views]]
 name = "Projects"
 layout = "TABLE"
 fields = ["repository", "status", "sub-issues progress", "start", "target", "blocked"]
-filter = "is:open"
+filter = "type:Initiative is:open"
 
 # What needs someone: in the way, or past its date. Two tabs, because a
 # Project filter cannot say "or" between two fields.
@@ -49,13 +54,13 @@ filter = "is:open"
 name = "Blocked"
 layout = "TABLE"
 fields = ["repository", "status", "blocked", "target"]
-filter = "is:open has:blocked"
+filter = "type:Initiative is:open has:blocked"
 
 [[board.views]]
 name = "Late"
 layout = "TABLE"
 fields = ["repository", "status", "sub-issues progress", "target"]
-filter = "is:open target:<@today"
+filter = "type:Initiative is:open target:<@today"
 
 # The dates each Initiative is planned between, copied from its own board.
 [board.fields.start]

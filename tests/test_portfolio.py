@@ -46,10 +46,10 @@ def test_the_preset_is_its_own_shape_not_work_with_more(tmp_path):
     found = loaded(tmp_path)
     assert found.preset == "portfolio"
     assert [(v.name, v.layout, v.filter) for v in found.views] == [
-        ("Roadmap", "ROADMAP", ""),
-        ("Projects", "TABLE", "is:open"),
-        ("Blocked", "TABLE", "is:open has:blocked"),
-        ("Late", "TABLE", "is:open target:<@today"),
+        ("Roadmap", "ROADMAP", "type:Initiative"),
+        ("Projects", "TABLE", "type:Initiative is:open"),
+        ("Blocked", "TABLE", "type:Initiative is:open has:blocked"),
+        ("Late", "TABLE", "type:Initiative is:open target:<@today"),
     ]
     assert [(f.name, f.data_type) for f in found.fields] == [
         ("start", "DATE"), ("target", "DATE")]

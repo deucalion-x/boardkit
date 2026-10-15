@@ -186,7 +186,7 @@ writing it out. Presets stack: each one adds to the one it builds on.
 |---|---|---|
 | `work` | Doing the work in the repository. What `board init` writes. | Columns Inbox, Todo, In Progress, In Review, Done; the `blocked` field; **Current** (BOARD, `-type:Initiative`: the work) and **All** (TABLE, unfiltered) |
 | `pm` | Planning that work and reporting on it. Builds on `work`. | `start` and `target` (DATE); **Roadmap** (TABLE, `type:Initiative`, with sub-issues progress and milestone); **Timeline** (ROADMAP, `has:parent-issue`: the work along time); **Initiatives** (ROADMAP, `type:Initiative`: the roadmap along time) |
-| `portfolio` | One organisation's roadmaps in one place; see [Portfolio](#portfolio). Builds on nothing. | `start` and `target` (DATE), `blocked`; **Roadmap** (ROADMAP: every Initiative along time); **Projects** (TABLE, `is:open`, with repository and sub-issues progress); **Blocked** (`is:open has:blocked`) and **Late** (`is:open target:<@today`) |
+| `portfolio` | One organisation's roadmaps in one place; see [Portfolio](#portfolio). Builds on nothing. | `start` and `target` (DATE), `blocked`; **Roadmap** (ROADMAP: every Initiative along time); **Projects** (TABLE, open, with repository and sub-issues progress); **Blocked** and **Late**; each filtered to `type:Initiative` |
 
 ```toml
 [board]

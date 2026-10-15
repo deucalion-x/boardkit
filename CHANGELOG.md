@@ -5,6 +5,13 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.17 — 2026-10-15
+
+### Changes
+- Every portfolio view filters on `type:Initiative`, so tasks a project
+  workflow puts on the board between two syncs stay out of the bird's-eye
+  view. An existing portfolio takes it with `board admin apply --reconcile`.
+
 ## 0.3.16 — 2026-10-15
 
 ### Changes
