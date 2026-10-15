@@ -2,13 +2,11 @@
 # date with the Initiatives of the repositories listed under [portfolio] in
 # the boardkit config, every morning and whenever it is run by hand.
 #
-# Secrets:
-#   BOARDKIT_TOKEN         a fine-grained token owned by the organisation:
-#                          Organization permissions > Projects read and write;
-#                          Repository access: the listed repositories and this
-#                          one, with Issues read.
-#   BOARDKIT_SOURCE_TOKEN  read access to deucalion-x/boardkit, while that
-#                          repository is private; leave it unset otherwise.
+# Secret:
+#   BOARDKIT_TOKEN  a fine-grained token owned by the organisation:
+#                  Organization permissions > Projects read and write;
+#                  Repository access: the listed repositories and this
+#                  one, with Issues read.
 name: portfolio sync
 
 on:
@@ -32,13 +30,7 @@ jobs:
           enable-cache: false
 
       - name: install boardkit
-        env:
-          SOURCE_TOKEN: ${{ secrets.BOARDKIT_SOURCE_TOKEN }}
-        run: |
-          if [ -n "$SOURCE_TOKEN" ]; then
-            git config --global url."https://x-access-token:${SOURCE_TOKEN}@github.com/deucalion-x/".insteadOf "https://github.com/deucalion-x/"
-          fi
-          uv tool install "git+https://github.com/deucalion-x/boardkit@BOARDKIT_REF"
+        run: uv tool install "git+https://github.com/deucalion-x/boardkit@BOARDKIT_REF"
 
       - name: sync the portfolio
         env:

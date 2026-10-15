@@ -25,11 +25,10 @@ the configuration schema rather than a validation layer bolted onto it.
 
 ## Install
 
-The repository is private, so installing from GitHub needs access to it,
-through an SSH key or `gh auth`:
+Install a release by its tag:
 
 ```bash
-uv tool install "git+ssh://git@github.com/deucalion-x/boardkit.git"
+uv tool install "git+https://github.com/deucalion-x/boardkit@v0.3.16"
 ```
 
 Or install a development checkout:
@@ -239,7 +238,8 @@ Initiative of a listed repository is removed; a draft note is left alone.
 refused on a portfolio, since the next sync would undo them.
 
 `board init --preset portfolio` writes `.github/workflows/portfolio-sync.yml`,
-which runs the sync every morning. It needs a `BOARDKIT_TOKEN` secret: a
+which installs the boardkit that wrote it and runs the sync every morning. It
+needs a `BOARDKIT_TOKEN` secret: a
 fine-grained token owned by the organisation, with Projects read and write and
 Issues read on the listed repositories. An organisation's Project only holds
 that organisation's issues, so a portfolio covers one organisation, and a

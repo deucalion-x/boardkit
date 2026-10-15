@@ -5,6 +5,12 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.16 — 2026-10-15
+
+### Changes
+- boardkit is public. The portfolio Action installs it without a token, so
+  it needs only `BOARDKIT_TOKEN`; the README installs a release over HTTPS.
+
 ## 0.3.15 — 2026-10-15
 
 ### Features
