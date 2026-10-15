@@ -187,6 +187,7 @@ writing it out. Presets stack: each one adds to the one it builds on.
 |---|---|---|
 | `work` | Doing the work in the repository. What `board init` writes. | Columns Inbox, Todo, In Progress, In Review, Done; the `blocked` field; **Current** (BOARD, `-type:Initiative`: the work) and **All** (TABLE, unfiltered) |
 | `pm` | Planning that work and reporting on it. Builds on `work`. | `start` and `target` (DATE); **Roadmap** (TABLE, `type:Initiative`, with sub-issues progress and milestone); **Timeline** (ROADMAP, `has:parent-issue`: the work along time); **Initiatives** (ROADMAP, `type:Initiative`: the roadmap along time) |
+| `portfolio` | One organisation's roadmaps in one place; see [Portfolio](#portfolio). Builds on nothing. | `start` and `target` (DATE), `blocked`; **Roadmap** (ROADMAP: every Initiative along time); **Projects** (TABLE, `is:open`, with repository and sub-issues progress); **Blocked** (`is:open has:blocked`) and **Late** (`is:open target:<@today`) |
 
 ```toml
 [board]
@@ -207,6 +208,42 @@ steps to do in the browser, each with a link: for `work`, close an issue when
 its item reaches Done and auto-archive work closed as not planned; `pm` adds
 grouping Timeline by Parent issue, sorting it by Start, and drawing both
 time views from Start to Target. `board admin checklist` prints them again.
+
+### Portfolio
+
+A portfolio is an organisation's board whose items are the Initiatives of
+other repositories' boards, so every project's roadmap is read in one place.
+Each Initiative is still worked on its own board; the portfolio only shows it.
+It lives in a small repository of its own, holding its boardkit config and
+one GitHub Action:
+
+```bash
+board init --preset portfolio --as-me   # config, the Action, and the board
+```
+
+```toml
+[board]
+preset = "portfolio"
+
+[portfolio]
+repos = ["web-app", "data-pipeline"]   # or "org/name"
+```
+
+`board portfolio sync` is the only thing that changes it. It adds every
+Initiative of the listed repositories, open or closed, and copies Status,
+Start, Target and `blocked` from the board each one is on: those are Project
+fields, held per board rather than on the issue. Sub-issues progress needs no
+copy, since GitHub computes it from the issue. An issue that is no longer an
+Initiative of a listed repository is removed; a draft note is left alone.
+`-n` prints what it would change. The other verbs that change an item are
+refused on a portfolio, since the next sync would undo them.
+
+`board init --preset portfolio` writes `.github/workflows/portfolio-sync.yml`,
+which runs the sync every morning. It needs a `BOARDKIT_TOKEN` secret: a
+fine-grained token owned by the organisation, with Projects read and write and
+Issues read on the listed repositories. An organisation's Project only holds
+that organisation's issues, so a portfolio covers one organisation, and a
+repository of another is refused in config.
 
 `board schema` prints the full shape as JSON Schema — every setting, its type
 and its default — so an agent can fill it in rather than guess.
@@ -289,6 +326,7 @@ The rest:
 | `board admin apply --reconcile` | Also make declared view layouts and filters win; combine with `-n` to preview. |
 | `board admin apply --prune-views` | Delete saved tabs config does not name. The only deletion; preview with `-n`. |
 | `board admin link` | Attach the project to the repository. |
+| `board portfolio sync` / `-n` | On a portfolio: add the listed repositories' Initiatives and copy their fields. |
 | `board auth` / `--refresh` | Which credential is in use, and what it can see. |
 | `board auth app create` | Create this repository's own GitHub App, and record its client ID. |
 | `board auth login` / `logout` | Sign in through this repository's GitHub App. |

@@ -1,0 +1,65 @@
+# The portfolio preset: one organisation's roadmaps in one place. Its items
+# are the Initiatives of the repositories listed under [portfolio], each still
+# worked on its own board; `board portfolio sync` adds them here and copies
+# their Status, Start, Target and blocked, so nothing is edited on this board.
+# Sub-issues progress needs no copy: GitHub computes it from the issue.
+#
+# It builds on no other preset: a portfolio holds no work of its own, so the
+# work columns' views and intake would describe nothing here. A repository
+# takes it with
+#
+#     [board]
+#     preset = "portfolio"
+#
+#     [portfolio]
+#     repos = ["web-app", "data-pipeline"]
+#
+# which `board init --preset portfolio` writes, with the daily Action.
+
+# What GitHub's API cannot set. `view` names a saved tab; `page` a project page.
+[[checklist]]
+view = "Roadmap"
+do = "group by Repository, and in its date settings draw Start → Target."
+
+[[checklist]]
+view = "Projects"
+do = "group by Repository."
+
+[[checklist]]
+page = "workflows"
+do = "turn off \"Auto-add sub-issues to project\", \"Auto-close issue\" and \"Item added to project\". The work under each Initiative stays on its own board, an issue is closed there and not from here, and `board portfolio sync` alone sets this board's fields."
+
+[board]
+# Every Initiative along time, one bar each from Start to Target. No visible
+# fields: GitHub refuses them on a roadmap layout.
+[[board.views]]
+name = "Roadmap"
+layout = "ROADMAP"
+
+# The open Initiatives as rows, with how far along each is.
+[[board.views]]
+name = "Projects"
+layout = "TABLE"
+fields = ["repository", "status", "sub-issues progress", "start", "target", "blocked"]
+filter = "is:open"
+
+# What needs someone: in the way, or past its date. Two tabs, because a
+# Project filter cannot say "or" between two fields.
+[[board.views]]
+name = "Blocked"
+layout = "TABLE"
+fields = ["repository", "status", "blocked", "target"]
+filter = "is:open has:blocked"
+
+[[board.views]]
+name = "Late"
+layout = "TABLE"
+fields = ["repository", "status", "sub-issues progress", "target"]
+filter = "is:open target:<@today"
+
+# The dates each Initiative is planned between, copied from its own board.
+[board.fields.start]
+data_type = "DATE"
+
+[board.fields.target]
+data_type = "DATE"

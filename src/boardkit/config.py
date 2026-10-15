@@ -172,6 +172,19 @@ class View(BaseModel):
         return value.upper() if isinstance(value, str) else value
 
 
+class Portfolio(BaseModel):
+    """Which repositories a portfolio board shows the Initiatives of.
+
+    Not part of any preset: a preset is a shape every board of its kind
+    shares, and which repositories a portfolio covers is this one's alone.
+    Names are written bare (`"web-app"`) or in full; `load` makes
+    them full, under the board's own owner.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    repos: tuple[str, ...] = ()
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, coerce_numbers_to_str=True)
 
@@ -241,6 +254,35 @@ class Config(BaseModel):
     docs_prefix: str = "docs/"
     project_name: str = ""
     project_url: str = ""
+    # Set only on a portfolio: a board of the Initiatives of other
+    # repositories, filled by `board portfolio sync` and edited by nothing else.
+    portfolio: Portfolio | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _portfolio_repos_in_full(cls, data):
+        """Each repository as owner/name, and only the board's own owner's.
+
+        An organisation's project holds only that organisation's issues, so a
+        repository elsewhere could never be added. Refused here, by name,
+        rather than by GitHub on the first sync.
+        """
+        if not isinstance(data, dict) or not isinstance(data.get("portfolio"), dict):
+            return data
+        owner = str(data.get("owner", ""))
+        table = dict(data["portfolio"])
+        full = []
+        for name in table.get("repos") or ():
+            if not isinstance(name, str):
+                return data  # Pydantic reports the type.
+            whose, _, bare = name.rpartition("/")
+            if whose and owner and whose.lower() != owner.lower():
+                raise ValueError(
+                    f"portfolio repo {name!r} is not {owner}'s; a portfolio "
+                    f"only holds the issues of its own organisation")
+            full.append(f"{whose or owner}/{bare}")
+        table["repos"] = tuple(dict.fromkeys(full))
+        return {**data, "portfolio": table}
 
     @model_validator(mode="before")
     @classmethod

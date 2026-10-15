@@ -69,6 +69,10 @@ A preset is a board shape boardkit ships, and presets stack:
   dates, Roadmap (the Initiatives, with progress and milestone), Timeline (the
   work along time, by parent) and Initiatives (the roadmap along time).
 
+- `portfolio` is a board of other boards: the Initiatives of the
+  repositories listed under `[portfolio] repos`, with their dates, in one
+  organisation's view. It builds on nothing. See "A portfolio" below.
+
 Name one under `[board]`:
 
 ```toml
@@ -93,6 +97,27 @@ These run under the repository's own credential. Creating a project reaches
 beyond it, so `board admin apply` refuses and asks for `--as-me`, which uses
 the person's own gh login. Ask the person before adding `--as-me`; never add it
 to get past a refusal on your own.
+
+## A portfolio
+
+A portfolio lives in a repository of its own. `board init --preset portfolio`
+writes its config and the daily Action that runs `board portfolio sync`.
+Which repositories it covers is the one thing to edit:
+
+```toml
+[portfolio]
+repos = ["web-app", "data-pipeline"]
+```
+
+```bash
+board portfolio sync -n     # what it would add, copy or remove
+board portfolio sync        # do it; the Action does this every morning
+```
+
+The sync is the only thing that writes to a portfolio. Its items are copies,
+so a date or a status is changed on the Initiative's own board, never on the
+portfolio. A portfolio covers one organisation: its Project can hold no
+other's issues.
 
 ## What apply will and will not do
 

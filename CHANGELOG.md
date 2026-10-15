@@ -5,6 +5,22 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.15 — 2026-10-15
+
+### Features
+- A portfolio: one organisation's board showing the Initiatives of several
+  repositories' boards. The `portfolio` preset gives it Start, Target and
+  blocked, and Roadmap, Projects, Blocked and Late views. `[portfolio] repos`
+  says which repositories it covers. `board portfolio sync` adds their
+  Initiatives, copies Status, Start, Target and blocked from each one's own
+  board, and removes what no longer belongs; `-n` previews. `board init
+  --preset portfolio` also writes a GitHub Action that runs it daily. The
+  verbs that change an item are refused on a portfolio.
+
+### Fixes
+- `board admin apply` no longer sends visible fields for a roadmap view,
+  which GitHub refused, failing the view.
+
 ## 0.3.14 — 2026-10-15
 
 ### Features

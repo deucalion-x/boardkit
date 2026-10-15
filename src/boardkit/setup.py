@@ -43,6 +43,17 @@ TEMPLATE = pathlib.Path(__file__).with_name("templates") / "board-template.toml"
 # alphanumerics for newer ones. Checked so a typo, or a pasted secret, is
 # refused before it is written into a committed file.
 CLIENT_ID = re.compile(r"Iv[0-9A-Za-z.]{8,30}")
+# What a portfolio adds to the starter config: which repositories it covers,
+# which no preset can say. Left empty for the person to fill in.
+PORTFOLIO = """
+# The repositories whose Initiatives this portfolio shows, by name within
+# $owner. `board portfolio sync` adds them here and copies their fields; the
+# Action in .github/workflows/portfolio-sync.yml runs it every day.
+[portfolio]
+repos = []
+"""
+WORKFLOW = pathlib.Path(__file__).with_name("templates") / "portfolio-sync.yml"
+WORKFLOW_PATH = pathlib.Path(".github/workflows/portfolio-sync.yml")
 
 
 def board_exists(settings: dict) -> bool:
@@ -72,7 +83,10 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
     # Refused before anything is written, rather than by the first load.
     preset_file(preset or "work")
     settings = {"owner_type": "user", **settings, "preset": preset or "work"}
-    text = string.Template(TEMPLATE.read_text(encoding="utf-8")).safe_substitute(
+    source = TEMPLATE.read_text(encoding="utf-8")
+    if settings["preset"] == "portfolio":
+        source += PORTFOLIO
+    text = string.Template(source).safe_substitute(
         **{key: str(value) for key, value in settings.items()})
     if settings.get("app_client_id"):
         # Beside `repo`, where `board auth app create` records it too.
@@ -82,9 +96,22 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
     if nested:
         text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
         text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")
+        text = text.replace("\n[portfolio]", f"\n[{TABLE.strip('[]')}.portfolio]")
         head, _, rest = text.partition("\n[")
         text = f"{TABLE}\n{head.lstrip()}\n[{rest}"
     return text
+
+
+def workflow() -> str:
+    """The daily portfolio sync, pinned to the boardkit that wrote it.
+
+    A release installs as itself. A development build has no tag to name, so
+    it takes the default branch; pin it to a tag in the file once there is one.
+    """
+    from . import __version__
+    ref = (f"v{__version__}" if re.fullmatch(r"\d+\.\d+\.\d+", __version__)
+           else "main")
+    return WORKFLOW.read_text(encoding="utf-8").replace("BOARDKIT_REF", ref)
 
 
 def target(where: pathlib.Path) -> pathlib.Path:
@@ -127,6 +154,15 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
     with file.open("a", encoding="utf-8") as handle:
         handle.write(("\n" if file.exists() and file.stat().st_size else "") + body)
     print(f"Wrote {file.relative_to(where)}:\n\n{body}")
+    if preset == "portfolio":
+        action = where / WORKFLOW_PATH
+        if action.exists():
+            print(f"{WORKFLOW_PATH} exists; left as it is.")
+        else:
+            action.parent.mkdir(parents=True, exist_ok=True)
+            action.write_text(workflow(), encoding="utf-8")
+            print(f"Wrote {WORKFLOW_PATH}: `board portfolio sync` every day. "
+                  f"It needs the BOARDKIT_TOKEN secret its header describes.")
 
     # Carry on into the board itself: the config just written says everything
     # `apply` needs, and stopping here would only ask for one more command.
@@ -149,6 +185,9 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
     if app:
         print(f"Signs in through app {app}: install it on {config.repo}, then "
               f"`board auth login` unless this machine is already signed in to it.")
+    if config.portfolio is not None:
+        print(f"List the repositories under [portfolio] in {file.name}, then "
+              f"`board portfolio sync` fills the board.")
     if config.preset:
         print()
         admin.checklist(config, number)

@@ -580,3 +580,12 @@ def test_a_view_shows_githubs_own_fields_by_any_spelling_and_says_what_it_lacks(
     ids = {"status": "F_S", "subissuesprogress": "F_P"}
     assert visible(roadmap, ids) == ["F_S", "F_P"]
     assert "'phase'" in capsys.readouterr().out
+
+
+def test_a_roadmap_view_is_sent_without_visible_fields(capsys):
+    """GitHub refuses the whole view when a roadmap names any."""
+    from boardkit.admin import visible
+    from boardkit.config import View
+    view = View(name="Roadmap", layout="ROADMAP", fields=("status",))
+    assert visible(view, {"status": "F_S"}) == []
+    assert "roadmap" in capsys.readouterr().out

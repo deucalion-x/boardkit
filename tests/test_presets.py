@@ -89,7 +89,7 @@ def test_a_top_level_preset_is_lifted_like_any_board_setting(tmp_path):
 
 
 def test_an_unknown_preset_names_the_ones_that_exist(tmp_path):
-    with pytest.raises(BoardError, match="has pm, work"):
+    with pytest.raises(BoardError, match="has pm, portfolio, work"):
         loaded(tmp_path, '[board]\npreset = "kanban"\n')
 
 

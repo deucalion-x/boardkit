@@ -14,6 +14,8 @@ assert boardkit.__version__ == installed
 package = importlib.resources.files("boardkit")
 required = (
     package / "templates" / "board-template.toml",
+    package / "templates" / "portfolio-sync.yml",
+    package / "templates" / "presets" / "portfolio.toml",
     package / "templates" / "skills" / "board.md",
     package / "templates" / "skills" / "board-admin.md",
 )

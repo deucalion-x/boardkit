@@ -45,6 +45,9 @@ Reads answer from the local store; only the sync verbs touch GitHub.
                              add missing shape; optionally update view filters
   board admin checklist      what the preset leaves to set in the browser
   board admin link           attach the project to the repository
+  board portfolio sync [-n]  on a portfolio: add the listed repositories'
+                             Initiatives and copy their fields; the only
+                             thing that changes a portfolio
 
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
@@ -66,6 +69,7 @@ from . import (
     issue_mirror,
     login,
     plan_links,
+    portfolio,
     quota,
     report,
     setup,
@@ -79,6 +83,9 @@ from .gh import BoardError, RateLimited, Unreachable
 from .store import Snapshot, Store, Write
 
 BOARD_COMMANDS = {"list", "item", "find", "json", "views", "report"}
+# What changes an item. A portfolio's items are copies, overwritten by the
+# next `board portfolio sync`, so these are refused there.
+WRITES = {"add", "promote", "set", "comment", "close", "reopen", "edit"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
@@ -160,6 +167,15 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         if verb == "checklist":
             return admin.checklist(config)
         return usage()
+    if command == "portfolio":
+        if args[:1] != ["sync"]:
+            return usage()
+        return portfolio.sync(config, dry="-n" in args)
+    if config.portfolio is not None and command in WRITES:
+        raise BoardError(
+            "this board is a portfolio: each item is a copy of an Initiative "
+            "on its own repository's board. Change it there; `board portfolio "
+            "sync` brings the copy up to date.")
     if command == "auth":
         if args[:1] == ["setup"]:
             return auth.setup(config)

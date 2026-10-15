@@ -458,7 +458,15 @@ def existing_views(config: Config, number: str) -> dict[str, ExistingView]:
 def visible(view, field_ids: dict[str, str]) -> list[str]:
     """The ids of the fields a view shows, by config's name or any spelling
     of GitHub's — "parent issue" finds `Parent issue`. A name that matches
-    nothing is said, not dropped: the view would otherwise just lack it."""
+    nothing is said, not dropped: the view would otherwise just lack it.
+
+    None for a roadmap: GitHub refuses visible fields on that layout, and
+    refused the whole view with them."""
+    if view.layout == "ROADMAP":
+        if view.fields:
+            print(f"  warning: view {view.name} is a roadmap, which GitHub "
+                  f"gives no visible fields; its fields are left out")
+        return []
     chosen = []
     for name in view.fields:
         found = field_ids.get(name) or field_ids.get(key(name))
