@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.14 — 2026-10-15
+
 ### Features
 - `board init --app <client-id>` writes `app_client_id` into the new config,
   for an organisation whose boards share one GitHub App. A value that is not

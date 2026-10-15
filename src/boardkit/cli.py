@@ -122,9 +122,9 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     # These two run before configuration exists, which is their whole point.
     if command == "init":
         preset, args = option(args, "--preset")
-        app, args = option(args, "--app")
+        client_id, args = option(args, "--app")
         return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args,
-                          preset=preset, app=app)
+                          preset=preset, app=client_id)
     if command == "schema":
         return setup.schema()
 
