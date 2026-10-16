@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import tomllib
 from collections.abc import Mapping
 from typing import Literal
@@ -39,8 +40,15 @@ ENV_PREFIX = "BOARDKIT_"
 # Everything about the board itself, as opposed to which board it is. They may
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
-BOARD_SETTINGS = ("fields", "views", "labels", "status_order", "status_descriptions",
+BOARD_SETTINGS = ("url", "fields", "views", "labels", "status_order", "status_descriptions",
                   "status_field", "default_status", "blocked_field", "preset")
+# Which board this is, as a person copies it from the browser. It says
+# everything `owner`, `owner_type` and `project` say, so it replaces them.
+BOARD_URL = re.compile(
+    r"https://github\.com/(?P<kind>orgs|users)/(?P<owner>[A-Za-z0-9-]+)"
+    r"/projects/(?P<number>[0-9]+)/?")
+# The keys a URL replaces, kept working for configs written before it.
+IDENTITY = ("owner", "owner_type", "project")
 # Settings that are lists of named entries, merged with a preset's by name.
 NAMED_SETTINGS = ("fields", "views", "labels")
 # A board shape shipped with boardkit, named by `preset` under [board]. The
@@ -216,6 +224,8 @@ class Config(BaseModel):
     # to edit a file has to name the one actually in use, and three are
     # possible.
     source: pathlib.Path | None = None
+    # Derived from `[board] url` when it is set, which is the preferred form:
+    # one value, the one a person copies, rather than three to keep in step.
     owner: str
     repo: str
     # Empty until the board exists: `admin create` is what produces the number,
@@ -278,7 +288,11 @@ class Config(BaseModel):
     max_read_age_seconds: int = Field(default=300, ge=0)
     mirror_path: str = ""
     docs_prefix: str = "docs/"
+    # The title of a board that does not exist yet, for `admin create`. Once
+    # `[board] url` is set nothing reads it: the number says which board.
     project_name: str = ""
+    # The board's URL, written `[board] url`. `project_url` is its earlier
+    # name, from when it was only printed.
     project_url: str = ""
     # Set only on a portfolio: a board of the Initiatives of other
     # repositories, filled by `board portfolio sync` and edited by nothing else.
@@ -309,6 +323,47 @@ class Config(BaseModel):
             full.append(f"{whose or owner}/{bare}")
         table["repos"] = tuple(dict.fromkeys(full))
         return {**data, "portfolio": table}
+
+    # Pydantic runs "before" validators last-defined first, so this one sees
+    # [board] already lifted and the portfolio check after it sees the owner.
+    @model_validator(mode="before")
+    @classmethod
+    def _identity_from_url(cls, data):
+        """`owner`, `owner_type` and `project` from the board's URL.
+
+        Stated alongside it, they have to agree: two values for one thing is
+        a question of which one is wrong, and guessing would hide it.
+        """
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        url = data.pop("url", "")
+        if url and data.get("project_url") and data["project_url"] != url:
+            raise ValueError("url and project_url name different boards; keep url")
+        url = url or data.get("project_url", "")
+        if not url:
+            return data
+        found = BOARD_URL.fullmatch(str(url).strip())
+        if not found:
+            raise ValueError(
+                f"url {url!r} is not a board URL; it looks like "
+                "https://github.com/orgs/<org>/projects/<number> "
+                "(or /users/<login>/ for a personal board)")
+        derived = {"owner": found["owner"],
+                   "owner_type": "org" if found["kind"] == "orgs" else "user",
+                   "project": found["number"]}
+        for key, value in derived.items():
+            stated = data.get(key)
+            if stated not in (None, "") and str(stated).lower() != value.lower():
+                raise ValueError(f"{key} = {stated!r} disagrees with url {url!r}; "
+                                 f"the url alone is enough, so drop {key}")
+        whose = str(data.get("repo", "")).partition("/")[0]
+        if whose and whose.lower() != found["owner"].lower():
+            raise ValueError(
+                f"url {url!r} is {found['owner']}'s board, but repo is "
+                f"{data['repo']!r}; a board only holds its own owner's issues")
+        url = f"https://github.com/{found['kind']}/{found['owner']}/projects/{found['number']}"
+        return {**data, **derived, "project_url": url}
 
     @model_validator(mode="before")
     @classmethod
@@ -397,6 +452,11 @@ class Config(BaseModel):
     @property
     def name(self) -> str:
         return self.project_name or self.repo.split("/")[-1].replace("-", " ").title()
+
+    @property
+    def legacy_identity(self) -> bool:
+        """Named by `owner` and `project` rather than by `[board] url`."""
+        return bool(self.project) and not self.project_url
 
     @property
     def url(self) -> str:
@@ -598,7 +658,7 @@ def describe(error: ValidationError, source: pathlib.Path,
     The two common mistakes get their own wording, because "Field required"
     and "Extra inputs are not permitted" do not tell the reader what to type.
     """
-    known = ", ".join(sorted(Config.model_fields.keys() - {"root", "source"}))
+    known = ", ".join(sorted(Config.model_fields.keys() - {"root", "source"} | {"url"}))
     overrides = overrides or {}
     lines = []
     for detail in error.errors():
@@ -612,6 +672,9 @@ def describe(error: ValidationError, source: pathlib.Path,
             lines.append(f"  missing `{setting}`")
         elif detail["type"] == "extra_forbidden":
             lines.append(f"  unknown boardkit setting `{setting}`")
+        elif setting == "<table>":
+            # A check across settings, which no one line is to blame for.
+            lines.append(f"  {detail['msg'].removeprefix('Value error, ')}")
         else:
             lines.append(f"  {setting}: {detail['msg']}{where}")
     return (

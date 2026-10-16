@@ -1,16 +1,13 @@
 # Which board this is.
-owner = "deucalion-x"
-owner_type = "org"
 app_client_id = "Iv23liPclAFWDh1mSceP"
 repo = "deucalion-x/boardkit"
-project = "2"
-project_name = "boardkit"
 
 # The board itself: what `board admin apply` creates, and the print order of
 # what it finds. A board that already exists needs none of it — its shape is
 # discovered on sync — but it costs nothing to state and is what a new one is
 # built from.
 [board]
+url = "https://github.com/orgs/deucalion-x/projects/2"
 # The columns, in order. Each is created carrying what it means, which GitHub
 # shows on the board itself. A `blocked` text field is created alongside them:
 # being blocked is not a stage, so it is a field holding what is in the way.

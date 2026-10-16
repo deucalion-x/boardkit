@@ -69,7 +69,7 @@ repository alone, regenerated every 90 days.
 
 ## Configure
 
-Three settings, which `board init` writes for you:
+Two settings, which `board init` writes for you:
 
 ```bash
 board init
@@ -77,23 +77,25 @@ board init
 
 ```toml
 # boardkit.toml
-owner = "deucalion-x"
-owner_type = "org"
 repo = "deucalion-x/places"
-project_name = "Places 2"
 app_client_id = "Iv23li..."   # this repository's GitHub App
+
+[board]
+url = "https://github.com/orgs/deucalion-x/projects/2"
 ```
 
 That is the whole configuration for reading a board. Its columns, its fields,
 their options, types and order are discovered on the first sync, because
 GitHub already knows them and a copy here could only drift. Config is for the
-decisions GitHub cannot make: which account, which repository's issues, and
-which project by title.
+decisions GitHub cannot make: which repository's issues, and which board.
 
-The number is deliberately absent. It is resolved from the title and
-remembered in the snapshot, which is what lets `board admin apply` run twice
-without making two projects. Set `project = "4"` only to pin an ambiguous
-title.
+The board is named by its URL, as it is copied from the browser: `orgs` or
+`users`, the owner and the number are everything boardkit needs to find it.
+A board that does not exist yet has no URL, so until then the config names
+it by `owner`, `owner_type` and `project_name` (its title), and `board admin
+apply` replaces those with `url` once it has created it. Configs written before
+`url` — `owner`, `owner_type` and `project` — keep working; `admin apply`
+prints the line that replaces them. Stating both, they have to agree.
 
 ### Who owns the board's shape
 
@@ -252,7 +254,7 @@ and its default — so an agent can fill it in rather than guess.
 
 | Setting | For |
 |---|---|
-| `owner_type` | `"org"` if an organisation owns the project |
+| `owner`, `owner_type`, `project_name` | a board not created yet; `url` replaces them |
 | `status_field` | the column field's name, if the board does not call it Status |
 | `status_order` | to assert the columns; empty means the board's own |
 | `default_status` | the columns `admin apply` creates, with what each means |

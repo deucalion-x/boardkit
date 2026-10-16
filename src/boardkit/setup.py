@@ -56,16 +56,62 @@ WORKFLOW = pathlib.Path(__file__).with_name("templates") / "portfolio-sync.yml"
 WORKFLOW_PATH = pathlib.Path(".github/workflows/portfolio-sync.yml")
 
 
-def board_exists(settings: dict) -> bool:
-    """Whether a project by this title is already there, so `init` writes a
-    config that reads it rather than one that would create a second."""
+def board_exists(settings: dict) -> str:
+    """The URL of the project by this title, or "" if there is none, so
+    `init` writes a config that reads it rather than one that would create a
+    second."""
     try:
         listed = gh_json("project", "list", "--owner", settings["owner"],
                          "--limit", "100", "--format", "json")
     except BoardError:
-        return False
-    return any(entry.get("title") == settings["project_name"]
-               for entry in listed.get("projects", []))
+        return ""
+    kind = "orgs" if settings.get("owner_type") == "org" else "users"
+    return next((entry.get("url") or
+                 f"https://github.com/{kind}/{settings['owner']}/projects/{entry['number']}"
+                 for entry in listed.get("projects", [])
+                 if entry.get("title") == settings["project_name"]), "")
+
+
+# What `[board] url` says, and so what it replaces once the board exists.
+NAMING = ("owner", "owner_type", "project", "project_name", "project_url")
+
+
+def with_url(text: str, url: str) -> str:
+    """A config naming its board by `url` instead of the keys it replaces.
+
+    Edited as text rather than re-serialised, so every comment and the order
+    a person wrote things in survive. Only boardkit's own tables are touched:
+    in a pyproject.toml an `owner` under another tool is not ours.
+    """
+    lines = text.splitlines()
+    nested = any(line.strip() == TABLE for line in lines)
+    top = TABLE if nested else ""
+    board = f"[{TABLE.strip('[]')}.board]" if nested else "[board]"
+    naming = re.compile(rf"^\s*({'|'.join(NAMING)}|url)\s*=")
+    kept, table, placed = [], "", False
+    for line in lines:
+        if line.lstrip().startswith("["):
+            table = line.strip()
+        if table in (top, board) and naming.match(line):
+            continue
+        kept.append(line)
+        if table == board and line.strip() == board and not placed:
+            kept.append(f'url = "{url}"')
+            placed = True
+    if not placed:
+        kept += ["", board, f'url = "{url}"']
+    return "\n".join(kept) + "\n"
+
+
+def record_url(config: Config, url: str) -> None:
+    """Name a board just created by its URL in the file that configured it."""
+    if not url or config.project_url or config.source is None \
+            or not config.source.is_file():
+        return
+    source = config.source
+    source.write_text(with_url(source.read_text(encoding="utf-8"), url),
+                      encoding="utf-8")
+    print(f"  recorded [board] url = {url} in {source.name}")
 
 
 def rendered(settings: dict, exists: bool = True, nested: bool = False,
@@ -93,6 +139,8 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
         text = re.sub(r"^(repo = .*)$",
                       lambda line: f'{line[1]}\napp_client_id = "{settings["app_client_id"]}"',
                       text, count=1, flags=re.MULTILINE)
+    if settings.get("url"):
+        text = with_url(text, settings["url"])
     if nested:
         text = text.replace("[board", f"[{TABLE.strip('[]')}.board")
         text = text.replace("[[board", f"[[{TABLE.strip('[]')}.board")
@@ -144,8 +192,10 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
     if app:
         settings["app_client_id"] = app
     file = target(where)
-    exists = board_exists(settings)
-    body = rendered(settings, exists, nested=file.name == "pyproject.toml",
+    url = board_exists(settings)
+    if url:
+        settings["url"] = url
+    body = rendered(settings, bool(url), nested=file.name == "pyproject.toml",
                     preset=preset)
 
     if dry:
@@ -175,8 +225,8 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
     store = Store(config)
     admin.apply(config, browser=False)
     sync.pull(config, store)
-    # From the snapshot, not config: the number is discovered, and config has
-    # deliberately never been told it.
+    # From the snapshot: a board created just now is not in `config`, which
+    # was read before `apply` recorded its URL.
     number = store.state().project_number
     kind = "orgs" if config.owner_type == "org" else "users"
     print(f"\nReady: https://github.com/{kind}/{config.owner}/projects/{number}\n"

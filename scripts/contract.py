@@ -116,19 +116,17 @@ def declaration(owner: str, repo: str, title: str, project: str = "",
     every creatable type without creating anything.
 
     `project` names a board that already exists, so a run can be pointed at a
-    standing acceptance board instead of creating another one. It goes in
-    beside the other top-level keys, which in TOML means before `[board]`.
+    standing acceptance board instead of creating another one. It is written
+    as `[board] url`, the form `admin apply` itself records after creating one.
     """
     # An organisation's board, as boardkit is used: GitHub links a board only
     # to its owner's repositories, and offers apps no personal-board access.
     settings = {"owner": owner, "owner_type": owner_type, "repo": repo,
                 "project_name": title}
-    config = rendered(settings, exists=False, preset=preset) + "\n" + CONTRACT_FIELDS
     if project:
-        marker = f'project_name = "{title}"'
-        assert marker in config, "the template stopped naming the project"
-        config = config.replace(marker, f'{marker}\nproject = "{project}"', 1)
-    return config
+        kind = "orgs" if owner_type == "org" else "users"
+        settings["url"] = f"https://github.com/{kind}/{owner}/projects/{project}"
+    return rendered(settings, exists=bool(project), preset=preset) + "\n" + CONTRACT_FIELDS
 
 
 class Failed(RuntimeError):

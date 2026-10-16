@@ -22,6 +22,7 @@ from . import auth, credential
 from .config import CREATABLE, Config, Label, ProjectField
 from .config import checklist as preset_steps
 from .gh import BoardError, gh, gh_json, quoted, run_json
+from .setup import record_url
 from .sync import BUILT_IN, fetch_fields, find_project, key, parse_fields
 from .trail import note
 
@@ -288,6 +289,11 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
     found = existing(config, number)
     present = found[1] if found else ()
     missing = plan(config, present)
+    if found and not config.project_url:
+        kind = "orgs" if config.owner_type == "org" else "users"
+        print(f"  hint: name the board by its URL, `url = \"https://github.com/"
+              f"{kind}/{config.owner}/projects/{number}\"` under [board], in "
+              f"place of {'owner and project' if config.project else 'owner and project_name'}.")
 
     if dry:
         if found:
@@ -343,6 +349,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         number = str(made.get("number", ""))
         print(f"Created project {number}: {made.get('url', '')}")
         note("created_project", project=number, title=config.name)
+        record_url(config, made.get("url", ""))
         # GitHub seeds a new project with its own Status field, so what is
         # missing has to be recomputed against what it actually arrived with.
         found = existing(config, number)

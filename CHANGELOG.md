@@ -5,6 +5,15 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `[board] url` names the board by the URL a person copies from the browser,
+  in place of `owner`, `owner_type` and `project`, which it derives. Stating
+  both, they have to agree, and the URL's owner has to be `repo`'s.
+  `project_url` is its earlier spelling. `board init` writes it for a board
+  that exists, and `board admin apply` records it after creating one, so the
+  title is no longer looked up once the board is there. The old keys keep
+  working; `admin apply` prints the line that replaces them.
+
 ## 0.3.18 — 2026-10-16
 
 ### Fixes

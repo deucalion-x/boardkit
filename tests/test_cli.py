@@ -200,7 +200,7 @@ def test_init_goes_all_the_way_to_a_board(tmp_path, monkeypatch):
     monkeypatch.setattr(setup, "detect", lambda: {
         "owner": "octo", "owner_type": "user", "repo": "octo/places",
         "project_name": "Places"})
-    monkeypatch.setattr(setup, "board_exists", lambda settings: False)
+    monkeypatch.setattr(setup, "board_exists", lambda settings: "")
     monkeypatch.setattr(setup, "root", lambda: tmp_path)
     import boardkit.admin
     import boardkit.sync
