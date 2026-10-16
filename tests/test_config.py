@@ -248,10 +248,13 @@ def test_a_lower_case_variable_is_read_too(tmp_path, monkeypatch):
     assert load(tmp_path).max_read_age_seconds == 7
 
 
-def test_a_variable_can_name_the_board_itself(tmp_path, monkeypatch):
+@pytest.mark.parametrize("variable", ["BOARDKIT_PROJECT", "BOARDKIT_REPO", "BOARDKIT_url"])
+def test_no_variable_can_point_at_another_board(tmp_path, monkeypatch, variable):
+    """Which board this is comes from the committed file alone."""
     write(tmp_path, "boardkit.toml", 'owner = "octo"\nrepo = "o/p"\n')
-    monkeypatch.setenv("BOARDKIT_PROJECT", "11")
-    assert load(tmp_path).project == "11"
+    monkeypatch.setenv(variable, "11")
+    with pytest.raises(BoardError, match="not accepted"):
+        load(tmp_path)
 
 
 def test_a_bad_variable_names_the_variable_and_not_the_file(tmp_path,

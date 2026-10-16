@@ -9,7 +9,9 @@ A pull snapshots the project once and reads answer from that snapshot, so they
 cost no network and no API quota — bar the first of a burst, because a read
 refreshes a snapshot older than `max_read_age_seconds` (300 by default) before
 answering. Every scalar setting can also be given as `BOARDKIT_<SETTING>`,
-which wins over the file. A change is sent as
+which wins over the file — except which repository and board this is, which
+only the committed config says, so a command cannot be aimed at another board
+by mistake. A change is sent as
 it is made, and
 queued locally if it cannot be. GitHub stays the real store; `.boardkit/` is a
 working copy, and on a conflict the remote value wins.

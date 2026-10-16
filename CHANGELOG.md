@@ -5,6 +5,17 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.22 — 2026-10-16
+
+### Changes
+- Which repository and board a command works on comes only from the committed
+  config: `BOARDKIT_REPO`, `BOARDKIT_PROJECT`, `BOARDKIT_OWNER` and the other
+  identity variables are refused, naming the variable. With an app shared
+  across an organisation's repositories, one of them could aim a single
+  command at another board with nothing asking first.
+- The README no longer recommends the hook that logged raw `gh` commands; the
+  `ask` rules are the protection, and `--as-me` is still recorded.
+
 ## 0.3.21 — 2026-10-16
 
 ### Changes

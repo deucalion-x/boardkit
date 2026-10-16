@@ -1,6 +1,6 @@
 {
   "name": "boardkit",
-  "version": "0.3.21",
+  "version": "0.3.22",
   "description": "Work a repository's GitHub Project board from a local snapshot: the board and board-admin skills, and the `board` command they drive, at the same version.",
   "author": { "name": "deucalion-x" },
   "homepage": "https://github.com/deucalion-x/boardkit"

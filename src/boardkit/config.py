@@ -8,7 +8,8 @@ every command works from anywhere inside the repo.
 Any scalar setting is also readable as `BOARDKIT_<SETTING>`, which wins over
 the file. The file records what a repository decided; the variable records
 what this machine or this one run needs instead, which is the narrower claim
-and so the louder one.
+and so the louder one. Which repository and board this is cannot be
+overridden: only the committed file says that.
 
 The models are the schema: required keys, unknown keys and field types are
 rejected by pydantic rather than by checks written out here.
@@ -37,6 +38,10 @@ CONFIG_FILES = (".boardkit.toml", "boardkit.toml", "pyproject.toml")
 # Only scalars: a list or a table in an environment variable is a parser nobody
 # asked for, and those settings describe the board rather than the run.
 ENV_PREFIX = "BOARDKIT_"
+# Except which repository and board this is. A variable aims a single command
+# elsewhere without anything committed saying so, and an app shared across an
+# organisation's repositories would let it through.
+PINNED = ("repo", "owner", "owner_type", "project", "project_url", "project_name", "url")
 # Everything about the board itself, as opposed to which board it is. They may
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
@@ -656,6 +661,12 @@ def from_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
         if not key.startswith(ENV_PREFIX):
             continue
         setting = key[len(ENV_PREFIX):].lower()
+        if setting in PINNED:
+            raise BoardError(
+                f"{key} is not accepted: which repository and board this is "
+                f"comes only from the committed config, so one command cannot "
+                f"be pointed at another board by mistake. Run `board` in that "
+                f"repository's checkout instead.")
         if setting in scalars:
             found[setting] = value
     return found
