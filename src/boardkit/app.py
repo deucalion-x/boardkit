@@ -101,8 +101,8 @@ def check_owner(config: Config, made: dict) -> None:
 
 
 def remember(config: Config, client_id: str) -> None:
-    """Write `app_client_id` into the config file actually in use."""
-    file = config.source
+    """Write `app_client_id` where the repository's identity is kept."""
+    file = config.identity_source or config.source
     if file is None or not file.exists():
         raise BoardError(f"no config file to record app_client_id = {client_id!r} in")
     text = file.read_text(encoding="utf-8")

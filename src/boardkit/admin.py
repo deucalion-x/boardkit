@@ -19,7 +19,7 @@ import datetime
 from dataclasses import dataclass
 
 from . import auth, credential
-from .config import CREATABLE, Config, Label, ProjectField
+from .config import CREATABLE, Config, Label, ProjectField, board_url
 from .config import checklist as preset_steps
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .setup import record_url
@@ -350,6 +350,10 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         print(f"Created project {number}: {made.get('url', '')}")
         note("created_project", project=number, title=config.name)
         record_url(config, made.get("url", ""))
+        if made.get("url"):
+            # The kind of owner, which a repo not yet naming its board may
+            # have left to the default.
+            config = config.model_copy(update=board_url(made["url"]))
         # GitHub seeds a new project with its own Status field, so what is
         # missing has to be recomputed against what it actually arrived with.
         found = existing(config, number)

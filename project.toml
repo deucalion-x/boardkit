@@ -1,0 +1,5 @@
+# Which repository and board this is. Other tools may add their own keys.
+[project]
+repo = "https://github.com/deucalion-x/boardkit"
+board = "https://github.com/orgs/deucalion-x/projects/2"
+app_client_id = "Iv23liPclAFWDh1mSceP"

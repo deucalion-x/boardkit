@@ -126,3 +126,73 @@ def test_admin_create_records_the_new_board_by_url(tmp_path, monkeypatch):
     monkeypatch.setattr(admin, "gh_json", lambda *args: {"number": 16, "url": URL})
     admin.apply(config, browser=False)
     assert load(tmp_path).project_url == URL
+
+
+# project.toml: the repository's identity, shared with other tools.
+
+PROJECT = ('[project]\nrepo = "https://github.com/octo/places"\n'
+           f'board = "{URL}"\napp_client_id = "Iv23liABCDEF12345678"\n'
+           'notion_project_id = "abc"\n')
+
+
+def test_project_toml_alone_is_a_whole_configuration(tmp_path):
+    config = config_from(tmp_path, PROJECT, "project.toml")
+    assert (config.repo, config.owner, config.owner_type, config.project) == (
+        "octo/places", "octo", "org", "16")
+    assert config.app_client_id == "Iv23liABCDEF12345678"
+    assert config.identity_source == tmp_path / "project.toml"
+    assert "[project] in" in config.where
+
+
+def test_boardkit_toml_beside_it_holds_the_shape(tmp_path):
+    (tmp_path / "project.toml").write_text(PROJECT, encoding="utf-8")
+    config = config_from(tmp_path, '[board]\npreset = "pm"\nstatus_order = ["A", "B"]\n')
+    assert config.project == "16" and config.status_order == ("A", "B")
+    assert config.preset == "pm"
+
+
+def test_identity_in_both_files_is_fine_while_it_agrees(tmp_path):
+    """A repo migrates one file at a time."""
+    (tmp_path / "project.toml").write_text(PROJECT, encoding="utf-8")
+    config = config_from(tmp_path, 'owner = "octo"\nowner_type = "org"\nproject = 16\n'
+                         'repo = "octo/places"\nproject_name = "Places"\n')
+    assert config.project == "16"
+
+
+@pytest.mark.parametrize("stated", ['repo = "octo/other"', "project = 3",
+                                    'app_client_id = "Iv23liOTHER000000000"',
+                                    '[board]\nurl = "https://github.com/orgs/octo/projects/3"'])
+def test_identity_disagreeing_with_project_toml_names_both_files(tmp_path, stated):
+    (tmp_path / "project.toml").write_text(PROJECT, encoding="utf-8")
+    with pytest.raises(BoardError, match=r"project\.toml says .* but .*boardkit\.toml"):
+        config_from(tmp_path, stated + "\n")
+
+
+def test_a_misspelt_key_is_warned_about_and_another_tools_is_not(tmp_path, capsys):
+    config_from(tmp_path, PROJECT.replace("board =", "bord ="), "project.toml")
+    err = capsys.readouterr().err
+    assert "bord is not read; did you mean board?" in err
+    assert "notion_project_id" not in err
+
+
+def test_without_a_board_yet_the_owner_is_the_repos(tmp_path):
+    config = config_from(tmp_path, '[project]\nrepo = "octo/places"\n', "project.toml")
+    assert (config.owner, config.project) == ("octo", "")
+
+
+def test_a_created_board_is_recorded_in_project_toml(tmp_path):
+    config = config_from(tmp_path, '[project]\nrepo = "octo/places"\nnote = "x"\n',
+                         "project.toml")
+    setup.record_url(config, URL)
+    assert tomllib.loads((tmp_path / "project.toml").read_text())["project"] == {
+        "repo": "octo/places", "board": URL, "note": "x"}
+
+
+def test_schema_lists_the_keys_it_ignored(tmp_path, monkeypatch, capsys):
+    import json
+    (tmp_path / "project.toml").write_text(PROJECT, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    setup.schema()
+    shown = json.loads(capsys.readouterr().out)["project_toml"]
+    assert shown["ignored"] == ["notion_project_id"]
+    assert shown["reads"] == ["repo", "board", "app_client_id"]

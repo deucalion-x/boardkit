@@ -5,6 +5,18 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `project.toml` holds a repository's identity: `repo`, `board` and
+  `app_client_id` under `[project]`. Other keys there are ignored, so other
+  tools can share the file; a near-miss of one of the three is warned about,
+  and `board schema` lists what it ignored. `boardkit.toml` becomes optional
+  and describes only a board's shape. Identity still in `boardkit.toml` keeps
+  working, and may stay beside `project.toml` while they agree.
+- `repo` accepts the repository's URL as well as `owner/name`.
+- A board created by `admin apply` is recorded as `board = …` in
+  `project.toml` when there is one; `board auth app create` records its client
+  ID there too.
+
 ## 0.3.19 — 2026-10-16
 
 ### Changes

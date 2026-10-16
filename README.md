@@ -69,33 +69,48 @@ repository alone, regenerated every 90 days.
 
 ## Configure
 
-Two settings, which `board init` writes for you:
+Two files, each with one job.
 
-```bash
-board init
+**`project.toml` — which repository and board this is.** It is the whole
+configuration for reading a board:
+
+```toml
+[project]
+repo = "https://github.com/deucalion-x/places"     # or deucalion-x/places
+board = "https://github.com/orgs/deucalion-x/projects/2"
+app_client_id = "Iv23li..."   # the GitHub App this repository signs in through
 ```
+
+boardkit reads those three keys from `[project]` and ignores the rest, so other
+tools can keep their own keys in the same file. A key that looks like a
+misspelt one of the three is warned about, and `board schema` lists every key
+it ignored.
+
+**`boardkit.toml` — the board's shape, only when it has one to state.** Its
+columns, fields, options and views are discovered on the first sync, because
+GitHub already knows them and a copy here could only drift. Write a
+`boardkit.toml` (or `[tool.boardkit]` in `pyproject.toml`) only to declare
+what `board admin apply` should create — custom fields, views, labels, column
+order — or to name a preset:
 
 ```toml
 # boardkit.toml
-repo = "deucalion-x/places"
-app_client_id = "Iv23li..."   # this repository's GitHub App
-
 [board]
-url = "https://github.com/orgs/deucalion-x/projects/2"
+preset = "pm"
 ```
-
-That is the whole configuration for reading a board. Its columns, its fields,
-their options, types and order are discovered on the first sync, because
-GitHub already knows them and a copy here could only drift. Config is for the
-decisions GitHub cannot make: which repository's issues, and which board.
 
 The board is named by its URL, as it is copied from the browser: `orgs` or
 `users`, the owner and the number are everything boardkit needs to find it.
-A board that does not exist yet has no URL, so until then the config names
-it by `owner`, `owner_type` and `project_name` (its title), and `board admin
-apply` replaces those with `url` once it has created it. Configs written before
-`url` — `owner`, `owner_type` and `project` — keep working; `admin apply`
-prints the line that replaces them. Stating both, they have to agree.
+A board that does not exist yet has no URL; `board admin apply` creates it and
+writes `board = …` into `project.toml`.
+
+Repos configured before `project.toml` keep working: identity in
+`boardkit.toml` — `[board] url`, or `owner`, `owner_type` and `project` — is
+still read, and may stay beside a `project.toml` while the two agree. When
+they differ, boardkit refuses and names both files.
+
+`board init` writes a starter `boardkit.toml`; in a repo with a `project.toml`,
+it leaves the identity out of it.
 
 ### Who owns the board's shape
 

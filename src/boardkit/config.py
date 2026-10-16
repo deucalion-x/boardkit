@@ -49,6 +49,12 @@ BOARD_URL = re.compile(
     r"/projects/(?P<number>[0-9]+)/?")
 # The keys a URL replaces, kept working for configs written before it.
 IDENTITY = ("owner", "owner_type", "project")
+# The repository's identity, in a file other tools read too. boardkit reads
+# these from its `[project]` table and ignores the rest, which are theirs.
+PROJECT_FILE = "project.toml"
+PROJECT_KEYS = ("repo", "board", "app_client_id")
+# A repository as `owner/name`, or as its URL.
+REPO_URL = re.compile(r"https://github\.com/(?P<repo>[A-Za-z0-9-]+/[A-Za-z0-9._-]+?)(?:\.git)?/?")
 # Settings that are lists of named entries, merged with a preset's by name.
 NAMED_SETTINGS = ("fields", "views", "labels")
 # A board shape shipped with boardkit, named by `preset` under [board]. The
@@ -85,6 +91,14 @@ DEFAULT_STATUS = {
 # so boardkit sends the mutation itself.
 DataType = Literal["TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "ITERATION"]
 CREATABLE = ("TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "ITERATION")
+
+
+def repo_name(value):
+    """`owner/name`, from itself or from the repository's URL."""
+    if isinstance(value, str):
+        found = REPO_URL.fullmatch(value.strip())
+        return found["repo"] if found else value
+    return value
 
 
 def board_url(url: str) -> dict[str, str]:
@@ -240,6 +254,8 @@ class Config(BaseModel):
     # to edit a file has to name the one actually in use, and three are
     # possible.
     source: pathlib.Path | None = None
+    # The project.toml the identity came from, when there is one.
+    identity_source: pathlib.Path | None = None
     # Derived from `[board] url` when it is set, which is the preferred form:
     # one value, the one a person copies, rather than three to keep in step.
     owner: str
@@ -358,6 +374,9 @@ class Config(BaseModel):
             raise ValueError("url and project_url name different boards; keep url")
         url = url or data.get("project_url", "")
         if not url:
+            if not data.get("owner") and "/" in str(data.get("repo", "")):
+                # A board not created yet is its repository's owner's.
+                data["owner"] = repo_name(str(data["repo"])).partition("/")[0]
             return data
         derived = board_url(url)
         for key, value in derived.items():
@@ -367,7 +386,7 @@ class Config(BaseModel):
             if stated not in (None, "") and str(stated).lower() != value.lower():
                 raise ValueError(f"{key} = {stated!r} disagrees with url {url!r}; "
                                  f"the url alone is enough, so drop {key}")
-        whose = str(data.get("repo", "")).partition("/")[0]
+        whose = repo_name(str(data.get("repo", ""))).partition("/")[0]
         if whose and whose.lower() != derived["owner"].lower():
             raise ValueError(
                 f"url {url!r} is {derived['owner']}'s board, but repo is "
@@ -417,6 +436,11 @@ class Config(BaseModel):
                 f"{', '.join(both)} is declared twice, at the top level and "
                 "under [board]; keep one")
         return data | board
+
+    @field_validator("repo", mode="before")
+    @classmethod
+    def _repo_either_form(cls, value):
+        return repo_name(value)
 
     @field_validator("views", "labels", mode="before")
     @classmethod
@@ -504,11 +528,103 @@ class Config(BaseModel):
             return f"the boardkit configuration in {self.root}"
         if self.source.name == "pyproject.toml":
             return f"[tool.boardkit] in {self.source}"
+        if self.source == self.identity_source:
+            return f"[project] in {self.source}"
         return str(self.source)
+
+
+def find_identity(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict] | None:
+    """The nearest project.toml with a `[project]` table, and that table."""
+    here = (start or pathlib.Path.cwd()).resolve()
+    for directory in [here, *here.parents]:
+        candidate = directory / PROJECT_FILE
+        if candidate.is_file():
+            table = tomllib.loads(candidate.read_text(encoding="utf-8")).get("project")
+            if isinstance(table, dict):
+                return candidate, table
+    return None
+
+
+def ignored_keys(table: dict) -> list[str]:
+    """The `[project]` keys boardkit does not read: another tool's, or a typo."""
+    return sorted(key for key in table if key not in PROJECT_KEYS)
+
+
+def near_misses(table: dict) -> dict[str, str]:
+    """Ignored keys that look like a boardkit one, so a typo is not silent."""
+    import difflib
+    return {key: close[0] for key in ignored_keys(table)
+            if (close := difflib.get_close_matches(key, PROJECT_KEYS, n=1, cutoff=0.7))}
+
+
+def identity(source: pathlib.Path, table: dict) -> dict:
+    """Settings from project.toml's `[project]`, under boardkit's names."""
+    found = {key: table[key] for key in ("repo", "app_client_id") if table.get(key)}
+    if table.get("board"):
+        found["url"] = table["board"]
+    for key, meant in near_misses(table).items():
+        import sys
+        print(f"warning: {source}: [project] {key} is not read; did you mean {meant}?",
+              file=sys.stderr)
+    return found
+
+
+def merged(shape: dict, shape_source: pathlib.Path | None,
+           own: dict, own_source: pathlib.Path) -> dict:
+    """The shape file's table with project.toml's identity over it.
+
+    A shape file written before project.toml may still name the repository
+    and the board. That keeps working while the two agree, so a repo can
+    migrate one file at a time; when they differ, only a person knows which
+    is right, so it is refused.
+    """
+    shape = dict(shape)
+    board: dict = shape["board"] if isinstance(shape.get("board"), dict) else {}
+    if "url" in board:
+        shape["board"] = {k: v for k, v in board.items() if k != "url"}
+        shape["url"] = board["url"]
+    mine, theirs = terms(shape), terms(own)
+    for key in mine.keys() & theirs.keys():
+        if mine[key].lower() != theirs[key].lower():
+            raise BoardError(
+                f"{own_source.name} says {key} {theirs[key]!r}, but "
+                f"{shape_source} says {mine[key]!r}. {own_source.name} is where "
+                f"a repository's identity lives; remove it from {shape_source}.")
+    # What project.toml says replaces the shape file's way of saying it.
+    covered = {"repo"} if "repo" in own else set()
+    covered |= {"app_client_id"} if "app_client_id" in own else set()
+    covered |= {*IDENTITY, "url", "project_url"} if "url" in own else set()
+    return {**{k: v for k, v in shape.items() if k not in covered}, **own}
+
+
+def terms(table: dict) -> dict[str, str]:
+    """A table's identity, in one spelling, so two files can be compared."""
+    found = {key: str(table[key]) for key in (*IDENTITY, "app_client_id") if table.get(key)}
+    if table.get("repo"):
+        found["repo"] = repo_name(str(table["repo"]))
+    url = table.get("url") or table.get("project_url")
+    if url:
+        try:
+            found.update(board_url(url))
+        except ValueError:
+            pass  # Reported by Config, which says what the shape should be.
+    return found
 
 
 def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, pathlib.Path]:
     """Walk up from `start` for the first file carrying a boardkit table."""
+    found = find_shape(start)
+    if found is None:
+        raise BoardError(
+            "no boardkit configuration found. Add a project.toml with a "
+            "[project] table naming repo and board, or a [tool.boardkit] table "
+            "to pyproject.toml, or a boardkit.toml, at the root of the repository."
+        )
+    return found
+
+
+def find_shape(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, pathlib.Path] | None:
+    """The nearest boardkit table, or None: with a project.toml, optional."""
     here = (start or pathlib.Path.cwd()).resolve()
     for directory in [here, *here.parents]:
         for name in CONFIG_FILES:
@@ -520,10 +636,7 @@ def find_config(start: pathlib.Path | None = None) -> tuple[pathlib.Path, dict, 
                 "pyproject.toml") else data.get("tool", {}).get("boardkit", data)
             if table:
                 return directory, table, candidate
-    raise BoardError(
-        "no boardkit configuration found. Add a [tool.boardkit] table to "
-        "pyproject.toml, or a boardkit.toml, at the root of the repository."
-    )
+    return None
 
 
 def from_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -536,7 +649,7 @@ def from_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """
     source: Mapping[str, str] = os.environ if environ is None else environ
     scalars = {name for name, field in Config.model_fields.items()
-               if name not in {"root", "source"}
+               if name not in {"root", "source", "identity_source"}
                and field.annotation in (str, int, bool)}
     found = {}
     for key, value in source.items():
@@ -648,26 +761,41 @@ def chosen_preset(table: dict, overrides: dict) -> str:
 def load(start: pathlib.Path | None = None, preset: str = "") -> Config:
     """The repo's configuration. `preset` applies one for this run, over
     whatever the file names, as `board admin apply --preset` does."""
-    root, table, source = find_config(start)
+    own = find_identity(start)
+    shape = find_shape(start)
+    identity_source: pathlib.Path | None
+    source: pathlib.Path | None
+    if own is None:
+        root, table, source = find_config(start)
+        identity_source = None
+    else:
+        identity_source, project = own
+        root = identity_source.parent
+        table, source = (shape[1], shape[2]) if shape else ({}, None)
+        table = merged(table, source, identity(identity_source, project), identity_source)
     overrides = from_env()
     name = preset or chosen_preset(table, overrides)
     if name:
         table = with_preset(table, name)
         overrides.pop("preset", None)
     try:
-        return Config(root=root, source=source, **{**table, **overrides})
+        return Config(root=root, source=source or identity_source,
+                      identity_source=identity_source, **{**table, **overrides})
     except ValidationError as error:
-        raise BoardError(describe(error, source, overrides)) from None
+        files = " and ".join(str(f) for f in dict.fromkeys(
+            f for f in (identity_source, source) if f))
+        raise BoardError(describe(error, files, overrides)) from None
 
 
-def describe(error: ValidationError, source: pathlib.Path,
+def describe(error: ValidationError, source: pathlib.Path | str,
              overrides: dict[str, str] | None = None) -> str:
     """Pydantic's report as advice: one line per bad setting, no traceback.
 
     The two common mistakes get their own wording, because "Field required"
     and "Extra inputs are not permitted" do not tell the reader what to type.
     """
-    known = ", ".join(sorted(Config.model_fields.keys() - {"root", "source"} | {"url"}))
+    known = ", ".join(sorted(Config.model_fields.keys()
+                             - {"root", "source", "identity_source"} | {"url"}))
     overrides = overrides or {}
     lines = []
     for detail in error.errors():

@@ -15,7 +15,15 @@ import json
 import pathlib
 import re
 
-from .config import CONFIG_FILES, Config, ProjectField, preset_file
+from .config import (
+    CONFIG_FILES,
+    PROJECT_KEYS,
+    Config,
+    ProjectField,
+    find_identity,
+    ignored_keys,
+    preset_file,
+)
 from .gh import BoardError, gh_json, git
 
 TABLE = "[tool.boardkit]"
@@ -105,12 +113,19 @@ def with_url(text: str, url: str) -> str:
 
 def record_url(config: Config, url: str) -> None:
     """Name a board just created by its URL in the file that configured it."""
+    if config.identity_source:
+        config = config.model_copy(update={"source": config.identity_source})
     if not url or config.project_url or config.source is None \
             or not config.source.is_file():
         return
     source = config.source
-    source.write_text(with_url(source.read_text(encoding="utf-8"), url),
-                      encoding="utf-8")
+    text = source.read_text(encoding="utf-8")
+    if source == config.identity_source:
+        source.write_text(re.sub(r"^(repo\s*=.*)$", rf'\1\nboard = "{url}"', text,
+                                 count=1, flags=re.MULTILINE), encoding="utf-8")
+        print(f"  recorded board = {url} in {source.name}")
+        return
+    source.write_text(with_url(text, url), encoding="utf-8")
     print(f"  recorded [board] url = {url} in {source.name}")
 
 
@@ -197,6 +212,16 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
         settings["url"] = url
     body = rendered(settings, bool(url), nested=file.name == "pyproject.toml",
                     preset=preset)
+    own = find_identity(where)
+    if own:
+        # project.toml already says which repository and board this is, so
+        # the file written here holds the board's shape alone.
+        body = re.sub(rf"^({'|'.join((*NAMING, 'repo', 'app_client_id', 'url'))})"
+                      r"\s*=.*\n", "", body, flags=re.MULTILINE)
+        if url and not own[1].get("board"):
+            text = own[0].read_text(encoding="utf-8")
+            own[0].write_text(re.sub(r"^(repo\s*=.*)$", rf'\1\nboard = "{url}"', text,
+                                     count=1, flags=re.MULTILINE), encoding="utf-8")
 
     if dry:
         print(f"Would write to {file.relative_to(where)}:\n\n{body}")
@@ -252,5 +277,11 @@ def schema() -> int:
     """
     payload = {"config": Config.model_json_schema(),
                "field": ProjectField.model_json_schema()}
+    own = find_identity()
+    payload["project_toml"] = {
+        "file": str(own[0]) if own else None,
+        "reads": list(PROJECT_KEYS),
+        # Other tools' keys, or a typo: shown so a misspelt one is noticed.
+        "ignored": ignored_keys(own[1]) if own else []}
     print(json.dumps(payload, indent=2))
     return 0
