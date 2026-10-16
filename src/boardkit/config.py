@@ -87,6 +87,22 @@ DataType = Literal["TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "I
 CREATABLE = ("TEXT", "NUMBER", "DATE", "SINGLE_SELECT", "MULTI_SELECT", "ITERATION")
 
 
+def board_url(url: str) -> dict[str, str]:
+    """`owner`, `owner_type`, `project` and the canonical `project_url` a
+    board's URL says, or ValueError naming the shape it should have."""
+    found = BOARD_URL.fullmatch(str(url).strip())
+    if not found:
+        raise ValueError(
+            f"url {url!r} is not a board URL; it looks like "
+            "https://github.com/orgs/<org>/projects/<number> "
+            "(or /users/<login>/ for a personal board)")
+    return {"owner": found["owner"],
+            "owner_type": "org" if found["kind"] == "orgs" else "user",
+            "project": found["number"],
+            "project_url": (f"https://github.com/{found['kind']}/{found['owner']}"
+                            f"/projects/{found['number']}")}
+
+
 class Iteration(BaseModel):
     """How an iteration field is laid out: when it starts, how long each
     iteration runs, and how many to create up front."""
@@ -343,27 +359,20 @@ class Config(BaseModel):
         url = url or data.get("project_url", "")
         if not url:
             return data
-        found = BOARD_URL.fullmatch(str(url).strip())
-        if not found:
-            raise ValueError(
-                f"url {url!r} is not a board URL; it looks like "
-                "https://github.com/orgs/<org>/projects/<number> "
-                "(or /users/<login>/ for a personal board)")
-        derived = {"owner": found["owner"],
-                   "owner_type": "org" if found["kind"] == "orgs" else "user",
-                   "project": found["number"]}
+        derived = board_url(url)
         for key, value in derived.items():
+            if key == "project_url":
+                continue
             stated = data.get(key)
             if stated not in (None, "") and str(stated).lower() != value.lower():
                 raise ValueError(f"{key} = {stated!r} disagrees with url {url!r}; "
                                  f"the url alone is enough, so drop {key}")
         whose = str(data.get("repo", "")).partition("/")[0]
-        if whose and whose.lower() != found["owner"].lower():
+        if whose and whose.lower() != derived["owner"].lower():
             raise ValueError(
-                f"url {url!r} is {found['owner']}'s board, but repo is "
+                f"url {url!r} is {derived['owner']}'s board, but repo is "
                 f"{data['repo']!r}; a board only holds its own owner's issues")
-        url = f"https://github.com/{found['kind']}/{found['owner']}/projects/{found['number']}"
-        return {**data, **derived, "project_url": url}
+        return {**data, **derived}
 
     @model_validator(mode="before")
     @classmethod

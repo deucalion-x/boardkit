@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.19 — 2026-10-16
+
 ### Changes
 - `[board] url` names the board by the URL a person copies from the browser,
   in place of `owner`, `owner_type` and `project`, which it derives. Stating
