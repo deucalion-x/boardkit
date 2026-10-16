@@ -69,6 +69,9 @@ Create an **issue** for work that carries a plan or acceptance criteria — it
 can be reviewed, linked from a commit, and closed by one. Create a **draft**
 for an idea that has not earned that yet.
 
+An open issue the board does not list — opened in the browser or with `gh` —
+is put on it by the first `board set` on it, so no other step is needed.
+
 ## Work-item lifecycle
 
 The normal path is:

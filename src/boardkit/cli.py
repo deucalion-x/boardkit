@@ -557,8 +557,16 @@ def queue(config, store: Store, args: list[str]) -> int:
         print(STALE)
         return 1
     if snapshot.item(ref) is None:
-        print(f"#{ref} is not on the board")
-        return 1
+        found = snapshot.known(ref)
+        if found is None or not found.number or found.closed:
+            print(f"#{ref} is not on the board")
+            return 1
+        create.onto_board(config, store, found.number, found.url)
+        snapshot = store.state()
+        if snapshot.item(ref) is None:
+            print(f"#{ref} was added; the board does not list it yet. "
+                  f"Set it again in a moment.")
+            return 1
     # Before recording, not after: a write refused here must never enter the
     # queue, where nothing would ever get it out again.
     settling(config, snapshot, Write(ref=ref, field=field, value=value),

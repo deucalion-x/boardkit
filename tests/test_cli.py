@@ -161,6 +161,29 @@ def test_setting_an_item_that_is_not_on_the_board_is_refused(seeded, capsys):
     assert "not on the board" in capsys.readouterr().out
 
 
+def test_setting_an_issue_the_board_does_not_list_adds_it_first(seeded, monkeypatch, capsys):
+    """An issue opened in the browser never reaches the board on its own."""
+    from boardkit import create, sync
+    snapshot = seeded.state()
+    seeded.save_state(snapshot.model_copy(update={"elsewhere": (
+        ProjectItem(number=12, title="Opened in the browser", on_board=False,
+                    url="https://github.com/octo/widgets/issues/12"),)}))
+    added = []
+
+    def onto(config, store, issue, url):
+        added.append((issue, url))
+        state = store.state()
+        store.save_state(state.model_copy(update={
+            "elsewhere": (), "items": (*state.items, ProjectItem(
+                number=12, id="I_12", title="Opened in the browser"))}))
+
+    monkeypatch.setattr(create, "onto_board", onto)
+    monkeypatch.setattr(sync, "push_now", lambda *_: ([], [], ""))
+    assert cli.main(["set", "12", "status", "Todo"]) == 0
+    assert added == [(12, "https://github.com/octo/widgets/issues/12")]
+    assert seeded.pending()[0].ref == "12"
+
+
 def test_the_rollup_mentions_queued_work_so_it_is_not_forgotten(seeded, capsys):
     cli.main(["set", "7", "status", "In progress", "--later"])
     capsys.readouterr()
@@ -682,9 +705,11 @@ def test_a_closed_card_can_be_moved_to_done(seeded, monkeypatch, capsys):
     assert capsys.readouterr().out.splitlines()[1].startswith("In progress")
 
 
-def test_an_issue_off_the_board_is_still_refused(seeded, capsys):
+def test_a_closed_issue_off_the_board_is_still_refused(seeded, capsys):
+    """Archived off the board once it closed: putting it back is not what
+    setting a field on it means."""
     state = seeded.state()
     seeded.save_state(state.model_copy(update={"elsewhere": (
-        ProjectItem(number=12, title="Archived", on_board=False),)}))
+        ProjectItem(number=12, title="Archived", on_board=False, closed=True),)}))
     assert cli.main(["set", "12", "status", "Done"]) == 1
     assert "#12 is not on the board" in capsys.readouterr().out

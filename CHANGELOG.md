@@ -13,6 +13,9 @@ All notable changes to boardkit are recorded here. Releases follow
   that exists, and `board admin apply` records it after creating one, so the
   title is no longer looked up once the board is there. The old keys keep
   working; `admin apply` prints the line that replaces them.
+- `board set` on an open issue of the repository that the board does not list
+  puts it on the board first, then sets the field. An issue opened in the
+  browser or with `gh` used to be refused until added by hand.
 
 ## 0.3.18 — 2026-10-16
 

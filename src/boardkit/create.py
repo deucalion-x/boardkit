@@ -120,6 +120,24 @@ def add(config: Config, store: Store, title: str, body: str,
     return 0
 
 
+def onto_board(config: Config, store: Store, issue: int, url: str) -> None:
+    """Put an issue of this repository that the board does not list on it.
+
+    An issue opened in the browser or with `gh` never reaches the board on its
+    own, and its fields cannot be set until it is there. `item-add` is
+    idempotent, so an issue already on it is left as it is.
+    """
+    from . import sync
+    number = store.state().project_number or config.require("project")
+    added = gh_json("project", "item-add", number, "--owner", config.owner,
+                    "--url", url, "--format", "json")
+    print(f"Added #{issue} to the board")
+    note("added_issue", url=url, item=added.get("id"))
+    sync.created(store, added.get("id", ""))
+    if not sync.refresh(config, store, [added.get("id", "")]):
+        sync.pull(config, store)
+
+
 def known_labels(config: Config, labels: list[str]) -> list[str]:
     """The labels, once each is known to exist in the repository.
 
