@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.23 — 2026-10-16
+
 ### Fixes
 - `admin apply --preset` in a repo configured by `project.toml` alone said to
   keep the preset under `[board]` in `project.toml`, which holds identity only
