@@ -5,6 +5,11 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Fixes
+- `admin apply --preset` in a repo configured by `project.toml` alone said to
+  keep the preset under `[board]` in `project.toml`, which holds identity only
+  and is never read for shape. It now says to add it to a `boardkit.toml`.
+
 ## 0.3.22 — 2026-10-16
 
 ### Changes

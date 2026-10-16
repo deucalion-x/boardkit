@@ -159,8 +159,11 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
                                reconcile="--reconcile" in args,
                                prune="--prune-views" in args)
             if preset and load().preset != preset:
+                # project.toml holds identity only, so a preset never goes there.
+                where = (f"a boardkit.toml in {config.root}"
+                         if config.source == config.identity_source else config.where)
                 print(f'\nTo keep it, add preset = "{preset}" under [board] in '
-                      f"{config.where}; this run applied it once.")
+                      f"{where}; this run applied it once.")
             return code
         if verb == "link":
             return admin.link(config)

@@ -106,6 +106,20 @@ def test_prune_views_flag_reaches_apply_and_is_off_by_default(repo, monkeypatch)
     assert called == [False, True]
 
 
+def test_a_one_run_preset_is_kept_in_boardkit_toml_not_project_toml(
+        tmp_path, monkeypatch, capsys):
+    """project.toml holds identity only; the hint must not send a preset there."""
+    from boardkit import admin
+    (tmp_path / "project.toml").write_text(
+        '[project]\nrepo = "https://github.com/octo/widgets"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(admin, "apply", lambda config, **_: 0)
+    assert cli.main(["admin", "apply", "-n", "--preset", "pm"]) == 0
+    out = capsys.readouterr().out
+    assert f"a boardkit.toml in {tmp_path}" in out
+    assert "project.toml" not in out
+
+
 def test_a_missing_config_is_an_error_not_a_traceback(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert cli.main(["list"]) == 1
