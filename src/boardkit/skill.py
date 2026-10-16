@@ -61,10 +61,17 @@ def orphans(config: Config) -> list[pathlib.Path]:
     return found
 
 
+# boardkit's own repository also ships the skills as a Claude Code plugin,
+# beside the `board` it runs, so they are written there from the same source.
+PLUGIN_SKILLS = "plugin/skills"
+PLUGIN_MANIFEST = "plugin/.claude-plugin/plugin.json"
+
+
 def install(config: Config, check: bool = False) -> int:
+    roots = (*SKILL_ROOTS, *((PLUGIN_SKILLS,) if config.path(PLUGIN_MANIFEST).is_file() else ()))
     wanted = {
         config.path(root) / name / "SKILL.md": render(name)
-        for root in SKILL_ROOTS
+        for root in roots
         for name in SKILLS
     }
     left = orphans(config)

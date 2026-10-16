@@ -19,6 +19,9 @@ to pass. Decide the number when you tag.
 
 1. Move the relevant entries in `CHANGELOG.md` from `Unreleased` to a heading
    containing the version you are about to tag and the release date.
+   Set the same version in `plugin/.claude-plugin/plugin.json`: the plugin's
+   `bin/board` installs that tag, and Claude Code updates a plugin only when
+   the string changes. A test fails until the two agree.
 2. Run the same checks as CI:
 
    ```bash
@@ -32,6 +35,8 @@ to pass. Decide the number when you tag.
 3. Run the live contract check (below) and record the result.
 4. Merge the release change to `main` and confirm CI is green, including the
    `package` job.
+5. Push the tag as soon as CI is green: until it exists, a plugin that updated
+   to the new version cannot install its `board`.
 
 ## The live contract check
 
@@ -63,6 +68,7 @@ having one. So it is run by hand, and the result goes in the table below.
 | 0.3.2 | 2026-10-12, reused project 3, pass (85s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Setting, removing and refusing a milestone checked by hand on the sandbox board; the contract does not cover milestones. |
 | 0.3.3 | 2026-10-12, reused project 3, pass (84s) | As 0.3.2, plus the three template tabs read back with their filters. What the type filters match was checked through `items(query:)`: hiding a type hides only that type's items, keeps their children, and an unknown type hides nothing. |
 | 0.3.5 | 2026-10-14, reused project 3, pass (93s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Not covered live: `board init`'s owner-type lookup and the app owner check, which need an org repo and a browser; `board add labels=` passes `--label` to `gh issue create`, unit-tested only. |
+| 0.3.21 | 2026-10-16, skipped | No GitHub call changed: the plugin is new packaging. `plugin/bin/board` was run with an empty cache and a PATH holding neither uv nor gh: it fetched both, installed boardkit, and read the live board. `claude plugin validate` passed for the marketplace and the plugin. |
 | 0.3.20 | 2026-10-16, skipped; checked live on project 2 | No GitHub call changed: only where identity is read from. boardkit's own repo moved to project.toml plus a shape-only boardkit.toml; `board`, `board auth` and `board schema` read back as before. |
 | 0.3.19 | 2026-10-16, reused project 3, pass | As 0.3.5, with the standing board named by `[board] url` in the declaration. Board creation recording its URL is unit-tested, not in this run; `board set` adding an off-board issue was checked live on boardkit #89. |
 | 0.3.18 | 2026-10-16, reused project 3, pass | As 0.3.5, with the issue now created through the REST endpoint. The run used a personal token; the app path (Issues without Contents) was checked live on novatix-team/ehl-ai-frontdesk-avatar, where `board add` created #1–#3 through the org app. Labels in `admin apply` are not in the contract; checked on the same repo after release. |

@@ -1,0 +1,12 @@
+{
+  "name": "boardkit",
+  "description": "boardkit: the board skills and the `board` command, shipped together.",
+  "owner": { "name": "deucalion-x" },
+  "plugins": [
+    {
+      "name": "boardkit",
+      "source": "./plugin",
+      "description": "Work a repository's GitHub Project board: what is next, where an item stands, moving work through review, and the board's own shape."
+    }
+  ]
+}

@@ -25,16 +25,24 @@ the configuration schema rather than a validation layer bolted onto it.
 
 ## Install
 
-Install a release by its tag:
+In Claude Code, once per machine:
 
-```bash
-uv tool install "git+https://github.com/deucalion-x/boardkit@v0.3.16"
+```text
+/plugin marketplace add deucalion-x/boardkit
+/plugin install boardkit@boardkit
 ```
 
-Or install a development checkout:
+That is all. The plugin carries the `board` and `board-admin` skills and the
+`board` command they run, at one version. The first `board` sets itself up —
+it fetches boardkit at the plugin's version, and `uv` and `gh` if the machine
+has neither — in a few seconds, into `~/.cache/boardkit`. It needs only bash
+and curl. The plugin updates itself like any other, skills and command
+together, so nothing is installed or committed per repository.
+
+Without Claude Code, install the command alone by its tag:
 
 ```bash
-uv tool install --editable .
+uv tool install "git+https://github.com/deucalion-x/boardkit@v0.3.21"
 ```
 
 ## Getting started
@@ -59,9 +67,9 @@ unless it says otherwise.
    on **this repository only**; the command opens both.
 5. **Sign in,** once per machine: `board auth login`. boardkit now acts as you,
    via that app, and reaches this repository alone.
-6. **Install the agent skills:** `board install-skill`, then commit them, and
-   add the Claude Code settings from [Permissions](#permissions) so your own
-   login always asks first.
+6. **Add the Claude Code settings** from [Permissions](#permissions), so your
+   own login always asks first. The skills come with the plugin; see
+   [Install](#install).
 7. **First sync:** `board sync`. From here, reads answer from the cache.
 
 Without an app, step 4 and 5 become `board auth setup`: a token for this
@@ -547,20 +555,15 @@ branch before filing the issue, and do not squash the merge.
 
 ## The agent skill
 
-```bash
-board install-skill          # write skills under .claude/ and .agents/
-board install-skill --check  # fail if the committed copy has drifted
-```
+Two skills: `board` for reading and changing work, and `board-admin` for
+changing the board's shape. They ship in the Claude Code plugin (see
+[Install](#install)) beside the `board` they run, so the two never disagree,
+and they stay quiet in a repository with no board.
 
-Two skills are written for each agent: `board` for reading and changing work,
-and `board-admin` for changing the board's shape. Claude Code discovers them
-under `.claude/skills/`; Codex discovers the identical files under
-`.agents/skills/`. The names are the same in every repo.
+A repository that installed them before the plugin has copies under
+`.claude/skills/` and `.agents/skills/`. Delete them once the plugin is
+installed; `board install-skill` still writes them, for Codex or for a machine
+without the plugin, and `--check` reports drift.
 
-The files are copied from the package, identical in every repo: they tell an
-agent to run `board`, which answers for whichever repo it is standing in.
-Commit them, and never edit them — change the template in boardkit and run
-`install-skill` again.
-
-See [docs/overview.md](docs/overview.md) for why a skill cannot simply ship
-inside the package.
+The skills' source is `src/boardkit/templates/skills/`; `board install-skill`
+in this repository also writes the plugin's copies under `plugin/skills/`.

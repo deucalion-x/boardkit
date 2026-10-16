@@ -8,6 +8,9 @@ description: Change the shape of this repository's GitHub Project board itself â
 
 # Changing the board
 
+If `board` answers that it finds no configuration, this repository has no
+board yet: `board init` makes one, and that is the only step to offer.
+
 Work items are moved with `board set`; this is for when the value you need
 does not exist.
 

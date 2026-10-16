@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# `board`, at exactly the plugin's version, so the skills beside it never
+# describe a command this machine does not have.
+#
+# The first call sets it up and later calls start it directly. It needs only
+# bash and curl: uv (which brings Python) and gh are fetched into the cache
+# when this machine has neither. Setup talk goes to stderr, so `board json`
+# stays clean.
+set -euo pipefail
+
+GH_VERSION=2.88.1
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$here/.claude-plugin/plugin.json")"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/boardkit"
+tool="$cache/$version"
+say() { echo "boardkit: $*" >&2; }
+
+if [ -x "$tool/bin/board" ] && { command -v gh >/dev/null || [ -x "$cache/gh/bin/gh" ]; }; then
+  [ -x "$cache/gh/bin/gh" ] && PATH="$cache/gh/bin:$PATH"
+  exec "$tool/bin/board" "$@"
+fi
+
+mkdir -p "$cache"
+# One setup at a time: an agent may call `board` twice at once.
+until mkdir "$cache/.lock" 2>/dev/null; do sleep 1; done
+trap 'rmdir "$cache/.lock"' EXIT
+
+if ! command -v gh >/dev/null && [ ! -x "$cache/gh/bin/gh" ]; then
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) asset="gh_${GH_VERSION}_macOS_arm64.zip" ;;
+    Darwin-x86_64) asset="gh_${GH_VERSION}_macOS_amd64.zip" ;;
+    Linux-x86_64) asset="gh_${GH_VERSION}_linux_amd64.tar.gz" ;;
+    Linux-aarch64|Linux-arm64) asset="gh_${GH_VERSION}_linux_arm64.tar.gz" ;;
+    *) say "no gh on this machine and none to fetch for $(uname -sm); install it from https://cli.github.com"; exit 1 ;;
+  esac
+  say "fetching gh $GH_VERSION"
+  work="$(mktemp -d)"
+  curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${asset}" -o "$work/$asset"
+  case "$asset" in
+    *.zip) unzip -q "$work/$asset" -d "$work" ;;
+    *) tar -xzf "$work/$asset" -C "$work" ;;
+  esac
+  rm -rf "$cache/gh" && mv "$work/${asset%.zip}" "$cache/gh" 2>/dev/null \
+    || mv "$work/${asset%.tar.gz}" "$cache/gh"
+  rm -rf "$work"
+fi
+[ -x "$cache/gh/bin/gh" ] && PATH="$cache/gh/bin:$PATH"
+
+if [ ! -x "$tool/bin/board" ]; then
+  uv="$(command -v uv || true)"
+  if [ -z "$uv" ]; then
+    if [ ! -x "$cache/uv/uv" ]; then
+      say "fetching uv"
+      curl -LsSf https://astral.sh/uv/install.sh \
+        | env UV_UNMANAGED_INSTALL="$cache/uv" sh >/dev/null 2>&1
+    fi
+    uv="$cache/uv/uv"
+  fi
+  say "installing boardkit $version (once)"
+  UV_TOOL_DIR="$tool/tools" UV_TOOL_BIN_DIR="$tool/bin" \
+    "$uv" tool install --quiet --force \
+    "git+https://github.com/deucalion-x/boardkit@v${version}" >&2
+fi
+
+rmdir "$cache/.lock"; trap - EXIT
+exec "$tool/bin/board" "$@"

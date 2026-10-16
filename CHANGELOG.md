@@ -5,6 +5,17 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.21 — 2026-10-16
+
+### Changes
+- boardkit is a Claude Code plugin: `/plugin marketplace add deucalion-x/boardkit`
+  then `/plugin install boardkit@boardkit`, once per machine. It carries the
+  `board` and `board-admin` skills and a `board` that installs boardkit at the
+  plugin's own version on first use, fetching `uv` and `gh` when the machine
+  lacks them. Nothing is installed or committed per repository; copies left
+  by `board install-skill` can be deleted.
+- The skills say to stand down in a repository with no board configuration.
+
 ## 0.3.20 — 2026-10-16
 
 ### Changes

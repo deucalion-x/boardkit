@@ -14,6 +14,10 @@ and they stay approved long after their work is finished — so ranking work
 from plans alone reliably proposes something already done, already blocked, or
 not yet refined enough to start. Ask the board.
 
+A repository uses a board when it has a `project.toml` naming one, or a
+boardkit config. If `board` answers that it finds no configuration, this
+repository has no board: say so, and do not use this skill here.
+
 ## Reads are free after the first, so ask as many as you need
 
 `board` answers from a snapshot on disk, so there is no reason to ration
