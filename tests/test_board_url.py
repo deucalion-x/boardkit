@@ -124,8 +124,12 @@ def test_admin_create_records_the_new_board_by_url(tmp_path, monkeypatch):
     monkeypatch.setattr(admin, "fetch_fields", lambda *_: [])
     monkeypatch.setattr(admin, "apply_views", lambda *_, **__: None)
     monkeypatch.setattr(admin, "gh_json", lambda *args: {"number": 16, "url": URL})
+    sent = []
+    monkeypatch.setattr(admin, "gh", lambda *args: sent.append(args) or "")
     admin.apply(config, browser=False)
     assert load(tmp_path).project_url == URL
+    # Linked at birth: unlinked, the repo's Projects tab and issue sidebar miss it.
+    assert ("project", "link", "16", "--owner", "octo", "--repo", "octo/places") in sent
 
 
 # project.toml: the repository's identity, shared with other tools.

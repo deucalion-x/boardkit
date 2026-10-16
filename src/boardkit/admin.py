@@ -299,7 +299,8 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         if found:
             print(f"Project {number} exists with {len(present)} configured field(s).")
         else:
-            print(f"Would create project {config.name!r} for {config.owner}.")
+            print(f"Would create project {config.name!r} for {config.owner} "
+                  f"and link it to {config.repo}.")
         for field in missing:
             detail = f" ({', '.join(field.options)})" if field.options else ""
             print(f"  would add {field.display} [{field.data_type}]{detail}")
@@ -350,6 +351,10 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         print(f"Created project {number}: {made.get('url', '')}")
         note("created_project", project=number, title=config.name)
         record_url(config, made.get("url", ""))
+        # Linked at birth, under the same login that made it: the repo's own
+        # app may not link, and an unlinked board is missing from the repo's
+        # Projects tab and from its issues' sidebar.
+        attach(config, number)
         if made.get("url"):
             # The kind of owner, which a repo not yet naming its board may
             # have left to the default.
@@ -646,7 +651,17 @@ def link(config: Config) -> int:
     number = locate(config)
     if not number:
         raise BoardError("no project to link; run `board admin create` first")
+    attach(config, number)
+    return 0
+
+
+def attach(config: Config, number: str) -> None:
+    """Link the project to the repository, as `board admin link` does.
+
+    Linking changes the repository, which an app scoped to issues and
+    projects may not do; it runs under whoever created the board.
+    """
     # `link` is the one project verb with no --format flag; it prints a line.
     gh("project", "link", number, "--owner", config.owner, "--repo", config.repo)
-    print(f"Linked project {number} to {config.repo}")
-    return 0
+    print(f"  linked project {number} to {config.repo}")
+    note("linked_project", project=number, repo=config.repo)

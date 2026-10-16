@@ -9,6 +9,10 @@ All notable changes to boardkit are recorded here. Releases follow
 - `admin apply --preset` in a repo configured by `project.toml` alone said to
   keep the preset under `[board]` in `project.toml`, which holds identity only
   and is never read for shape. It now says to add it to a `boardkit.toml`.
+- A board `admin apply` creates is linked to the repository, so it shows in
+  the repo's Projects tab and in its issues' sidebar. Before, that took a
+  separate `board admin link`, which the repo's own app is refused: linking
+  changes the repository. It runs under the login that created the board.
 
 ## 0.3.22 — 2026-10-16
 
