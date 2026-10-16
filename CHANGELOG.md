@@ -5,6 +5,11 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `scripts/release.py <version>` does a release's mechanical steps: changelog
+  heading, plugin version, checks, commit, push, wait for CI, then tag. It
+  refuses until the changelog entries and the contract-check row are written.
+
 ## 0.3.23 — 2026-10-16
 
 ### Fixes

@@ -15,28 +15,28 @@ failure this removes. A build between tags names its distance and its commit
 (`0.1.1.dev9+g5250ad5`) rather than claiming to be a release.
 
 So there is no version to choose here, only a changelog to settle and checks
-to pass. Decide the number when you tag.
+to pass. Decide the number when you release.
 
-1. Move the relevant entries in `CHANGELOG.md` from `Unreleased` to a heading
-   containing the version you are about to tag and the release date.
-   Set the same version in `plugin/.claude-plugin/plugin.json`: the plugin's
-   `bin/board` installs that tag, and Claude Code updates a plugin only when
-   the string changes. A test fails until the two agree.
-2. Run the same checks as CI:
+Two things are decided, and written, first:
 
-   ```bash
-   uv sync --locked --dev
-   uv run ruff check src tests scripts
-   uv run mypy
-   uv run pytest -q
-   uv build --no-sources
-   ```
+1. The entries under `Unreleased` in `CHANGELOG.md`.
+2. This version's row in the table below: whether the live contract check ran
+   (it is needed when a GitHub call changed) and what it covered, or why it
+   was skipped.
 
-3. Run the live contract check (below) and record the result.
-4. Merge the release change to `main` and confirm CI is green, including the
-   `package` job.
-5. Push the tag as soon as CI is green: until it exists, a plugin that updated
-   to the new version cannot install its `board`.
+Then one command does the rest:
+
+```bash
+GH_TOKEN=… uv run python scripts/release.py 0.3.24   # --dry-run to check first
+```
+
+It refuses without both of the above, off `main`, behind `origin/main`, with
+other uncommitted changes, or for a version not after the latest tag. It then
+moves the changelog heading, sets the plugin's version (its `bin/board`
+installs that tag, and Claude Code updates a plugin only when the string
+changes), runs the CI checks, commits and pushes, waits for CI on that commit,
+and tags only once it is green — until the tag exists, a plugin that updated
+to the new version could not install its `board`.
 
 ## The live contract check
 
