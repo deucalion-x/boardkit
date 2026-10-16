@@ -72,11 +72,14 @@ def made(tmp_path, monkeypatch):
     store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00"))
 
     def gh(*args, **kwargs):
+        # Only the lookups a create makes first: labels, then milestones.
         calls.append(("gh", args))
-        return "https://github.com/octo/widgets/issues/42\n"
+        return "dev\nBug\n" if args[1].endswith("/labels") else "3\n"
 
     def gh_json(*args, **kwargs):
         calls.append(("gh_json", args))
+        if args[0] == "api":
+            return {"number": 42, "html_url": "https://github.com/octo/widgets/issues/42"}
         return {"id": "I_NEW123456"}
 
     monkeypatch.setattr(create, "gh", gh)
@@ -103,7 +106,7 @@ def test_a_draft_without_a_title_is_refused_before_the_network(made):
     assert calls == []
 
 
-def test_the_issue_number_is_read_back_out_of_the_url_github_printed(made):
+def test_the_issue_number_is_read_back_from_what_github_answered(made):
     from boardkit.create import add
     config, store, _ = made
     add(config, store, "A real thing", "with a plan", {})
@@ -115,7 +118,20 @@ def test_an_issue_is_created_then_added_to_the_board(made):
     config, store, calls = made
     add(config, store, "A real thing", "", {})
     verbs = [args[0] for kind, args in calls if kind.startswith("gh")]
-    assert verbs == ["issue", "project"]
+    assert verbs == ["api", "project"]
+
+
+def test_an_issue_is_created_without_gh_issue_create(made):
+    """`gh issue create` reads the default branch for templates, which needs
+    Contents; a board's app has Issues only. The REST endpoint needs no more."""
+    from boardkit.create import add
+    config, store, calls = made
+    add(config, store, "A real thing", "with a plan", {})
+    created = next(args for kind, args in calls if kind == "gh_json" and args[0] == "api")
+    assert created[:4] == ("api", "repos/octo/widgets/issues", "--method", "POST")
+    assert ("-f", "title=A real thing") == created[4:6]
+    assert ("-f", "body=with a plan") == created[6:8]
+    assert not any(args[0] == "issue" for kind, args in calls if kind.startswith("gh"))
 
 
 def test_fields_are_set_from_the_id_item_add_returned_not_after_a_pull(made):
@@ -168,10 +184,13 @@ def test_the_project_number_comes_from_the_snapshot_when_it_has_one(tmp_path,
     store = Store(config)
     store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00",
                               project_number="9"))
-    monkeypatch.setattr(create, "gh",
-                        lambda *a, **k: "https://github.com/octo/widgets/issues/42\n")
-    monkeypatch.setattr(create, "gh_json",
-                        lambda *a, **k: (seen.append(a[2]), {"id": "I_X"})[1])
+    def gh_json(*args, **kwargs):
+        if args[0] == "api":
+            return {"number": 42, "html_url": "https://github.com/octo/widgets/issues/42"}
+        seen.append(args[2])
+        return {"id": "I_X"}
+
+    monkeypatch.setattr(create, "gh_json", gh_json)
     monkeypatch.setattr(sync, "pull", lambda c, s: None)
     monkeypatch.setattr(sync, "refresh", lambda c, s, ids: False)
     create.add(config, store, "A thing", "", {})
@@ -209,9 +228,21 @@ def test_a_new_issue_is_created_in_its_milestone_not_as_a_board_field(made):
     from boardkit.create import add
     config, store, calls = made
     add(config, store, "A phase task", "", {"milestone": "Cadrage"})
-    created = next(args for kind, args in calls if kind == "gh" and args[0] == "issue")
-    assert created[-2:] == ("--milestone", "Cadrage")
-    assert not any("milestone" in str(args) for kind, args in calls if kind == "gh_json")
+    created = next(args for kind, args in calls if kind == "gh_json" and args[0] == "api")
+    # REST takes the milestone's number, looked up from its title.
+    assert created[-2:] == ("-F", "milestone=3")
+    assert not any("milestone" in str(args) for kind, args in calls
+                   if kind == "gh_json" and args[0] == "project")
+
+
+def test_an_unknown_milestone_stops_the_create_before_anything_is_made(made,
+                                                                      monkeypatch):
+    from boardkit import create
+    config, store, calls = made
+    monkeypatch.setattr(create, "gh", lambda *a, **k: "")
+    with pytest.raises(BoardError, match="no milestone 'Nope'"):
+        create.add(config, store, "A phase task", "", {"milestone": "Nope"})
+    assert not any(kind == "gh_json" for kind, _ in calls)
 
 
 def test_labels_and_assignees_are_given_to_the_create_not_to_the_board(made):
@@ -220,6 +251,18 @@ def test_labels_and_assignees_are_given_to_the_create_not_to_the_board(made):
     from boardkit.create import add
     config, store, calls = made
     add(config, store, "A dev task", "", {"labels": "dev, bug", "assignees": "octo"})
-    created = next(args for kind, args in calls if kind == "gh" and args[0] == "issue")
-    assert created[-6:] == ("--label", "dev", "--label", "bug", "--assignee", "octo")
-    assert not any("labels" in str(args) for kind, args in calls if kind == "gh_json")
+    created = next(args for kind, args in calls if kind == "gh_json" and args[0] == "api")
+    assert created[-6:] == ("-f", "labels[]=dev", "-f", "labels[]=bug",
+                            "-f", "assignees[]=octo")
+    assert not any("labels" in str(args) for kind, args in calls
+                   if kind == "gh_json" and args[0] == "project")
+
+
+def test_an_unknown_label_stops_the_create_rather_than_being_made_up(made):
+    """REST invents a label it does not know, where `gh issue create` refused
+    it; a typo must not quietly become a new label on a real issue."""
+    from boardkit.create import add
+    config, store, calls = made
+    with pytest.raises(BoardError, match="no label 'dve'"):
+        add(config, store, "A dev task", "", {"labels": "dve"})
+    assert not any(kind == "gh_json" for kind, _ in calls)

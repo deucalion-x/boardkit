@@ -67,21 +67,27 @@ def add(config: Config, store: Store, title: str, body: str,
     # Nor is its type, which the organisation defines.
     kind = values.pop("type", "").strip()
     # Labels and assignees belong to the issue too, so they are given to the
-    # create itself: a label that does not exist then stops it before anything
-    # is made, rather than leaving an issue behind without it.
-    meta = [flag
-            for name, option in (("labels", "--label"), ("assignees", "--assignee"))
-            for one in values.pop(name, "").split(",") if one.strip()
-            for flag in (option, one.strip())]
+    # create itself, checked first: a label that does not exist then stops it
+    # before anything is made, rather than leaving an issue behind without it.
+    labels, assignees = ([one.strip() for one in values.pop(name, "").split(",")
+                          if one.strip()] for name in ("labels", "assignees"))
     number = store.state().project_number or config.require("project")
 
-    made = gh("issue", "create", "--repo", config.repo, "--title", title,
-              "--body", body or "", *(["--milestone", milestone] if milestone else []),
-              *meta)
-    url = made.strip().splitlines()[-1]
+    # The REST endpoint rather than `gh issue create`, which first reads the
+    # repository's default branch to look for issue templates. That read needs
+    # the Contents permission, which a board's app deliberately lacks, so every
+    # create was refused before it began. Creating an issue needs Issues alone.
+    fields = [f"title={title}", f"body={body or ''}",
+              *(f"labels[]={one}" for one in known_labels(config, labels)),
+              *(f"assignees[]={one}" for one in assignees)]
+    numbered = ["-F", f"milestone={milestone_number(config, milestone)}"] if milestone else []
+    made = gh_json("api", f"repos/{config.repo}/issues", "--method", "POST",
+                   *(arg for field in fields for arg in ("-f", field)), *numbered)
+    url, issue = made.get("html_url", ""), int(made.get("number") or 0)
+    if not issue:
+        raise BoardError("GitHub created no issue, or named no number for it")
     added = gh_json("project", "item-add", number, "--owner", config.owner,
                     "--url", url, "--format", "json")
-    issue = int(url.rstrip("/").rsplit("/", 1)[-1])
     print(f"Created {url}")
     note("created_issue", url=url, title=title, item=added.get("id"))
     from . import sync
@@ -112,6 +118,34 @@ def add(config: Config, store: Store, title: str, body: str,
     remember(store, added.get("id", ""), issue, title, body or "", values,
              parent=int(parent) if parent else 0)
     return 0
+
+
+def known_labels(config: Config, labels: list[str]) -> list[str]:
+    """The labels, once each is known to exist in the repository.
+
+    The REST endpoint makes up any label it does not know, where `gh issue
+    create` refused it; a typo would quietly become a new label. So they are
+    checked first, and the create is stopped before anything is made.
+    """
+    if not labels:
+        return labels
+    existing = {name.casefold() for name in gh(
+        "api", f"repos/{config.repo}/labels", "--paginate", "--jq", ".[].name"
+    ).splitlines()}
+    missing = [one for one in labels if one.casefold() not in existing]
+    if missing:
+        raise BoardError(f"no label {', '.join(map(repr, missing))} in {config.repo}; "
+                         "nothing was created")
+    return labels
+
+
+def milestone_number(config: Config, title: str) -> int:
+    """The number of the milestone with that title, which is what REST takes."""
+    found = gh("api", f"repos/{config.repo}/milestones?state=all", "--paginate",
+               "--jq", f".[] | select(.title == {quoted(title)}) | .number")
+    if not found.strip():
+        raise BoardError(f"no milestone {title!r} in {config.repo}; nothing was created")
+    return int(found.split()[0])
 
 
 def promote(config: Config, store: Store, ref: str) -> int:
