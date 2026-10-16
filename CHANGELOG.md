@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.20 — 2026-10-16
+
 ### Changes
 - `project.toml` holds a repository's identity: `repo`, `board` and
   `app_client_id` under `[project]`. Other keys there are ignored, so other
