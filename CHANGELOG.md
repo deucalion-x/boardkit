@@ -5,6 +5,22 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.3.18 — 2026-10-16
+
+### Fixes
+- `board add` works through a board's app again. `gh issue create` first reads
+  the default branch to look for issue templates, which needs the Contents
+  permission that 0.3.14 removed from the app, so every create was refused.
+  Issues are now created through the REST endpoint, which needs Issues alone.
+  A label or milestone that does not exist still stops the create before
+  anything is made.
+
+### Changes
+- `labels` under `[board]`: repository labels, merged with a preset's by name
+  like fields and views. `board admin apply` creates the missing ones and
+  never edits an existing label. The `work` preset (and so `pm`) declares
+  `dev`, which the skill relies on, and `area:security`, the first topic label.
+
 ## 0.3.17 — 2026-10-15
 
 ### Changes
