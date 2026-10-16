@@ -39,8 +39,10 @@ ENV_PREFIX = "BOARDKIT_"
 # Everything about the board itself, as opposed to which board it is. They may
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
-BOARD_SETTINGS = ("fields", "views", "status_order", "status_descriptions",
+BOARD_SETTINGS = ("fields", "views", "labels", "status_order", "status_descriptions",
                   "status_field", "default_status", "blocked_field", "preset")
+# Settings that are lists of named entries, merged with a preset's by name.
+NAMED_SETTINGS = ("fields", "views", "labels")
 # A board shape shipped with boardkit, named by `preset` under [board]. The
 # repo's own settings are merged over it, so a preset is where a board starts
 # rather than a cage.
@@ -172,6 +174,27 @@ class View(BaseModel):
         return value.upper() if isinstance(value, str) else value
 
 
+class Label(BaseModel):
+    """A label the repository's issues are classified by.
+
+    Labels belong to the repository, not to the board, but the skill relies on
+    some of them — `dev` decides what an agent may pick up — so a board that
+    lacks them is one the skill cannot be followed on. `admin apply` creates
+    the missing ones and leaves every existing label as it is.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    # Hex, without the `#`, as GitHub's API takes it.
+    color: str = "ededed"
+    description: str = ""
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _without_hash(cls, value):
+        return value.lstrip("#") if isinstance(value, str) else value
+
+
 class Portfolio(BaseModel):
     """Which repositories a portfolio board shows the Initiatives of.
 
@@ -229,6 +252,9 @@ class Config(BaseModel):
     # Saved tabs. Declared for the same reason a field is: `admin apply` has to
     # create them, and nothing else needs them stated.
     views: tuple[View, ...] = ()
+    # Repository labels the board's work is classified by, created by `admin
+    # apply` when missing.
+    labels: tuple[Label, ...] = ()
     # Which preset the board shape starts from, already merged into the
     # settings above by `load`. Kept so `admin` can say what the preset leaves
     # to the browser.
@@ -328,7 +354,7 @@ class Config(BaseModel):
                 "under [board]; keep one")
         return data | board
 
-    @field_validator("views", mode="before")
+    @field_validator("views", "labels", mode="before")
     @classmethod
     def _views_either_form(cls, value):
         """A table per view, or a bare list of names taking the defaults."""
@@ -524,7 +550,7 @@ def with_preset(table: dict, name: str) -> dict:
     shape: dict = {}
     for layer in layers(name):
         for setting, given in layer.get("board", {}).items():
-            if setting in ("fields", "views"):
+            if setting in NAMED_SETTINGS:
                 shape[setting] = over(named_entries(shape.get(setting)),
                                       named_entries(given))
             else:
@@ -533,7 +559,7 @@ def with_preset(table: dict, name: str) -> dict:
     board = dict(table.get("board") or {})
     for setting, given in shape.items():
         home = table if setting in table else board
-        if setting in ("fields", "views"):
+        if setting in NAMED_SETTINGS:
             home[setting] = over(named_entries(given), named_entries(home.get(setting)))
         elif setting not in home:
             home[setting] = given

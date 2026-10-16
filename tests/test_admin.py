@@ -589,3 +589,42 @@ def test_a_roadmap_view_is_sent_without_visible_fields(capsys):
     view = View(name="Roadmap", layout="ROADMAP", fields=("status",))
     assert visible(view, {"status": "F_S"}) == []
     assert "roadmap" in capsys.readouterr().out
+
+
+def test_only_the_labels_the_repository_lacks_are_missing_ignoring_case(monkeypatch):
+    """GitHub treats `Dev` and `dev` as one label and refuses to make the second."""
+    from boardkit import admin
+    from boardkit.config import Label
+    config = CONFIG.model_copy(update={"labels": (Label(name="dev"), Label(name="area:security"))})
+    monkeypatch.setattr(admin, "gh", lambda *args: "Dev\nbug\n")
+    assert [label.name for label in admin.missing_labels(config)] == ["area:security"]
+
+
+def test_a_repo_declaring_no_labels_asks_github_about_none(monkeypatch):
+    from boardkit import admin
+    monkeypatch.setattr(admin, "gh", lambda *args: pytest.fail("asked about labels"))
+    assert admin.missing_labels(CONFIG) == []
+
+
+def test_a_missing_label_is_created_with_its_colour_and_description(monkeypatch):
+    from boardkit import admin
+    from boardkit.config import Label
+    posted: list[tuple] = []
+    monkeypatch.setattr(admin, "gh", lambda *args: posted.append(args) or "")
+    admin.apply_labels(CONFIG, [Label(name="dev", color="0E8A16", description="Agent work.")])
+    assert posted == [("api", "repos/octo/widgets/labels", "--method", "POST",
+                       "-f", "name=dev", "-f", "color=0E8A16", "-f", "description=Agent work.")]
+
+
+def test_a_dry_run_reports_missing_labels_without_creating_them(sent, monkeypatch, capsys):
+    from boardkit import admin
+    from boardkit.config import Label
+    config = CONFIG.model_copy(update={"labels": (Label(name="dev"),)})
+    asked: list[tuple] = []
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    monkeypatch.setattr(admin, "gh", lambda *args: asked.append(args) or "")
+    admin.apply(config, dry=True)
+    assert "would add label dev" in capsys.readouterr().out
+    assert not any("POST" in args for args in asked)

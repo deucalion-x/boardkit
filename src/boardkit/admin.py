@@ -19,7 +19,7 @@ import datetime
 from dataclasses import dataclass
 
 from . import auth, credential
-from .config import CREATABLE, Config, ProjectField
+from .config import CREATABLE, Config, Label, ProjectField
 from .config import checklist as preset_steps
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .sync import BUILT_IN, fetch_fields, find_project, key, parse_fields
@@ -319,13 +319,16 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         stray = undeclared(config, saved) if prune else []
         for name in stray:
             print(f"  would delete view {name}, which config does not name")
+        labels = missing_labels(config)
+        for label in labels:
+            print(f"  would add label {label.name}")
         views_match = not stray and all(
             view.name in saved and (
                 not reconcile or (
                     saved[view.name].filter == view.filter and
                     saved[view.name].layout == view.layout))
             for view in config.views)
-        if not missing and not realigned and views_match:
+        if not missing and not realigned and views_match and not labels:
             print("  nothing missing.")
         return 0
 
@@ -374,6 +377,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
 
     if not missing:
         print("  every configured field already exists.")
+    apply_labels(config, missing_labels(config))
     raw = fetch_fields(config, number)
     apply_views(config, number, project_id or (found[0] if found else ""),
                 parse_fields(raw, config),
@@ -386,6 +390,28 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         print()
         checklist(config, number)
     return 0
+
+
+def missing_labels(config: Config) -> list[Label]:
+    """The declared labels the repository lacks. Compared ignoring case, as
+    GitHub does: `Dev` already is `dev`, and creating it again is refused."""
+    if not config.labels:
+        return []
+    have = {name.casefold() for name in gh(
+        "api", f"repos/{config.repo}/labels", "--paginate", "--jq", ".[].name"
+    ).splitlines()}
+    return [label for label in config.labels if label.name.casefold() not in have]
+
+
+def apply_labels(config: Config, missing: list[Label]) -> None:
+    """Create the missing labels. An existing one is never edited: its colour
+    and description may be the repository's own choice."""
+    for label in missing:
+        gh("api", f"repos/{config.repo}/labels", "--method", "POST",
+           "-f", f"name={label.name}", "-f", f"color={label.color}",
+           "-f", f"description={label.description}")
+        print(f"  added label {label.name}")
+        note("created_label", label=label.name)
 
 
 def checklist(config: Config, number: str = "") -> int:

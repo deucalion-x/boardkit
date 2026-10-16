@@ -36,3 +36,17 @@ filter = "-type:Initiative"
 name = "All"
 layout = "TABLE"
 fields = ["status"]
+
+# Repository labels the skill relies on, created by `board admin apply` when
+# missing. `dev` marks what an agent may pick up. Topics are `area:` labels,
+# GitHub's usual convention: readable on the issue and in search, unlike a
+# project field, and they follow the issue to any board.
+[[board.labels]]
+name = "dev"
+color = "0E8A16"
+description = "Work a developer or an agent can carry out: code, a measurement, a build."
+
+[[board.labels]]
+name = "area:security"
+color = "B60205"
+description = "Secrets, access and permissions."

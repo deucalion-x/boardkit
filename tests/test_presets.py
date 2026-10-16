@@ -162,3 +162,18 @@ def test_the_preset_flag_takes_its_value_out_of_the_arguments():
     assert cli.option(["apply"], "--preset") == ("", ["apply"])
     with pytest.raises(BoardError):
         cli.option(["apply", "--preset"], "--preset")
+
+
+def test_the_work_preset_declares_the_labels_the_skill_relies_on(tmp_path):
+    found = loaded(tmp_path, '[board]\npreset = "work"\n')
+    assert [label.name for label in found.labels] == ["dev", "area:security"]
+    assert found.labels[0].color == "0E8A16"
+
+
+def test_a_repo_label_replaces_the_presets_by_name_and_adds_to_them(tmp_path):
+    found = loaded(tmp_path, (
+        '[board]\npreset = "pm"\n'
+        '[[board.labels]]\nname = "dev"\ncolor = "#123456"\n'
+        '[[board.labels]]\nname = "area:avatar"\n'))
+    assert [label.name for label in found.labels] == ["dev", "area:security", "area:avatar"]
+    assert found.labels[0].color == "123456"
