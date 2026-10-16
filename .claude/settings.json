@@ -7,19 +7,5 @@
       "Bash(GH_TOKEN=* board *)",
       "Bash(GH_TOKEN=* uv *)"
     ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(gh *)",
-            "command": "jq -r '.tool_input.command' | board log --record-gh 2>/dev/null || true"
-          }
-        ]
-      }
-    ]
   }
 }

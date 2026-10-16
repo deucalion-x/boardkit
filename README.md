@@ -489,16 +489,12 @@ an agent ask before it uses your login, add this to the repository's
 
 ```json
 {
-  "permissions": { "ask": ["Bash(gh *)", "Bash(board --as-me*)", "Bash(board * --as-me*)"] },
-  "hooks": { "PostToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command",
-    "if": "Bash(gh *)",
-    "command": "jq -r '.tool_input.command' | board log --record-gh 2>/dev/null || true" }] }] }
+  "permissions": { "ask": ["Bash(gh *)", "Bash(board --as-me*)", "Bash(board * --as-me*)"] }
 }
 ```
 
-Every `--as-me` is recorded as a superuser action, and the hook records each
-approved raw `gh` command the same way. `board log --superuser` lists them:
-who used their own login, when, in which repository, for what.
+Every `--as-me` is recorded as a superuser action; `board log --superuser`
+lists them: who used their own login, when, in which repository, for what.
 
 For an organisation's board, `board auth setup` opens a pre-filled
 fine-grained token form for one repository's board work: issues read-write,
