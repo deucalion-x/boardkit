@@ -5,6 +5,14 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `board admin apply` creates the organisation issue types a board declares
+  under `[[board.issue_types]]`. The `work` and `pm` presets declare
+  Initiative, Feature, Task and Bug, and `portfolio` declares Initiative, so a
+  new organisation's Initiative views no longer come up empty. Types are read
+  with the repository's credential; creating one takes `--as-me` and a `gh`
+  login with `admin:org`, and otherwise apply names what to add and where.
+
 ## 0.4.0 — 2026-10-17
 
 ### Changes

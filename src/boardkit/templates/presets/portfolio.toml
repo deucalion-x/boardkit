@@ -17,6 +17,13 @@
 # which `board init --preset portfolio` writes, with the daily Action.
 
 # What GitHub's API cannot set. `view` names a saved tab; `page` a project page.
+# Every view filters on this type. Adding it takes an organisation admin:
+# `admin apply --as-me`.
+[[board.issue_types]]
+name = "Initiative"
+color = "purple"
+description = "An outcome worth tracking on its own, delivered by the issues under it."
+
 [[checklist]]
 view = "Roadmap"
 do = "group by Repository, and in its date settings draw Start → Target."

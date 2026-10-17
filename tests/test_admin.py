@@ -628,3 +628,83 @@ def test_a_dry_run_reports_missing_labels_without_creating_them(sent, monkeypatc
     admin.apply(config, dry=True)
     assert "would add label dev" in capsys.readouterr().out
     assert not any("POST" in args for args in asked)
+
+
+def org_config(*names: str):
+    from boardkit.config import IssueType
+    return CONFIG.model_copy(update={
+        "owner_type": "org", "issue_types": tuple(IssueType(name=n) for n in names)})
+
+
+def test_issue_types_the_organisation_has_are_not_asked_for_again(monkeypatch):
+    from boardkit import admin
+    monkeypatch.setattr(admin, "issue_type_names", lambda config: ["Task", "bug", "Feature"])
+    assert [k.name for k in admin.missing_issue_types(org_config("Initiative", "Bug"))] == [
+        "Initiative"]
+
+
+def test_a_user_board_has_no_issue_types_to_ask_about(monkeypatch):
+    from boardkit import admin
+    monkeypatch.setattr(admin, "issue_type_names", lambda c: pytest.fail("asked about types"))
+    config = org_config("Initiative").model_copy(update={"owner_type": "user"})
+    assert admin.missing_issue_types(config) == []
+
+
+def test_without_as_me_a_missing_type_is_named_with_where_to_add_it(monkeypatch, capsys):
+    from boardkit import admin, credential
+    monkeypatch.setattr(credential, "repo", "octo/widgets")
+    monkeypatch.setattr(admin, "gh", lambda *args: pytest.fail("created a type"))
+    admin.apply_issue_types(CONFIG, list(org_config("Initiative").issue_types))
+    out = capsys.readouterr().out
+    assert "Initiative" in out and "--as-me" in out
+    assert f"organizations/{CONFIG.owner}/settings/issue-types" in out
+
+
+def test_as_me_creates_the_missing_type(monkeypatch, capsys):
+    from boardkit import admin, credential
+    monkeypatch.setattr(credential, "repo", "octo/widgets")
+    monkeypatch.setattr(credential, "as_me", True)
+    posted: list[tuple] = []
+    monkeypatch.setattr(admin, "gh", lambda *args: posted.append(args) or "")
+    admin.apply_issue_types(CONFIG, list(org_config("Initiative").issue_types))
+    assert posted == [("api", f"orgs/{CONFIG.owner}/issue-types", "--method", "POST",
+                       "-f", "name=Initiative", "-f", "color=gray", "-f", "description=",
+                       "-F", "is_enabled=true")]
+    assert "added issue type Initiative" in capsys.readouterr().out
+
+
+def test_a_refused_creation_names_the_settings_page_and_does_not_fail(monkeypatch, capsys):
+    from boardkit import admin, credential
+    from boardkit.gh import BoardError
+    monkeypatch.setattr(credential, "as_me", True)
+
+    def refuse(*args):
+        raise BoardError("HTTP 403")
+    monkeypatch.setattr(admin, "gh", refuse)
+    admin.apply_issue_types(CONFIG, list(org_config("Initiative").issue_types))
+    assert "settings/issue-types" in capsys.readouterr().out
+
+
+def test_a_dry_run_reports_missing_issue_types_without_creating_them(sent, monkeypatch, capsys):
+    from boardkit import admin
+    asked: list[tuple] = []
+    monkeypatch.setattr(admin, "locate", lambda config: "4")
+    monkeypatch.setattr(admin, "existing", lambda config, number: ("PVT_1", ()))
+    monkeypatch.setattr(admin, "existing_views", lambda config, number: {})
+    monkeypatch.setattr(admin, "gh", lambda *args: asked.append(args) or "")
+    monkeypatch.setattr(admin, "issue_type_names", lambda config: ["Task"])
+    admin.apply(org_config("Initiative"), dry=True)
+    assert "would add issue type Initiative" in capsys.readouterr().out
+    assert not any("POST" in args for args in asked)
+
+
+def test_a_login_without_admin_org_is_told_how_to_widen_it(monkeypatch, capsys):
+    from boardkit import admin, credential
+    from boardkit.gh import BoardError
+    monkeypatch.setattr(credential, "as_me", True)
+
+    def refuse(*args):
+        raise BoardError('HTTP 404\ngh: This API operation needs the "admin:org" scope.')
+    monkeypatch.setattr(admin, "gh", refuse)
+    admin.apply_issue_types(CONFIG, list(org_config("Initiative").issue_types))
+    assert "gh auth refresh -h github.com -s admin:org" in capsys.readouterr().out

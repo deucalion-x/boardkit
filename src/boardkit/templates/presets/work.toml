@@ -37,6 +37,29 @@ name = "All"
 layout = "TABLE"
 fields = ["status"]
 
+# Organisation issue types the views and the skill rely on. GitHub seeds an
+# organisation with Task, Bug and Feature; Initiative is the one usually
+# missing. Adding a type takes an organisation admin: `admin apply --as-me`.
+[[board.issue_types]]
+name = "Initiative"
+color = "purple"
+description = "An outcome worth tracking on its own, delivered by the issues under it."
+
+[[board.issue_types]]
+name = "Feature"
+color = "blue"
+description = "A request, idea, or new functionality."
+
+[[board.issue_types]]
+name = "Task"
+color = "yellow"
+description = "A specific piece of work."
+
+[[board.issue_types]]
+name = "Bug"
+color = "red"
+description = "An unexpected problem or behavior."
+
 # Repository labels the skill relies on, created by `board admin apply` when
 # missing. `dev` marks what an agent may pick up. Topics are `area:` labels,
 # GitHub's usual convention: readable on the issue and in search, unlike a

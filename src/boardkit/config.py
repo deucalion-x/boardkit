@@ -45,7 +45,7 @@ PINNED = ("repo", "owner", "owner_type", "project", "project_url", "project_name
 # Everything about the board itself, as opposed to which board it is. They may
 # be written under `[board]`, so a config reads as identity at the top and the
 # board's own shape in one section below it.
-BOARD_SETTINGS = ("url", "fields", "views", "labels", "status_order", "status_descriptions",
+BOARD_SETTINGS = ("url", "fields", "views", "labels", "issue_types", "status_order", "status_descriptions",
                   "status_field", "default_status", "blocked_field", "preset")
 # Which board this is, as a person copies it from the browser. It says
 # everything `owner`, `owner_type` and `project` say, so it replaces them.
@@ -61,7 +61,7 @@ PROJECT_KEYS = ("repo", "board", "app_client_id")
 # A repository as `owner/name`, or as its URL.
 REPO_URL = re.compile(r"https://github\.com/(?P<repo>[A-Za-z0-9-]+/[A-Za-z0-9._-]+?)(?:\.git)?/?")
 # Settings that are lists of named entries, merged with a preset's by name.
-NAMED_SETTINGS = ("fields", "views", "labels")
+NAMED_SETTINGS = ("fields", "views", "labels", "issue_types")
 # A board shape shipped with boardkit, named by `preset` under [board]. The
 # repo's own settings are merged over it, so a preset is where a board starts
 # rather than a cage.
@@ -217,6 +217,26 @@ class View(BaseModel):
         return value.upper() if isinstance(value, str) else value
 
 
+# The colours GitHub accepts for an organisation's issue type.
+TypeColor = Literal["gray", "blue", "green", "yellow", "orange", "red", "pink", "purple"]
+
+
+class IssueType(BaseModel):
+    """An issue type the board's views and skill rely on.
+
+    Types belong to the organisation, not to the repository: GitHub seeds a
+    new one with Task, Bug and Feature only, so a board filtering on
+    `type:Initiative` shows nothing there without saying why. `admin apply`
+    creates the missing ones, which takes an organisation admin, and leaves
+    every existing type as it is.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    color: TypeColor = "gray"
+    description: str = ""
+
+
 class Label(BaseModel):
     """A label the repository's issues are classified by.
 
@@ -302,6 +322,9 @@ class Config(BaseModel):
     # Repository labels the board's work is classified by, created by `admin
     # apply` when missing.
     labels: tuple[Label, ...] = ()
+    # Organisation issue types the board's views filter on, created by
+    # `admin apply` when missing. Only an organisation has them.
+    issue_types: tuple[IssueType, ...] = ()
     # Which preset the board shape starts from, already merged into the
     # settings above by `load`. Kept so `admin` can say what the preset leaves
     # to the browser.
@@ -447,7 +470,7 @@ class Config(BaseModel):
     def _repo_either_form(cls, value):
         return repo_name(value)
 
-    @field_validator("views", "labels", mode="before")
+    @field_validator("views", "labels", "issue_types", mode="before")
     @classmethod
     def _views_either_form(cls, value):
         """A table per view, or a bare list of names taking the defaults."""

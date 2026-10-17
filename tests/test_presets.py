@@ -177,3 +177,11 @@ def test_a_repo_label_replaces_the_presets_by_name_and_adds_to_them(tmp_path):
         '[[board.labels]]\nname = "area:avatar"\n'))
     assert [label.name for label in found.labels] == ["dev", "area:security", "area:avatar"]
     assert found.labels[0].color == "123456"
+
+
+def test_the_presets_declare_the_issue_types_their_views_filter_on(tmp_path):
+    found = loaded(tmp_path, '[board]\npreset = "pm"\n')
+    assert [kind.name for kind in found.issue_types] == ["Initiative", "Feature", "Task", "Bug"]
+    assert found.issue_types[0].color == "purple"
+    portfolio = loaded(tmp_path, '[board]\npreset = "portfolio"\n')
+    assert [kind.name for kind in portfolio.issue_types] == ["Initiative"]

@@ -19,7 +19,7 @@ import datetime
 from dataclasses import dataclass
 
 from . import auth, credential
-from .config import CREATABLE, Config, Label, ProjectField, board_url
+from .config import CREATABLE, Config, IssueType, Label, ProjectField, board_url
 from .config import checklist as preset_steps
 from .gh import BoardError, gh, gh_json, quoted, run_json
 from .setup import record_url
@@ -329,13 +329,16 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         labels = missing_labels(config)
         for label in labels:
             print(f"  would add label {label.name}")
+        types = missing_issue_types(config)
+        for issue_type in types:
+            print(f"  would add issue type {issue_type.name} to {config.owner}")
         views_match = not stray and all(
             view.name in saved and (
                 not reconcile or (
                     saved[view.name].filter == view.filter and
                     saved[view.name].layout == view.layout))
             for view in config.views)
-        if not missing and not realigned and views_match and not labels:
+        if not missing and not realigned and views_match and not labels and not types:
             print("  nothing missing.")
         return 0
 
@@ -394,6 +397,7 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
     if not missing:
         print("  every configured field already exists.")
     apply_labels(config, missing_labels(config))
+    apply_issue_types(config, missing_issue_types(config))
     raw = fetch_fields(config, number)
     apply_views(config, number, project_id or (found[0] if found else ""),
                 parse_fields(raw, config),
@@ -428,6 +432,67 @@ def apply_labels(config: Config, missing: list[Label]) -> None:
            "-f", f"description={label.description}")
         print(f"  added label {label.name}")
         note("created_label", label=label.name)
+
+
+def missing_issue_types(config: Config) -> list[IssueType]:
+    """The declared issue types the organisation lacks, compared ignoring
+    case. A user's board has none to have: GitHub gives types to
+    organisations only."""
+    if not config.issue_types or config.owner_type != "org":
+        return []
+    # Read through the repository, which the repo's own credential may do;
+    # the organisation's REST listing refuses it.
+    try:
+        have = {name.casefold() for name in issue_type_names(config)}
+    except BoardError as error:
+        print(f"  could not read {config.owner}'s issue types ({error}); "
+              f"skipping them.")
+        return []
+    return [kind for kind in config.issue_types if kind.name.casefold() not in have]
+
+
+def issue_type_names(config: Config) -> list[str]:
+    owner, repo = config.repo.split("/", 1)
+    query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(repo)}) "
+             f"{{ issueTypes(first: 100) {{ nodes {{ name }} }} }} }}")
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+    nodes = ((((payload.get("data") or {}).get("repository") or {})
+              .get("issueTypes") or {}).get("nodes")) or []
+    return [node["name"] for node in nodes if node]
+
+
+def apply_issue_types(config: Config, missing: list[IssueType]) -> None:
+    """Create the missing issue types. That takes an organisation admin, which
+    this repository's credential never is, so it asks for `--as-me`; without
+    it, or without the rights, it names what to add and where, and the rest
+    of apply goes on. An existing type is never edited."""
+    if not missing:
+        return
+    names = ", ".join(kind.name for kind in missing)
+    where = f"https://github.com/organizations/{config.owner}/settings/issue-types"
+    try:
+        credential.elevated(f"adding issue types {names} to {config.owner}")
+    except credential.Missing as refused:
+        print(f"  {config.owner} lacks issue type(s) {names}. {str(refused)[0].upper()}{str(refused)[1:]} "
+              f"Or an organisation admin adds them at {where}")
+        return
+    for kind in missing:
+        try:
+            gh("api", f"orgs/{config.owner}/issue-types", "--method", "POST",
+               "-f", f"name={kind.name}", "-f", f"color={kind.color}",
+               "-f", f"description={kind.description}", "-F", "is_enabled=true")
+        except BoardError as error:
+            if "admin:org" in str(error):
+                # gh's own login has to be widened once, in a browser.
+                print(f"  could not add issue type {kind.name}: your gh login lacks "
+                      f"the admin:org scope. Run `gh auth refresh -h github.com -s "
+                      f"admin:org`, then apply again; or add it at {where}")
+            else:
+                print(f"  could not add issue type {kind.name} ({error}). Adding one "
+                      f"takes an organisation admin: {where}")
+            return
+        print(f"  added issue type {kind.name}")
+        note("created_issue_type", issue_type=kind.name)
 
 
 def checklist(config: Config, number: str = "") -> int:

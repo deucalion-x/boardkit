@@ -116,8 +116,8 @@ it ignored.
 columns, fields, options and views are discovered on the first sync, because
 GitHub already knows them and a copy here could only drift. Write a
 `boardkit.toml` (or `[tool.boardkit]` in `pyproject.toml`) only to declare
-what `board admin apply` should create — custom fields, views, labels, column
-order — or to name a preset:
+what `board admin apply` should create — custom fields, views, labels, the
+organisation's issue types, column order — or to name a preset:
 
 ```toml
 # boardkit.toml
@@ -152,6 +152,15 @@ Neither config nor GitHub is the whole truth; each owns a different thing.
 So a vocabulary that grows with the work — a workstream's options, labels,
 milestones — lives on GitHub and is created there as it is needed. Config
 declares only what every board built from it should start with.
+
+Issue types belong to the organisation, so every board in it shares them.
+GitHub seeds an organisation with Task, Bug and Feature; the `work`, `pm` and
+`portfolio` presets also declare Initiative, which their views filter on.
+`admin apply` reads the types through the repository and names any missing.
+Creating one takes an organisation admin, so it is done with `--as-me`, and
+your `gh` login needs the `admin:org` scope once:
+`gh auth refresh -h github.com -s admin:org`. A user's board has no types and
+skips this.
 
 When someone changes the board by hand:
 
