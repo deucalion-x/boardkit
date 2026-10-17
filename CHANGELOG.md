@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-17
+
 ### Changes
 - `install.sh` installs boardkit without the Claude Code plugin, for Codex and
   other agents: the plugin's launcher as `~/.local/bin/board` and the skills
