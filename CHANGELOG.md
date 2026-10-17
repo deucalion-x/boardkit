@@ -5,6 +5,16 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- A coding identity for agents: a second GitHub App with code permissions
+  only. `board auth app create --coding` makes it, `board auth login --coding`
+  signs in once per machine, and the plugin's SessionStart hook gives each
+  Claude Code session's `git` and `gh` that identity (`board auth agent-env`,
+  `board auth git-credential`), leaving the person's own terminal as it was.
+- `board doctor` names the coding identity, says whether the person's own `gh`
+  login is stored, and warns when both are. The README's "Agent identity"
+  gives three ways to keep that login out of an agent's reach.
+
 ## 0.4.1 — 2026-10-17
 
 ### Changes

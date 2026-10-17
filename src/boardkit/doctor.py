@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -84,8 +85,28 @@ def repo_copies(repo: pathlib.Path) -> list[pathlib.Path]:
             if marker in path.read_text(encoding="utf-8", errors="ignore")]
 
 
+def personal_login() -> bool:
+    """Whether the person's own gh login can be read: by them, and by any
+    agent running as them."""
+    if not shutil.which("gh"):
+        return False
+    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
+    try:
+        found = subprocess.run(["gh", "auth", "token"], env=env, capture_output=True,
+                               text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return found.returncode == 0 and bool(found.stdout.strip())
+
+
 def findings(repo: pathlib.Path | None) -> list[str]:
     problems = []
+    from . import coding
+    if coding.stored() is not None and personal_login():
+        problems.append("your own gh login is stored, so an agent can act as you "
+                        "beyond the coding identity. Run `gh auth logout`, and sign in "
+                        "only for an admin task; the README's \"Protecting the "
+                        "personal login\" gives stronger ways.")
     found = boards()
     if not found:
         problems.append("no `board` on PATH. Install the plugin, or run install.sh "
@@ -116,6 +137,11 @@ def report(repo: pathlib.Path | None) -> int:
         print(f"  user skills: {root}: {state}")
     if plugin_installed():
         print("  Claude Code: skills come from the plugin")
+    from . import coding
+    record = coding.stored()
+    print(f"  coding identity: "
+          f"{'signed in, app ' + record['client_id'] if record else 'none'}")
+    print(f"  your own gh login: {'stored' if personal_login() else 'not stored'}")
     problems = findings(repo)
     for problem in problems:
         print(f"- {problem}")

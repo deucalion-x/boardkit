@@ -57,13 +57,13 @@ def manifest(config: Config, redirect: str) -> dict:
     }
 
 
-def page(config: Config, redirect: str, state: str) -> str:
+def page(owner: str, org: bool, definition: dict, state: str) -> str:
     """The form that posts the manifest, submitted as soon as it loads."""
-    action = (f"https://github.com/organizations/{config.owner}/settings/apps/new"
+    action = (f"https://github.com/organizations/{owner}/settings/apps/new"
               f"?state={state}")
-    if config.owner_type != "org":
+    if not org:
         action = f"https://github.com/settings/apps/new?state={state}"
-    value = html.escape(json.dumps(manifest(config, redirect)), quote=True)
+    value = html.escape(json.dumps(definition), quote=True)
     return (f'<form id="f" method="post" action="{html.escape(action, quote=True)}">'
             f'<input type="hidden" name="manifest" value="{value}"></form>'
             "<p>Sending you to GitHub to create the app…</p>"
@@ -116,6 +116,33 @@ def remember(config: Config, client_id: str) -> None:
 
 def create(config: Config) -> int:
     """Run the manifest flow end to end."""
+    print(f"Opening GitHub to create {name_for(config)} for {config.repo}.\n"
+          "Check the name, click Create GitHub App, and come back here.")
+    made = through_browser(config.owner, config.owner_type == "org",
+                           lambda redirect: manifest(config, redirect))
+    if made is None:
+        return 1
+    check_owner(config, made)
+    remember(config, made["client_id"])
+    settings = (f"https://github.com/organizations/{config.owner}/settings/apps/{made['slug']}"
+                if config.owner_type == "org" else
+                f"https://github.com/settings/apps/{made['slug']}")
+    where = config.source.name if config.source else "the config"
+    print(f"Created {made['slug']} and recorded app_client_id in {where}.\n"
+          f"Its secrets were not kept: boardkit signs in without them.\n\n"
+          f"Two clicks are left, which GitHub does not let a manifest make:\n"
+          f"  1. Tick \"Enable Device Flow\" on {settings}\n"
+          f"  2. Install it on {config.repo} only:\n"
+          f"     https://github.com/apps/{made['slug']}/installations/new\n"
+          f"Then run `board auth login`.")
+    webbrowser.open(settings)
+    return 0
+
+
+def through_browser(owner: str, org: bool, definition) -> dict | None:
+    """Post the manifest `definition(redirect)` from a local page, wait for
+    GitHub to send the person back, and exchange the code: the app's public
+    parts, or None when nothing came back."""
     state = secrets.token_urlsafe(16)
     caught: dict[str, str] = {}
 
@@ -132,7 +159,7 @@ def create(config: Config) -> int:
                     caught["code"] = query.get("code", [""])[0]
                 body = "<p>Done. You can close this tab and return to the terminal.</p>"
             else:
-                body = page(config, f"http://127.0.0.1:{port}/done", state)
+                body = page(owner, org, definition(f"http://127.0.0.1:{port}/done"), state)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -141,8 +168,6 @@ def create(config: Config) -> int:
     with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
         port = server.server_address[1]
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        print(f"Opening GitHub to create {name_for(config)} for {config.repo}.\n"
-              "Check the name, click Create GitHub App, and come back here.")
         webbrowser.open(f"http://127.0.0.1:{port}/")
         waited = 0.0
         while "code" not in caught and waited < WAIT_SECONDS:
@@ -151,20 +176,5 @@ def create(config: Config) -> int:
         server.shutdown()
     if not caught.get("code"):
         print("No app came back from GitHub; nothing was changed.")
-        return 1
-    made = convert(caught["code"])
-    check_owner(config, made)
-    remember(config, made["client_id"])
-    settings = (f"https://github.com/organizations/{config.owner}/settings/apps/{made['slug']}"
-                if config.owner_type == "org" else
-                f"https://github.com/settings/apps/{made['slug']}")
-    where = config.source.name if config.source else "the config"
-    print(f"Created {made['slug']} and recorded app_client_id in {where}.\n"
-          f"Its secrets were not kept: boardkit signs in without them.\n\n"
-          f"Two clicks are left, which GitHub does not let a manifest make:\n"
-          f"  1. Tick \"Enable Device Flow\" on {settings}\n"
-          f"  2. Install it on {config.repo} only:\n"
-          f"     https://github.com/apps/{made['slug']}/installations/new\n"
-          f"Then run `board auth login`.")
-    webbrowser.open(settings)
-    return 0
+        return None
+    return convert(caught["code"])

@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${CLAUDE_ENV_FILE:-}\" ] && \"${CLAUDE_PLUGIN_ROOT}/bin/board\" auth agent-env >> \"$CLAUDE_ENV_FILE\" 2>/dev/null; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

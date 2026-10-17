@@ -67,7 +67,8 @@ def test_the_client_id_is_written_into_the_config(tmp_path):
 
 
 def test_the_page_posts_the_manifest_to_the_org(tmp_path):
-    body = app.page(config_at(tmp_path), "http://127.0.0.1:1/done", "st")
+    config = config_at(tmp_path)
+    body = app.page(config.owner, True, app.manifest(config, "http://127.0.0.1:1/done"), "st")
     assert "organizations/octo/settings/apps/new?state=st" in body
     assert 'name="manifest"' in body
 

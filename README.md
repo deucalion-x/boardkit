@@ -555,16 +555,73 @@ global state.
 - **Projects access is organisation-wide.** GitHub has no per-board scope, so a
   repository's app can reach every board of its organisation. boardkit itself
   only touches the board its config names.
-- **boardkit's credential does not limit the agent's code work.** Pushes and
-  pull requests go through your own git and `gh` credentials, so what stops a
-  force-push or a deleted branch is branch protection on `main` (a paid plan
-  for private organisation repositories), not boardkit.
+- **Code work is limited by the coding identity, not by the board app.**
+  Without one (see [Agent identity](#agent-identity)), pushes and pull
+  requests go through your own git and `gh` credentials. Either way, what
+  stops a force-push or a deleted branch is branch protection on `main` (a
+  paid plan for private organisation repositories).
 - **The approvals and the log are Claude Code settings.** Another tool, or a
   script on the same machine, can still use your `gh` login or read the
   keychain. They are a guard for agents, not a security boundary.
 - **Sign-ins live in the platform's credential store**: the macOS keychain,
   the Linux Secret Service (`secret-tool`), or Windows Credential Manager.
   Without one there is no file fallback; export `BOARDKIT_TOKEN` instead.
+
+## Agent identity
+
+An agent left to work unattended should be able to code and work the board,
+and nothing else. So it acts as one of two apps, and anything beyond them
+needs you:
+
+| Identity | Used for | How it signs in |
+|---|---|---|
+| Board app | `board` | `board auth login`, per repository's app |
+| Coding app | an agent's `git push`, `gh pr`, `gh issue` | `board auth login --coding`, once per machine |
+| You | organisation settings, scopes, deletion: admin | not stored; signed in for the task |
+
+The coding app has Contents, Pull requests and Issues (read and write), and
+Checks, Actions and Commit statuses (read). It has no Administration, no
+Workflows and no organisation permission, so an agent cannot change a
+repository's settings, its CI, or the organisation. What it cannot do fails,
+and the agent asks.
+
+Set it up once per organisation, then once per machine:
+
+```bash
+board auth app create --coding --owner <org>   # the browser creates the app
+# tick "Enable Device Flow" and install it on the repositories agents code in,
+# both as the command says; then:
+board auth login --coding <client-id>
+```
+
+In Claude Code, the plugin's SessionStart hook then gives each session's
+`git` and `gh` that identity (`board auth agent-env`), and leaves your own
+terminal as it was. Codex has no such hook: run it as
+`eval "$(board auth agent-env)"; codex` to give it the same `git` helper. A
+program that runs `gh` by itself does not get the coding token, and falls back
+to your own login — which, below, is not there to find.
+
+### Protecting the personal login
+
+Your own `gh` login can do anything you can. Any program running as you can
+read it from the keychain, an agent included, so the coding identity only
+holds if that login is not lying around. Three ways, from simplest to
+strongest:
+
+1. **Not stored (recommended).** `gh auth logout`. For an admin task, `gh auth
+   login`, do it, `gh auth logout`. A sign-in per admin session, which is rare.
+2. **A locked keychain.** Keep the personal token in a second macOS keychain
+   set to lock after a few minutes; reading it while locked raises a password
+   dialog an agent cannot answer. Stronger day to day, but `gh` writes to the
+   login keychain by default, so it is fiddly to keep there. A password
+   manager that hands `gh` its token after Touch ID (1Password's `gh` plugin,
+   for one) is the same idea, ready made.
+3. **A separate macOS user for agents.** Agents run as a user that cannot read
+   your keychain at all. The only real isolation on one machine, at the cost
+   of separate checkouts and tools.
+
+`board doctor` names the coding identity, says whether your own login is
+stored, and warns when both are.
 
 ## The mirror and the links
 

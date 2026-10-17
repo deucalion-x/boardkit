@@ -34,3 +34,12 @@ def no_daily_doctor(monkeypatch):
     """`board` mentions installation problems once a day, from the real home.
     A test must neither read that home nor leave its stamp there."""
     monkeypatch.setenv("BOARDKIT_NO_DOCTOR", "1")
+
+
+@pytest.fixture(autouse=True)
+def no_real_identities(monkeypatch):
+    """The coding sign-in and the person's gh login live on the machine. A test
+    must not read either, so neither exists unless a test says."""
+    from boardkit import coding, doctor
+    monkeypatch.setattr(coding, "stored", lambda: None)
+    monkeypatch.setattr(doctor, "personal_login", lambda: False)

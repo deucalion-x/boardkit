@@ -34,6 +34,12 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board auth app create      create this repo's own GitHub App, in one go
   board auth login|logout    sign in through this repo's GitHub App
   board auth setup           or store a token for this repo alone
+  board auth app create --coding [--owner <org>]
+                             create the app coding agents act as
+  board auth login|logout --coding [<client-id>]
+                             sign in as that coding identity, once per machine
+  board auth agent-env       shell lines that make a session's git and gh the
+                             coding identity (the plugin's SessionStart hook)
   --as-me                    on any verb: use your own gh login instead of
                              this repo's credential; approved and logged
   board init [-n] [--preset pm] [--app <client-id>] [title]
@@ -66,6 +72,7 @@ import sys
 from . import (
     admin,
     auth,
+    coding,
     create,
     credential,
     doctor,
@@ -129,6 +136,13 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     flags = [a for i, a in enumerate(args) if i == 0 or args[i - 1] != "--body"]
     if any(a in HELP for a in flags):
         return usage(0)
+
+    # The coding identity belongs to the person, not to a repository, and git
+    # asks for it from any directory.
+    if command == "auth":
+        handled = coding.main(args)
+        if handled != -1:
+            return handled
 
     # About the installation, not a board: they run in any directory.
     if command == "doctor":

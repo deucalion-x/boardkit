@@ -84,19 +84,29 @@ def access_token(app: str) -> str:
     tokens = load(app)
     if tokens is None:
         return ""
-    # A token from an app that does not expire them carries no expiry.
-    if not tokens.get("expires_at") or tokens["expires_at"] - MARGIN > time.time():
+    if not due(tokens):
         return tokens["access_token"]
+    tokens = renew(app, tokens, "board auth login")
+    save(app, tokens)
+    return tokens["access_token"]
+
+
+def due(tokens: dict) -> bool:
+    """Whether the access token lapses within the margin. A token from an app
+    that does not expire them carries no expiry."""
+    return bool(tokens.get("expires_at")) and tokens["expires_at"] - MARGIN <= time.time()
+
+
+def renew(app: str, tokens: dict, again: str) -> dict:
+    """A fresh pair from the refresh token, or a LoginError naming `again`."""
     if not tokens.get("refresh_token") or tokens.get("refresh_expires_at", 0) <= time.time():
-        raise LoginError("your boardkit sign-in has expired. Run `board auth login`.")
+        raise LoginError(f"your boardkit sign-in has expired. Run `{again}`.")
     answer = post(TOKEN, {"client_id": app, "grant_type": "refresh_token",
                           "refresh_token": tokens["refresh_token"]})
     if "access_token" not in answer:
         raise LoginError(f"GitHub would not renew your boardkit sign-in "
-                         f"({answer.get('error', 'no reason given')}). Run `board auth login`.")
-    tokens = stamped(answer)
-    save(app, tokens)
-    return tokens["access_token"]
+                         f"({answer.get('error', 'no reason given')}). Run `{again}`.")
+    return stamped(answer)
 
 
 def login(app: str, repo: str) -> int:
@@ -110,10 +120,22 @@ def login(app: str, repo: str) -> int:
         print("No credential store here (macOS keychain, Linux secret-tool or Windows "
               f"Credential Manager) to keep a sign-in. Export {credential.ENV} instead.")
         return 1
+    tokens = device_flow(app, "board auth login")
+    if tokens is None:
+        return 1
+    save(app, tokens)
+    print(f"Signed in for {repo}. boardkit now acts for you there, via its "
+          f"app, and only on the repositories that app is installed on.")
+    return 0
+
+
+def device_flow(app: str, again: str) -> dict | None:
+    """Show a code, open the page, wait for approval: the tokens, or None
+    once what went wrong has been said."""
     started = post(DEVICE, {"client_id": app})
     if "device_code" not in started:
         print(f"GitHub refused to start a sign-in: {started.get('error_description') or started}")
-        return 1
+        return None
     print(f"Enter this code on GitHub: {started['user_code']}\n"
           f"  {started['verification_uri']}\n"
           f"Waiting for you to approve it…")
@@ -133,13 +155,10 @@ def login(app: str, repo: str) -> int:
             continue
         if error:
             print(f"Sign-in did not complete: {answer.get('error_description') or error}")
-            return 1
-        save(app, stamped(answer))
-        print(f"Signed in for {repo}. boardkit now acts for you there, via its "
-              f"app, and only on the repositories that app is installed on.")
-        return 0
-    print("The code expired before it was approved. Run `board auth login` again.")
-    return 1
+            return None
+        return stamped(answer)
+    print(f"The code expired before it was approved. Run `{again}` again.")
+    return None
 
 
 def logout(app: str, repo: str) -> int:
