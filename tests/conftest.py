@@ -27,3 +27,10 @@ def no_real_token(monkeypatch):
     the machine's own login for it, so it is unknown unless a test says."""
     from boardkit import auth
     monkeypatch.setattr(auth, "fingerprint", lambda: "")
+
+
+@pytest.fixture(autouse=True)
+def no_daily_doctor(monkeypatch):
+    """`board` mentions installation problems once a day, from the real home.
+    A test must neither read that home nor leave its stamp there."""
+    monkeypatch.setenv("BOARDKIT_NO_DOCTOR", "1")

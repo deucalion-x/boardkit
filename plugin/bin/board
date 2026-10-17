@@ -9,7 +9,14 @@
 set -euo pipefail
 
 GH_VERSION=2.88.1
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Installed without the plugin, this file is reached through a link on PATH,
+# and the manifest sits beside the file, not beside the link.
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
+done
+here="$(cd "$(dirname "$self")/.." && pwd)"
 version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$here/.claude-plugin/plugin.json")"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/boardkit"
 tool="$cache/$version"

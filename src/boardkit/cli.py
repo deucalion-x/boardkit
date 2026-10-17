@@ -51,7 +51,10 @@ Reads answer from the local store; only the sync verbs touch GitHub.
 
   board mirror write|check   the issue-text mirror in git
   board links check|rewrite  sha-pinned document links in issue bodies
-  board install-skill        write the agent skills for Claude Code and Codex
+  board install-skill        in boardkit: render the plugin's skills; elsewhere:
+                             name skill copies a repository should delete
+  board doctor               which `board` runs and which skills agents read
+  board self update [v]      reinstall a release made by install.sh
   board --version            which boardkit is installed
 """
 from __future__ import annotations
@@ -65,6 +68,7 @@ from . import (
     auth,
     create,
     credential,
+    doctor,
     issue,
     issue_mirror,
     login,
@@ -126,6 +130,18 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     if any(a in HELP for a in flags):
         return usage(0)
 
+    # About the installation, not a board: they run in any directory.
+    if command == "doctor":
+        try:
+            repo = load().root
+        except BoardError:
+            repo = None
+        return doctor.report(repo)
+    if command == "self":
+        if args[:1] != ["update"]:
+            return usage()
+        return doctor.update(args[1:])
+
     # These two run before configuration exists, which is their whole point.
     if command == "init":
         preset, args = option(args, "--preset")
@@ -137,6 +153,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
 
     preset, args = option(args, "--preset") if command == "admin" else ("", args)
     config = load(preset=preset)
+    doctor.nudge(config.root)
     credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
     quota.begin(command)
