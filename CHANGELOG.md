@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.2 — 2026-10-17
+
 ### Changes
 - A coding identity for agents: a second GitHub App with code permissions
   only. `board auth app create --coding` makes it, `board auth login --coding`
