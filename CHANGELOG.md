@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.1 — 2026-10-17
+
 ### Changes
 - `board admin apply` creates the organisation issue types a board declares
   under `[[board.issue_types]]`. The `work` and `pm` presets declare
