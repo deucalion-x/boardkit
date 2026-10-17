@@ -5,6 +5,12 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.3 — 2026-10-17
+
+### Changes
+- `scripts/release.py` runs as the coding identity when no `GH_TOKEN` is set,
+  so a release needs no personal login.
+
 ## 0.4.2 — 2026-10-17
 
 ### Changes
