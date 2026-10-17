@@ -41,3 +41,28 @@ def test_the_contract_row_is_found_by_version(release):
     table = "| Version | Run | Covered |\n|---|---|---|\n| 0.3.24 | skipped | x |\n"
     assert release.recorded(table, "0.3.24")
     assert not release.recorded(table, "0.3.2")
+
+
+def test_a_set_token_is_kept(release, monkeypatch):
+    monkeypatch.setattr(release.subprocess, "run", lambda *a, **k: pytest.fail("asked"))
+    environ = {"GH_TOKEN": "mine"}
+    release.credential(environ)
+    assert environ == {"GH_TOKEN": "mine"}
+
+
+def test_without_one_the_coding_identity_is_used(release, monkeypatch):
+    class Done:
+        stdout = "ghu_coding\n"
+    monkeypatch.setattr(release.subprocess, "run", lambda *a, **k: Done())
+    environ: dict[str, str] = {}
+    release.credential(environ)
+    assert environ == {"GH_TOKEN": "ghu_coding"}
+
+
+def test_no_coding_identity_leaves_gh_to_its_own_login(release, monkeypatch):
+    class Done:
+        stdout = ""
+    monkeypatch.setattr(release.subprocess, "run", lambda *a, **k: Done())
+    environ: dict[str, str] = {}
+    release.credential(environ)
+    assert environ == {}

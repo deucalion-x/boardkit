@@ -13,13 +13,16 @@ checks, commits and pushes, waits for CI on that commit, and only then tags.
 Tagging last matters: the plugin's `bin/board` installs the tag its version
 names, so a plugin that updated before the tag existed could not install.
 
-Every `gh` call runs under whatever `GH_TOKEN` the caller set.
+Every `gh` call runs under whatever `GH_TOKEN` the caller set, or else the
+coding identity's (`board auth token --coding`): a release pushes, tags and
+watches CI, all of which the coding app may do, so it needs no personal login.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -149,12 +152,26 @@ def release(version: str, dry: bool) -> None:
           f"\"git+https://github.com/{REPO}@v{version}\"")
 
 
+def credential(environ: dict[str, str]) -> None:
+    """Fill GH_TOKEN from the coding identity when the caller set none."""
+    if environ.get("GH_TOKEN"):
+        return
+    try:
+        token = subprocess.run(["board", "auth", "token", "--coding"], text=True,
+                               capture_output=True, check=False).stdout.strip()
+    except OSError:
+        return
+    if token:
+        environ["GH_TOKEN"] = token
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("version")
     parser.add_argument("--dry-run", action="store_true",
                         help="check everything, change nothing")
     args = parser.parse_args()
+    credential(os.environ)
     try:
         release(args.version, args.dry_run)
     except Refused as refused:
