@@ -173,7 +173,6 @@ create something and not yet applied.
 
 ```bash
 board sync
-board install-skill      # the work skill names these columns; re-render it
 ```
 
 A status renamed in config and applied leaves items where they were — the

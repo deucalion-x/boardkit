@@ -1,15 +1,13 @@
-"""Write the agent-facing instructions into the consuming repository.
+"""The agent-facing instructions, rendered from one template per skill.
 
-Repository skills cannot travel inside an installed Python package: agents
-discover them in the repository where they are working. Claude Code and Codex
-use different discovery directories, so `board install-skill` writes the same
-canonical skills to both, where they are committed.
+They reach an agent per user, never per repository: the Claude Code plugin
+carries them for Claude, and install.sh writes them where Codex reads its
+user skills. boardkit is a tool for a person's own machine, so a copy
+committed into each repository only drifted from the `board` beside it.
 
-The text is the same in every repo. It was once rendered with a board's own
-columns and fields, which made two repos open at once carry two different
-skills under one name; now it says to run `board`, which answers from the
-snapshot for whichever repo it is standing in. Nothing about a board is
-baked in, so nothing about it can go stale.
+`board install-skill` is boardkit's own build step: it renders the plugin's
+copies. In any other repository it finds the copies an earlier boardkit
+committed and says to delete them.
 """
 from __future__ import annotations
 
@@ -37,14 +35,12 @@ def render(name: str) -> str:
     return f"{head}---\n\n{GENERATED}\n\n{rest}" if rest else body
 
 
-def orphans(config: Config) -> list[pathlib.Path]:
-    """Skills this tool generated that it no longer owns.
+def committed(config: Config) -> list[pathlib.Path]:
+    """Skills this tool generated that sit in the repository.
 
-    Skills were once named per repo. One left from then still loads, with a
-    description close enough to the current one to be picked instead, and it
-    describes a board as it was when that name was in use. Ours are identified
-    by the banner `render` writes, so a hand-written skill beside them is
-    never named.
+    Ours are identified by the banner `render` writes, so a hand-written
+    skill beside them is never named. In boardkit's own repository the
+    plugin's copies are not counted: they are what it ships.
     """
     found = []
     for root in SKILL_ROOTS:
@@ -52,36 +48,40 @@ def orphans(config: Config) -> list[pathlib.Path]:
         if not skills.is_dir():
             continue
         for directory in sorted(skills.iterdir()):
-            if not directory.is_dir() or directory.name in SKILLS:
-                continue
             candidate = directory / "SKILL.md"
-            if candidate.exists() and GENERATED.splitlines()[0] in candidate.read_text(
+            if candidate.is_file() and GENERATED.splitlines()[0] in candidate.read_text(
                     encoding="utf-8"):
                 found.append(candidate)
     return found
 
 
-# boardkit's own repository also ships the skills as a Claude Code plugin,
-# beside the `board` it runs, so they are written there from the same source.
+# boardkit's own repository ships the skills as a Claude Code plugin, beside
+# the `board` it runs; install.sh copies the same files for other agents.
 PLUGIN_SKILLS = "plugin/skills"
 PLUGIN_MANIFEST = "plugin/.claude-plugin/plugin.json"
+ELSEWHERE = ("Install them per user instead: the Claude Code plugin for Claude, "
+             "install.sh from boardkit for Codex and other agents.")
 
 
 def install(config: Config, check: bool = False) -> int:
-    roots = (*SKILL_ROOTS, *((PLUGIN_SKILLS,) if config.path(PLUGIN_MANIFEST).is_file() else ()))
-    wanted = {
-        config.path(root) / name / "SKILL.md": render(name)
-        for root in roots
-        for name in SKILLS
-    }
-    left = orphans(config)
+    left = committed(config)
+    for path in left:
+        print(f"{path.relative_to(config.root)} is a copy boardkit no longer "
+              f"keeps in a repository; delete it.")
+    if left:
+        print(ELSEWHERE)
 
+    if not config.path(PLUGIN_MANIFEST).is_file():
+        note("skill_checked" if check else "skill_written", stale=0, orphans=len(left))
+        if not left:
+            print("Skills are not kept in a repository. " + ELSEWHERE)
+        return 1 if left else 0
+
+    wanted = {config.path(PLUGIN_SKILLS) / name / "SKILL.md": render(name)
+              for name in SKILLS}
     if check:
         stale = [path for path, text in wanted.items()
                  if not path.exists() or path.read_text(encoding="utf-8") != text]
-        for path in left:
-            print(f"{path.relative_to(config.root)} is a skill this repo no "
-                  f"longer names; delete it")
         for path in stale:
             print(f"{path.relative_to(config.root)} is stale; run `board install-skill`")
         note("skill_checked", stale=len(stale), orphans=len(left))
@@ -95,7 +95,4 @@ def install(config: Config, check: bool = False) -> int:
         path.write_text(text, encoding="utf-8")
         print(f"Wrote {path.relative_to(config.root)}")
     note("skill_written", skills=sorted(SKILLS), orphans=len(left))
-    for path in left:
-        print(f"{path.relative_to(config.root)} is left over from an earlier "
-              f"skill name and still loads. Delete it.")
-    return 0
+    return 1 if left else 0

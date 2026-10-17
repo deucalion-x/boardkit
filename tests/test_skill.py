@@ -1,7 +1,7 @@
 import pathlib
 
 from boardkit.config import Config
-from boardkit.skill import SKILL_ROOTS, SKILLS, install, render
+from boardkit.skill import PLUGIN_MANIFEST, PLUGIN_SKILLS, SKILL_ROOTS, SKILLS, install, render
 
 
 def config(tmp_path: pathlib.Path, **overrides) -> Config:
@@ -59,35 +59,46 @@ def test_the_work_skill_carries_the_lifecycle_policy():
         assert rule not in admin
 
 
-def test_install_writes_both_skills_for_both_agents_and_check_reports_drift(tmp_path):
+def test_a_repository_gets_no_copies(tmp_path, capsys):
+    """Skills reach agents per user; copies in each repository drifted."""
+    assert install(config(tmp_path)) == 0
+    assert not any((tmp_path / root).exists() for root in SKILL_ROOTS)
+    assert "plugin" in capsys.readouterr().out
+    assert install(config(tmp_path), check=True) == 0
+
+
+def test_copies_an_earlier_boardkit_committed_are_named_for_deletion(tmp_path, capsys):
+    for root in SKILL_ROOTS:
+        for name in (*SKILLS, "places-github"):
+            old = tmp_path / root / name / "SKILL.md"
+            old.parent.mkdir(parents=True)
+            old.write_text(render("board"), encoding="utf-8")
+    assert install(config(tmp_path), check=True) == 1
+    output = capsys.readouterr().out
+    assert output.count("delete it") == len(SKILL_ROOTS) * (len(SKILLS) + 1)
+    # Named, never deleted behind the person's back.
+    assert (tmp_path / SKILL_ROOTS[0] / "board" / "SKILL.md").exists()
+
+
+def test_boardkit_renders_the_plugin_copies_and_check_reports_drift(tmp_path):
+    manifest = tmp_path / PLUGIN_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}", encoding="utf-8")
     settings = config(tmp_path)
     assert install(settings) == 0
-    written = [tmp_path / root / name / "SKILL.md"
-               for root in SKILL_ROOTS for name in SKILLS]
-    assert all(path.exists() for path in written)
-    assert len({path.read_text(encoding="utf-8") for path in written}) == len(SKILLS)
+    written = [tmp_path / PLUGIN_SKILLS / name / "SKILL.md" for name in SKILLS]
+    assert [path.read_text(encoding="utf-8") for path in written] == [
+        render(name) for name in SKILLS]
     assert install(settings, check=True) == 0
     written[0].write_text("hand edited\n", encoding="utf-8")
     assert install(settings, check=True) == 1
-
-
-def test_a_skill_left_by_an_earlier_name_is_reported_in_each_root(tmp_path, capsys):
-    """Skills were once named per repo; one left from then still loads."""
-    for root in SKILL_ROOTS:
-        old = tmp_path / root / "places-github" / "SKILL.md"
-        old.parent.mkdir(parents=True)
-        old.write_text(render("board"), encoding="utf-8")
-    install(config(tmp_path))
-    output = capsys.readouterr().out
-    assert output.count("places-github/SKILL.md is left over") == len(SKILL_ROOTS)
-    assert install(config(tmp_path), check=True) == 1
 
 
 def test_a_hand_written_skill_beside_them_is_left_alone(tmp_path, capsys):
     mine = tmp_path / ".claude/skills" / "notes" / "SKILL.md"
     mine.parent.mkdir(parents=True)
     mine.write_text("---\nname: notes\n---\n\nhand written\n", encoding="utf-8")
-    install(config(tmp_path))
+    assert install(config(tmp_path), check=True) == 0
     assert "notes" not in capsys.readouterr().out
     assert mine.exists()
 

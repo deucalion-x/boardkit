@@ -70,12 +70,13 @@ The list settings are not : fields, views and status_order describe the board, n
 ==============================
 ## Agent integration
 
-An installed Python package cannot expose a repository skill by itself: agent
-skills are discovered inside the repository where the agent is working.
-Boardkit therefore ships canonical skill templates and `board install-skill`
-copies identical skills into `.claude/skills/` for Claude Code and
-`.agents/skills/` for Codex in the consuming repository.
+Agents find skills in the repository they work in or in their user
+directory. boardkit uses the user directory only: the Claude Code plugin
+carries the skills beside the `board` they describe, and `install.sh` writes
+the same files where Codex reads user skills. boardkit runs on a person's own
+machine, so per-user is the whole audience, and copies committed in each
+repository only drifted from the command installed beside them.
 
-Commit the generated skills so every contributor gets the same interface.
-Do not edit generated copies; change the templates in boardkit and regenerate
-them. `board install-skill --check` detects drift.
+`board install-skill` renders the plugin's copies in boardkit itself; in any
+other repository it names copies an earlier boardkit committed, to delete.
+`board doctor` reports them too.

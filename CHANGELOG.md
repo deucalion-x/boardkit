@@ -5,6 +5,23 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `install.sh` installs boardkit without the Claude Code plugin, for Codex and
+  other agents: the plugin's launcher as `~/.local/bin/board` and the skills
+  in each agent's user directory, at one version, nothing per repository.
+  `board self update` reinstalls the latest release; `--uninstall` removes it.
+- `board doctor` reports every `board` on PATH and which wins, skills written
+  by another release, and repository copies the plugin already carries.
+  `board` says the same on stderr once a day.
+- The plugin's launcher finds its manifest when reached through a link.
+
+### Breaking
+- Skills are no longer kept in a repository. `board install-skill` writes only
+  the plugin's copies, in boardkit itself; elsewhere it and `--check` name
+  the `.claude/skills/` and `.agents/skills/` copies an earlier boardkit
+  committed, and `--check` fails until they are deleted. Install the plugin
+  for Claude, or run `install.sh` for Codex.
+
 ## 0.3.24 — 2026-10-16
 
 ### Changes

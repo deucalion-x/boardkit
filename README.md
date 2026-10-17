@@ -41,11 +41,27 @@ has neither — in a few seconds, into `~/.cache/boardkit`. It needs only bash
 and curl. The plugin updates itself like any other, skills and command
 together, so nothing is installed or committed per repository.
 
-Without Claude Code, install the command alone by its tag:
+The same commands work from a terminal as `claude plugin marketplace add …`
+and `claude plugin install …`, for an editor where `/plugin` is not offered.
+
+Without the plugin — Codex, another agent, or a machine without Claude Code —
+`install.sh` installs the same two things the same way, for the user:
 
 ```bash
-uv tool install "git+https://github.com/deucalion-x/boardkit@v0.3.21"
+git clone --depth 1 https://github.com/deucalion-x/boardkit /tmp/boardkit
+bash /tmp/boardkit/install.sh          # the latest release; or give a version
 ```
+
+It puts the plugin's launcher on PATH as `~/.local/bin/board` and writes the
+skills to `$CODEX_HOME/skills` (`~/.codex/skills`), and to `~/.claude/skills`
+when Claude Code is there without the plugin. Nothing goes into a repository.
+`board self update` installs the latest release again, command and skills
+together; `bash ~/.local/share/boardkit/install.sh --uninstall` removes both.
+
+`board doctor` says which `board` runs, where the skills come from, and what
+disagrees: two `board` commands on PATH, skills written by another release,
+repository copies the plugin already carries. `board` itself mentions these
+on stderr once a day, so an agent hears about them too.
 
 ## Getting started
 
@@ -361,7 +377,9 @@ The rest:
 | `--as-me` on any verb | Use your own `gh` login for one command; approved and logged. |
 | `board mirror write` / `check` | The issue-text mirror kept in git. |
 | `board links check` / `rewrite` | Sha-pinned document links in issue bodies. |
-| `board install-skill` / `--check` | Write the agent skills for Claude Code and Codex. |
+| `board install-skill` / `--check` | In boardkit, render the plugin's skills; elsewhere, name committed copies to delete. |
+| `board doctor` | Which `board` runs, where its skills come from, and what disagrees. |
+| `board self update` | Reinstall the latest release made by `install.sh`. |
 
 For a question the verbs do not cover, pipe `board json` into jq or python
 rather than growing a verb.
@@ -558,10 +576,11 @@ changing the board's shape. They ship in the Claude Code plugin (see
 [Install](#install)) beside the `board` they run, so the two never disagree,
 and they stay quiet in a repository with no board.
 
-A repository that installed them before the plugin has copies under
-`.claude/skills/` and `.agents/skills/`. Delete them once the plugin is
-installed; `board install-skill` still writes them, for Codex or for a machine
-without the plugin, and `--check` reports drift.
+Skills are installed per user, never kept in a repository: boardkit runs on
+a person's own machine, and a committed copy only drifted from the `board`
+installed beside it. A repository that holds copies from an earlier boardkit,
+under `.claude/skills/` or `.agents/skills/`, should delete them;
+`board install-skill --check` and `board doctor` name them.
 
 The skills' source is `src/boardkit/templates/skills/`; `board install-skill`
-in this repository also writes the plugin's copies under `plugin/skills/`.
+in this repository renders the plugin's copies under `plugin/skills/`.
