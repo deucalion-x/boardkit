@@ -1,5 +1,8 @@
 """Change an issue itself: comment, close, reopen, edit, labels, sub-issues.
 
+A draft card has no issue, so of these only `edit` reaches it, through the
+Project's own draft mutation; `drop` deletes a draft from the board.
+
 `board set` changes what the board holds about an item. These change the
 issue behind it, which is how the lifecycle records a result, drops rejected
 work and refines a plan. They run under the repository's own credential, so
@@ -30,8 +33,17 @@ def number(store: Store, ref: str) -> int:
         raise BoardError(f"#{ref.lstrip('#')} is not on the board")
     if not item.number:
         raise BoardError(f"{item.ref} is a draft card, with no issue behind it. "
-                         f"Run `board promote {item.ref}` first.")
+                         f"Run `board promote {item.ref}` first, or `board drop {item.ref}` "
+                         f"to delete it.")
     return item.number
+
+
+def draft(store: Store, ref: str):
+    """The draft card `ref` names, or None when it is an issue."""
+    item = store.state().known(ref.lstrip("#"))
+    if item is None:
+        raise BoardError(f"#{ref.lstrip('#')} is not on the board")
+    return item if not item.number else None
 
 
 def record(config: Config, store: Store, kind: str, ref: str, said: str, **args: str) -> int:
@@ -44,6 +56,10 @@ def record(config: Config, store: Store, kind: str, ref: str, said: str, **args:
         print(said)
         from . import sync
         snapshot = store.state()
+        # A dropped card is gone: there is nothing to re-read.
+        touched = {ref for ref in touched if snapshot.known(ref)}
+        if not touched:
+            return 0
         ids = [item.id if item else "" for item in map(snapshot.known, touched)]
         # Only what was touched is re-read. An issue that is not on the board
         # has no item to re-read, so the board is pulled instead.
@@ -88,7 +104,27 @@ def perform(config: Config, store: Store, action: Action) -> None:
     """Send one queued change to GitHub."""
     issue, args = action.ref, action.args
     repo = ["--repo", config.repo]
-    if action.kind == "comment":
+    if action.kind == "drop":
+        graphql(f"mutation {{ deleteProjectV2Item(input: {{ projectId: "
+                f"{quoted(args['project'])}, itemId: {quoted(args['item'])} }}) "
+                "{ deletedItemId } }")
+        # Gone on GitHub, so gone here, as a pull would have it.
+        with store.held():
+            snapshot = store.state()
+            store.save_state(snapshot.model_copy(update={
+                "items": tuple(i for i in snapshot.items if i.id != args["item"])}))
+    elif action.kind == "edit" and "item" in args:
+        # A draft: its title and body live on the DraftIssue, not the item.
+        found = graphql(f"{{ node(id: {quoted(args['item'])}) {{ ... on ProjectV2Item "
+                        "{ content { ... on DraftIssue { id } } } } }")
+        content = (((found.get("data") or {}).get("node") or {}).get("content") or {})
+        if not content.get("id"):
+            raise BoardError(f"{issue} is no longer a draft card on the board")
+        fields = "".join(f", {key}: {quoted(args[key])}"
+                         for key in ("title", "body") if key in args)
+        graphql(f"mutation {{ updateProjectV2DraftIssue(input: {{ draftIssueId: "
+                f"{quoted(content['id'])}{fields} }}) {{ draftIssue {{ id }} }} }}")
+    elif action.kind == "comment":
         gh("issue", "comment", issue, *repo, "--body", args["text"])
     elif action.kind == "close":
         gh("issue", "close", issue, *repo, "--reason", REASONS[args["reason"]])
@@ -180,9 +216,27 @@ def edit(config: Config, store: Store, ref: str, title: str | None, body: str | 
     """Refine the plan: a new title, a new body, or both."""
     if title is None and body is None:
         raise BoardError("edit takes --title, --body, or both")
-    issue = number(store, ref)
     args = {k: v for k, v in (("title", title), ("body", body)) if v is not None}
+    card = draft(store, ref)
+    if card is not None:
+        return record(config, store, "edit", card.ref, f"Edited draft {card.ref}",
+                      item=card.id, **args)
+    issue = number(store, ref)
     return record(config, store, "edit", str(issue), f"Edited #{issue}", **args)
+
+
+def drop(config: Config, store: Store, ref: str) -> int:
+    """Delete a draft card from the board: an idea that will not be pursued.
+
+    Only drafts. An issue is closed, not dropped, so its record stays in the
+    repository; `close --not-planned` is how rejected work leaves the board.
+    """
+    card = draft(store, ref)
+    if card is None:
+        raise BoardError(f"#{ref.lstrip('#')} is an issue; close it with "
+                         f"`board close {ref.lstrip('#')} --not-planned` instead")
+    return record(config, store, "drop", card.ref, f"Dropped draft {card.ref} ({card.title})",
+                  item=card.id, project=store.state().project_id)
 
 
 def names(value: str) -> list[str]:

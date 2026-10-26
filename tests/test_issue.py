@@ -185,3 +185,38 @@ def test_a_refused_change_is_not_reported_as_kept(world, monkeypatch, capsys):
     said = capsys.readouterr().out
     assert "refused" in said and "kept" not in said
     assert store.actions() == []
+
+
+def drafted(world, monkeypatch):
+    config, store, _ = world
+    asked = []
+
+    def answer(query):
+        asked.append(query)
+        if query.startswith("{ node("):
+            return {"data": {"node": {"content": {"id": "DI_1"}}}}
+        return {"data": {}}
+    monkeypatch.setattr(issue, "graphql", answer)
+    return config, store, asked
+
+
+def test_a_draft_is_edited_through_its_draft_issue(world, monkeypatch):
+    config, store, asked = drafted(world, monkeypatch)
+    ref = ProjectItem(id="I_D").ref
+    assert issue.edit(config, store, ref, "New title", None) == 0
+    assert 'node(id: "I_D")' in asked[0]
+    assert 'updateProjectV2DraftIssue(input: { draftIssueId: "DI_1", title: "New title" }' in asked[1]
+
+
+def test_a_draft_is_dropped_from_the_board_and_the_snapshot(world, monkeypatch):
+    config, store, asked = drafted(world, monkeypatch)
+    ref = ProjectItem(id="I_D").ref
+    assert issue.drop(config, store, ref) == 0
+    assert 'deleteProjectV2Item(input: { projectId: "PVT_1", itemId: "I_D" }' in asked[0]
+    assert store.state().known(ref.lstrip("#")) is None
+
+
+def test_an_issue_is_closed_rather_than_dropped(world):
+    config, store, _ = world
+    with pytest.raises(BoardError, match="--not-planned"):
+        issue.drop(config, store, "7")

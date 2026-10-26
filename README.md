@@ -360,7 +360,8 @@ the next sync:
 | `board comment <ref> <text>` | Record a result or a decision on the issue. |
 | `board close <ref>` / `--not-planned` | Close as completed, or as not planned for dropped work. |
 | `board reopen <ref>` | Reopen it. |
-| `board edit <ref> --title t --body b` | Refine the plan. |
+| `board edit <ref> --title t --body b` | Refine the plan. Works on a draft card too. |
+| `board drop <draft>` | Delete a draft card from the board. An issue is closed `--not-planned` instead. |
 | `board sync` | Pull: replace the snapshot. |
 | `board sync push` | Drain the queue against a fresh pull. |
 | `board sync status` | Snapshot age, queue depth, rejections. |

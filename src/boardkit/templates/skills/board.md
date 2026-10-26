@@ -67,6 +67,8 @@ board set 18 <field> "<value>"
 board add "Title" --body "..." type=Task status=Inbox  # a new issue, fielded in one go
 board add --draft "A thought"             # a board card, no issue behind it
 board promote ~a1b2c3                     # that card becomes an issue, in place
+board edit ~a1b2c3 --title "…"            # reword a draft card
+board drop ~a1b2c3                        # delete a draft that will not be pursued
 ```
 
 Create an **issue** for work that carries a plan or acceptance criteria — it
@@ -89,7 +91,9 @@ draft in Inbox
   → Done and closed
 ```
 
-1. Draft cards are ideas and are allowed only in `Inbox`.
+1. Draft cards are ideas and are allowed only in `Inbox`. An idea that will
+   not be pursued is deleted with `board drop <ref>`; drafts only, since an
+   issue keeps its record and is closed `--not-planned` instead.
 2. When an idea is selected for refinement or execution, convert it to an
    issue. Only issues move beyond `Inbox`. `board promote <ref>` is the
    conversion: it happens in place, so the fields the card already carries

@@ -17,7 +17,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board comment <ref> <text> record a result or decision on the issue
   board close <ref> [--not-planned]   close it; not planned for dropped work
   board reopen <ref>
-  board edit <ref> [--title t] [--body b]
+  board edit <ref> [--title t] [--body b]   an issue or a draft card
+  board drop <draft>         delete a draft card from the board
   board set <ref> labels|assignees "a, b"   or parent <n> (sub-issue)
                              or milestone "<title>" (its phase; "" removes)
                              or type <name> (Initiative, Feature, Task, Bug)
@@ -96,7 +97,7 @@ from .store import Snapshot, Store, Write
 BOARD_COMMANDS = {"list", "item", "find", "json", "views", "report"}
 # What changes an item. A portfolio's items are copies, overwritten by the
 # next `board portfolio sync`, so these are refused there.
-WRITES = {"add", "promote", "set", "comment", "close", "reopen", "edit"}
+WRITES = {"add", "promote", "set", "comment", "close", "reopen", "edit", "drop"}
 STALE = "No local snapshot. Run `board sync` first."
 
 
@@ -249,6 +250,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         return issue.close(config, store, args[0], reason)
     if command == "reopen" and args:
         return issue.reopen(config, store, args[0])
+    if command == "drop" and args:
+        return issue.drop(config, store, args[0])
     if command == "edit" and args:
         rest = list(args[1:])
         changes: dict[str, str] = {}
