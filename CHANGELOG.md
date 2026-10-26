@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.4 — 2026-10-26
+
 ### Changes
 - `board drop <draft>` deletes a draft card that will not be pursued; an issue
   is refused and pointed at `board close --not-planned`.
