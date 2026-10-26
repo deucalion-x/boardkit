@@ -5,6 +5,12 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- `board drop <draft>` deletes a draft card that will not be pursued; an issue
+  is refused and pointed at `board close --not-planned`.
+- `board edit` rewords a draft card too, through its draft issue.
+- `scripts/contract.py` rewords and drops its draft.
+
 ## 0.4.3 — 2026-10-17
 
 ### Changes

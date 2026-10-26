@@ -377,6 +377,26 @@ def check_refusal(where: pathlib.Path, ref: str) -> None:
          f"a write to the {UNWRITABLE} field is refused with a reason")
 
 
+def check_draft_edit_and_drop(where: pathlib.Path, ref: str) -> None:
+    """A draft's text lives on its DraftIssue, and a dropped draft leaves.
+
+    Both read back from a fresh pull, so the assertion is what GitHub holds.
+    """
+    board(where, "edit", ref, "--title", "A card the contract run reworded")
+    check_queue(where, f"editing the draft {ref}")
+    board(where, "sync")
+    title = next((item.get("title", "") for item in snapshot(where)["items"]
+                  if f"~{item.get('id', '')[-6:]}" == ref), "")
+    held(title == "A card the contract run reworded",
+         f"the draft's new title reads back from GitHub ({title!r})")
+    board(where, "drop", ref)
+    check_queue(where, f"dropping the draft {ref}")
+    board(where, "sync")
+    held(all(f"~{item.get('id', '')[-6:]}" != ref
+             for item in snapshot(where)["items"]),
+         f"the dropped draft {ref} is gone after a fresh pull")
+
+
 def check_issue_verbs(where: pathlib.Path, issue: str, stamp: str,
                       made: list[str]) -> None:
     """Every change to an issue itself, each read back from the snapshot.
@@ -493,6 +513,9 @@ def run(owner: str, repo: str, keep: bool, with_issue: bool,
 
         print("\n== a type boardkit does not write")
         check_refusal(where, draft)
+
+        print("\n== a draft reworded, then dropped")
+        check_draft_edit_and_drop(where, draft)
 
         if with_issue:
             print("\n== a real issue, created and fielded in one go")
