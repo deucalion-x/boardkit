@@ -13,7 +13,7 @@ import datetime
 
 from .board import MISSING, ProjectItem, key, normalize
 from .config import Config, DataType, ProjectField
-from .gh import BoardError, RateLimited, Unreachable, gh_json, quoted, run_json
+from .gh import BoardError, RateLimited, Unreachable, gh_json, graphql_partial, quoted, run_json
 from .store import Snapshot, Store, Write, now
 from .trail import note
 
@@ -102,7 +102,7 @@ COMMENTS = "comments(last: 50) { totalCount nodes { author { login } createdAt b
 # `parent` replaces a live search per `board item`: children are the same
 # relation read the other way, inverted locally. See `board.children`.
 ISSUE_FIELDS = (
-    "number title url state stateReason closedAt body "
+    "id number title url state stateReason closedAt body "
     "labels(first: 100) { pageInfo { hasNextPage } nodes { name } } "
     "assignees(first: 100) { pageInfo { hasNextPage } nodes { login } } "
     "parent { number } milestone { title } issueType { name } "
@@ -307,16 +307,23 @@ def fetch_items(config: Config, ids: list[str]) -> tuple[list[dict], bool]:
     """Named items in full, with the fragment a pull reads every item with.
     Also whether every one came back: one deleted, or not yet visible, does not."""
     listed = ", ".join(quoted(identity) for identity in ids)
-    query = ("fragment fieldName on ProjectV2FieldCommon { name } "
-             f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item {{ id type "
-             + CONTENT
-             + f"fieldValues(first: {config.page_size}) "
-               f"{{ nodes {{{VALUE_FRAGMENTS}}} }} }} }} }}")
+    query = (FIELD_NAME + f"{{ nodes(ids: [{listed}]) {{ ... on ProjectV2Item "
+             f"{{ {item_selection(config)} }} }} }}")
     payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
     errors = [e for e in payload.get("errors") or [] if not tolerated(e)]
     rows = [flatten(node) for node in (payload.get("data") or {}).get("nodes") or []
             if node]
     return rows, not errors and len(rows) == len(ids)
+
+
+FIELD_NAME = "fragment fieldName on ProjectV2FieldCommon { name } "
+
+
+def item_selection(config: Config) -> str:
+    """An item as a pull reads it, for any query or mutation that answers
+    with one — so its answer can go into the snapshot as it is."""
+    return ("id type " + CONTENT + f"fieldValues(first: {config.page_size}) "
+            f"{{ nodes {{{VALUE_FRAGMENTS}}} }} ")
 
 
 def created(store: Store, item_id: str) -> None:
@@ -379,6 +386,15 @@ def refresh(config: Config, store: Store, ids: list[str]) -> bool:
     rows, complete = fetch_items(config, ids)
     if not complete:
         return False
+    fold(config, store, rows)
+    return True
+
+
+def fold(config: Config, store: Store, rows: list[dict]) -> None:
+    """Items read in full — by id, or in a mutation's answer — put into the
+    snapshot in place of what it held for them. An item given twice is
+    taken as last given: a later answer knows more."""
+    rows = list({row.get("id"): row for row in rows}.values())
     names = tuple(field.name for field in store.state().fields)
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
@@ -401,7 +417,6 @@ def refresh(config: Config, store: Store, ids: list[str]) -> bool:
         "elsewhere": tuple(filter(stays, snapshot.elsewhere)),
     }))
     note("refreshed", items=len(fresh))
-    return True
 
 
 def fetch_fields(config: Config, number: str) -> list[dict]:
@@ -804,8 +819,42 @@ def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
     """
     if not writes:
         return []
+    document = "mutation { " + " ".join(write_parts(writes, snapshot)) + " }"
+    payload = run_json(["gh", "api", "graphql", "-f", f"query={document}"])
+    failed = {str(error.get("path", [""])[0]) for error in payload.get("errors", [])}
+    return [write for index, write in enumerate(writes) if f"m{index}" not in failed]
+
+
+def apply_and_read(config: Config, writes: list[Write],
+                   snapshot: Snapshot) -> tuple[list[Write], list[dict]]:
+    """`apply_all`, answering with each written item in full.
+
+    The last write to an item answers with the item as a pull reads it, so
+    what was just written needs no read afterwards.
+    """
+    if not writes:
+        return [], []
+    last = {write.ref: index for index, write in enumerate(writes)}
+    parts = write_parts(writes, snapshot, read=set(last.values()),
+                        selection=item_selection(config))
+    payload = graphql_partial(FIELD_NAME + "mutation { " + " ".join(parts) + " }")
+    data = payload.get("data") or {}
+    failed = {str((error.get("path") or [""])[0]) for error in payload.get("errors") or []}
+    landed = [write for index, write in enumerate(writes) if f"m{index}" not in failed]
+    rows = [flatten(item) for index in last.values()
+            if (item := ((data.get(f"m{index}") or {}).get("projectV2Item")))
+            and item.get("content") is not None]
+    return landed, rows
+
+
+def write_parts(writes: list[Write], snapshot: Snapshot, read: set[int] = frozenset(),
+                selection: str = "") -> list[str]:
+    """One aliased mutation per write; those in `read` answer with
+    `selection` rather than the bare id."""
     parts = []
     for index, write in enumerate(writes):
+        answer = (f"{{ projectV2Item {{ {selection} }} }}" if index in read
+                  else "{ projectV2Item { id } }")
         item, field = snapshot.item(write.ref), snapshot.field(write.field)
         if item is None or not item.id:
             raise BoardError(f"#{write.ref} is not in the snapshot; pull first")
@@ -819,17 +868,14 @@ def apply_all(writes: list[Write], snapshot: Snapshot) -> list[Write]:
                 f"m{index}: clearProjectV2ItemFieldValue(input: {{"
                 f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
                 f' fieldId: "{field.id}"'
-                " }) { projectV2Item { id } }")
+                f" }}) {answer}")
             continue
         parts.append(
             f"m{index}: updateProjectV2ItemFieldValue(input: {{"
             f' projectId: "{snapshot.project_id}", itemId: "{item.id}",'
             f" fieldId: \"{field.id}\", value: {value_literal(write, field)}"
-            " }) { projectV2Item { id } }")
-    document = "mutation { " + " ".join(parts) + " }"
-    payload = run_json(["gh", "api", "graphql", "-f", f"query={document}"])
-    failed = {str(error.get("path", [""])[0]) for error in payload.get("errors", [])}
-    return [write for index, write in enumerate(writes) if f"m{index}" not in failed]
+            f" }}) {answer}")
+    return parts
 
 
 def plan(writes: list[Write],

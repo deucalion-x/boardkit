@@ -103,6 +103,11 @@ class Snapshot(BaseModel):
     # on the board a few seconds after adding it, so a pull in that window
     # does not return it; these are read by id instead, which works at once.
     created: dict[str, str] = {}
+    # Node ids `board add` names things by — the repository, the project,
+    # labels, issue types, milestones, assignees, parents — by kind, then by
+    # name. Looked up once and kept: they change when someone renames or
+    # deletes one, and a create refused for a stale id looks them up again.
+    ids: dict[str, dict[str, str]] = {}
 
     def known(self, ref: str | int) -> ProjectItem | None:
         """Anywhere in the snapshot: for reading about an item, and for

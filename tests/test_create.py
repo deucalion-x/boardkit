@@ -1,6 +1,8 @@
+import re
+
 import pytest
 
-from boardkit.config import Config
+from boardkit.config import Config, ProjectField
 from boardkit.create import parse
 from boardkit.gh import BoardError
 from boardkit.store import Snapshot, Store
@@ -65,7 +67,7 @@ REPO_TYPES = [{"id": "IT_TASK", "name": "Task"}, {"id": "IT_BUG", "name": "Bug"}
 
 
 class FakeGitHub:
-    """Answers the lookup and the create documents `add` sends."""
+    """Answers the lookup, create, add and field documents `add` sends."""
 
     def __init__(self):
         self.documents: list[str] = []
@@ -74,9 +76,17 @@ class FakeGitHub:
         self.labels = {"dev": "LA_DEV", "bug": "LA_BUG"}
         self.milestones = {"Cadrage": "MI_CADRAGE"}
         self.users = {"octo": "U_OCTO"}
+        self.issues: dict[str, dict] = {}   # node id -> what the create made
+        self.stale: set[str] = set()        # ids GitHub no longer resolves
+
+    def content(self, node: str) -> dict:
+        made = self.issues[node]
+        return {"id": node, "number": made["number"], "title": made["title"],
+                "body": made["body"],
+                "url": f"https://github.com/octo/widgets/issues/{made['number']}",
+                "state": "OPEN", "parent": {"number": made["parent"]} if made["parent"] else None}
 
     def __call__(self, document: str) -> dict:
-        import re
         self.documents.append(document)
         if document.startswith("{ repository"):
             repo: dict = {"id": "R_REPO", "issueTypes": {"nodes": REPO_TYPES}}
@@ -100,25 +110,44 @@ class FakeGitHub:
                     **({"errors": errors} if errors else {})}
         if document.startswith("mutation { c0"):
             data, errors = {}, []
-            for offset, alias in enumerate(re.findall(r"(c\d+): createIssue", document)):
-                if alias in self.refuse:
+            numbers = {made["number"] for made in self.issues.values()}
+            for chunk in re.split(r"(?=c\d+: createIssue)", document)[1:]:
+                alias = chunk.split(":")[0]
+                if alias in self.refuse or any(f'"{one}"' in chunk for one in self.stale):
                     data[alias] = None
-                    errors.append({"path": [alias], "message": "title is too long"})
+                    why = ("Could not resolve to a node with the global id of 'x'"
+                           if alias not in self.refuse else "title is too long")
+                    errors.append({"path": [alias], "message": why})
                     continue
-                number = 42 + offset
+                number = 42
+                while number in numbers:
+                    number += 1
+                numbers.add(number)
+                title = re.search(r'title: "((?:[^"\\]|\\.)*)"', chunk).group(1)
+                parent = re.search(r'parentIssueId: "([^"]*)"', chunk)
+                body = re.search(r'body: "((?:[^"\\]|\\.)*)"', chunk).group(1)
+                self.issues[f"I_{number}"] = {
+                    "number": number, "title": title, "body": body,
+                    "parent": next((n for n, i in self.parents.items()
+                                    if parent and i == parent.group(1)), 0)}
                 data[alias] = {"issue": {
                     "id": f"I_{number}", "number": number,
                     "url": f"https://github.com/octo/widgets/issues/{number}"}}
             return {"data": data, **({"errors": errors} if errors else {})}
-        if document.startswith("mutation { a0"):
-            return {"data": {alias: {"item": {"id": "PVTI_" + content.removeprefix("I_")}}
-                             for alias, content in re.findall(
-                                 r'(a\d+): addProjectV2ItemById\(input: \{ projectId: "[^"]*", '
-                                 r'contentId: "([^"]*)"', document)}}
+        if "mutation { a0" in document:
+            return {"data": {alias: {"item": {
+                        "id": "PVTI_" + content.removeprefix("I_"), "type": "ISSUE",
+                        "content": self.content(content), "fieldValues": {"nodes": []}}}
+                    for alias, content in re.findall(
+                        r'(a\d+): addProjectV2ItemById\(input: \{ projectId: "[^"]*", '
+                        r'contentId: "([^"]*)"', document)}}
         raise AssertionError(f"unexpected document: {document[:80]}")
 
     def creates(self) -> list[str]:
         return [d for d in self.documents if d.startswith("mutation { c0")]
+
+    def lookups(self) -> list[str]:
+        return [d for d in self.documents if d.startswith("{ repository")]
 
 
 @pytest.fixture
@@ -129,7 +158,8 @@ def made(tmp_path, monkeypatch):
     calls: list[tuple] = []
     config = Config(root=tmp_path, owner="octo", project="4", repo="octo/widgets")
     store = Store(config)
-    store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00"))
+    store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00",
+                              fields=(ProjectField(name="status", id="F_STATUS"),)))
     github = FakeGitHub()
 
     def graphql(document):
@@ -141,15 +171,28 @@ def made(tmp_path, monkeypatch):
         calls.append(("gh_json", args))
         return {"id": "I_NEW123456"}
 
-    def apply_all(writes, snapshot):
+    def apply_and_read(config, writes, snapshot):
+        # The field writes answer with each item, its fields as written.
         calls.append(("fields", tuple(writes)))
-        return list(writes)
+        rows = {}
+        for write in writes:
+            item = snapshot.item(write.ref)
+            node = f"I_{write.ref}"
+            if node not in github.issues:
+                continue
+            rows.setdefault(item.id, {"id": item.id, "content": {
+                **github.content(node), "type": "ISSUE"}})[write.field] = write.value
+        return list(writes), list(rows.values())
+
+    def refresh(config, store, ids):
+        calls.append(("refresh", tuple(ids)))
+        return False
 
     monkeypatch.setattr(create, "graphql_partial", graphql)
     monkeypatch.setattr(create, "gh_json", gh_json)
     monkeypatch.setattr(sync, "pull", lambda c, s: calls.append(("pull", ())))
-    monkeypatch.setattr(sync, "refresh", lambda c, s, ids: False)
-    monkeypatch.setattr(sync, "apply_all", apply_all)
+    monkeypatch.setattr(sync, "refresh", refresh)
+    monkeypatch.setattr(sync, "apply_and_read", apply_and_read)
     store.github = github
     return config, store, calls
 
@@ -182,16 +225,20 @@ def test_the_issue_number_is_read_back_from_what_github_answered(made):
     assert store.state().items[0].id == "PVTI_42"
 
 
-def test_a_fully_fielded_issue_takes_five_calls_not_ten(made):
+def test_a_fully_fielded_issue_takes_three_calls_once_ids_are_known(made):
     """Labels, type and parent were a call or three apiece; the create now
-    takes them all, so it is a lookup, the create, the board, the fields,
-    a read."""
+    takes them all. The first add looks the ids up; the next does not, and
+    nothing is read back: each call answers with what the snapshot needs."""
     from boardkit.create import add
     config, store, calls = made
     add(config, store, "A real thing", "", {"type": "Task", "parent": "7",
                                             "labels": "dev", "status": "Inbox"})
-    kinds = [kind for kind, _ in calls]
-    assert kinds == ["graphql", "graphql", "graphql", "fields", "pull"]
+    assert [kind for kind, _ in calls] == ["graphql", "graphql", "graphql", "fields"]
+    calls.clear()
+    add(config, store, "Another", "", {"type": "Task", "parent": "7",
+                                       "labels": "dev", "status": "Inbox"})
+    assert [kind for kind, _ in calls] == ["graphql", "graphql", "fields"]
+    assert len(store.github.lookups()) == 1
 
 
 def test_an_issue_is_created_on_the_board_by_graphql_not_rest_or_gh_issue(made):
@@ -222,7 +269,8 @@ def test_fields_are_set_from_the_id_the_create_returned_not_after_a_pull(made):
     config, store, calls = made
     add(config, store, "A real thing", "", {"status": "Inbox"})
     order = [kind for kind, _ in calls]
-    assert order.index("fields") < order.index("pull") == len(order) - 1
+    assert "fields" in order and "pull" not in order and "refresh" not in order
+    assert store.state().item("42").field("status") == "Inbox"
 
 
 def test_an_issue_the_pull_did_not_return_is_still_readable(made):
@@ -253,7 +301,7 @@ def test_new_issues_are_put_on_the_board_by_id_not_by_the_create(made):
     path.write_text('[{"title": "One"}, {"title": "Two"}]')
     add_from(config, store, str(path))
     assert "projectV2Ids" not in store.github.creates()[0]
-    (adding,) = [d for d in sent(calls) if d.startswith("mutation { a0")]
+    (adding,) = [d for d in sent(calls) if "mutation { a0" in d]
     assert adding.count("addProjectV2ItemById") == 2
     assert 'projectId: "PVT_BOARD"' in adding and '"I_43"' in adding
     assert sorted(item.id for item in store.state().items) == ["PVTI_42", "PVTI_43"]
@@ -267,7 +315,7 @@ def test_an_issue_the_board_already_holds_is_found_not_dropped(made, monkeypatch
     fake = store.github
 
     def already(document):
-        if document.startswith("mutation { a0"):
+        if "mutation { a0" in document:
             return {"data": {"a0": None}, "errors": [
                 {"path": ["a0"], "message": "Content already exists in this project"}]}
         if document.startswith("{ n0"):
@@ -289,7 +337,7 @@ def test_issues_the_board_refused_are_still_reported_as_created(made, capsys,
     fake = store.github
 
     def refuse_board(document):
-        if document.startswith("mutation { a0"):
+        if "mutation { a0" in document:
             raise BoardError("no permission on the project")
         return fake(document)
 
@@ -339,7 +387,7 @@ def test_a_created_issue_is_not_lost_when_its_fields_are_refused(made, capsys,
     def refuse(writes, snapshot):
         raise BoardError("'Nope' is not an option of status")
 
-    monkeypatch.setattr(sync, "apply_all", refuse)
+    monkeypatch.setattr(sync, "apply_and_read", lambda c, w, s: refuse(w, s))
     assert add(config, store, "A real thing", "", {"status": "Nope"}) == 0
     out = capsys.readouterr().out
     assert "the issue was created; its fields were not" in out
@@ -407,7 +455,7 @@ def test_an_unknown_type_stops_the_create_naming_the_ones_there_are(made):
     """It used to be set after the create, so a typo left an untyped issue."""
     from boardkit.create import add
     config, store, _ = made
-    with pytest.raises(BoardError, match=r"no issue type 'Chore' \(it has: Task, Bug\)"):
+    with pytest.raises(BoardError, match=r"no issue type 'Chore' \(it has: Bug, Task\)"):
         add(config, store, "A thing", "", {"type": "Chore"})
     assert store.github.creates() == []
 
@@ -430,9 +478,10 @@ def test_many_cards_are_one_lookup_one_create_and_one_field_write(made, tmp_path
         {"title": f"Piece {n}", "type": "Task", "parent": 7, "labels": ["dev"],
          "status": "Inbox"} for n in range(3)]))
     assert add_from(config, store, str(cards)) == 0
-    assert [kind for kind, _ in calls] == ["graphql", "graphql", "graphql", "fields", "pull"]
+    assert [kind for kind, _ in calls] == ["graphql", "graphql", "graphql", "fields"]
     assert store.github.creates()[0].count("createIssue") == 3
     fields = next(args for kind, args in calls if kind == "fields")
+    assert store.state().item("44").field("status") == "Inbox"
     assert [(w.ref, w.field, w.value) for w in fields] == [
         ("42", "status", "Inbox"), ("43", "status", "Inbox"), ("44", "status", "Inbox")]
     assert sorted(item.number for item in store.state().items) == [42, 43, 44]
@@ -501,3 +550,31 @@ def test_parallel_adds_all_land_in_the_snapshot(tmp_path):
                for worker in range(8)]
     assert all(process.wait(timeout=60) == 0 for process in running)
     assert len(store.state().items) == 40
+
+
+def test_a_kept_id_gone_stale_is_looked_up_again_and_the_create_retried(made, capsys):
+    """A label renamed or deleted since it was kept: GitHub refuses its id,
+    so the ids are looked up afresh and the card created once more."""
+    from boardkit.create import add
+    config, store, _ = made
+    add(config, store, "First", "", {"labels": "dev"})
+    store.github.labels["dev"] = "LA_DEV_NEW"
+    store.github.stale = {"LA_DEV"}
+    assert add(config, store, "Second", "", {"labels": "dev"}) == 0
+    assert "Created https://github.com/octo/widgets/issues/43" in capsys.readouterr().out
+    assert len(store.github.lookups()) == 2
+    assert 'labelIds: ["LA_DEV_NEW"]' in store.github.creates()[-1]
+    assert store.state().ids["labels"]["dev"] == "LA_DEV_NEW"
+
+
+def test_a_parent_in_the_snapshot_needs_no_lookup(made):
+    from boardkit.board import ProjectItem
+    from boardkit.create import add
+    config, store, _ = made
+    add(config, store, "Warm the ids", "", {})
+    store.save_state(store.state().model_copy(update={"items": (
+        *store.state().items, ProjectItem(number=9, id="PVTI_9", node="I_NINE"))}))
+    store.github.parents[9] = "I_NINE"
+    add(config, store, "A child", "", {"parent": "9"})
+    assert len(store.github.lookups()) == 1
+    assert 'parentIssueId: "I_NINE"' in store.github.creates()[-1]

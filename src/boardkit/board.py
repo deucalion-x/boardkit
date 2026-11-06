@@ -47,6 +47,9 @@ class ProjectItem(BaseModel):
     number: int = 0
     id: str = ""
     type: ItemType = "ISSUE"
+    # The issue's own node id, which a sub-issue link names its parent by;
+    # carried so `board add parent=<n>` need not look it up.
+    node: str = ""
 
     title: str = ""
     url: str = ""
@@ -206,6 +209,7 @@ def normalize(payload: list[dict], still_open: set[int], config: Config,
             closed=closed,
             number=number or 0,
             id=entry.get("id", ""),
+            node=content.get("id", "") if number else "",
             # GraphQL puts the kind on the item node; `gh` put it inside the
             # content. Accept either rather than depend on which produced it.
             type=entry.get("type") or content.get("type") or "ISSUE",
