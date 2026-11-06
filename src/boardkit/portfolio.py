@@ -288,7 +288,7 @@ def sync(config: Config, dry: bool = False) -> int:
     number = locate(config)
     if not number:
         raise BoardError("the portfolio board does not exist yet; "
-                         "`board admin apply --as-me` creates it")
+                         "`board admin apply` creates it")
     project_id, raw, items = fetch_portfolio(config, number)
     fields = parse_fields(raw, config)
     initiatives, unread = [], []
