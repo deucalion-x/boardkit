@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.9 — 2026-11-06
+
 ### Changes
 - Board skill: when a change does not reach GitHub (refused, queued while
   GitHub is unreachable, or rejected), the agent says so first and never
