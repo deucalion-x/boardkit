@@ -1,7 +1,15 @@
 import pathlib
 
 from boardkit.config import Config
-from boardkit.skill import PLUGIN_MANIFEST, PLUGIN_SKILLS, SKILL_ROOTS, SKILLS, install, render
+from boardkit.skill import (
+    PLUGIN_MANIFEST,
+    PLUGIN_SKILLS,
+    REPO_TEMPLATES,
+    SKILL_ROOTS,
+    SKILLS,
+    install,
+    render,
+)
 
 
 def config(tmp_path: pathlib.Path, **overrides) -> Config:
@@ -80,10 +88,21 @@ def test_copies_an_earlier_boardkit_committed_are_named_for_deletion(tmp_path, c
     assert (tmp_path / SKILL_ROOTS[0] / "board" / "SKILL.md").exists()
 
 
-def test_boardkit_renders_the_plugin_copies_and_check_reports_drift(tmp_path):
+def boardkit_checkout(tmp_path: pathlib.Path) -> pathlib.Path:
+    """A plugin manifest and the templates beside it, as in boardkit's repo."""
     manifest = tmp_path / PLUGIN_MANIFEST
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{}", encoding="utf-8")
+    templates = tmp_path / REPO_TEMPLATES
+    templates.mkdir(parents=True)
+    for path in SKILLS.values():
+        (templates / path.name).write_text(path.read_text(encoding="utf-8"),
+                                           encoding="utf-8")
+    return templates
+
+
+def test_boardkit_renders_the_plugin_copies_and_check_reports_drift(tmp_path):
+    boardkit_checkout(tmp_path)
     settings = config(tmp_path)
     assert install(settings) == 0
     written = [tmp_path / PLUGIN_SKILLS / name / "SKILL.md" for name in SKILLS]
@@ -92,6 +111,30 @@ def test_boardkit_renders_the_plugin_copies_and_check_reports_drift(tmp_path):
     assert install(settings, check=True) == 0
     written[0].write_text("hand edited\n", encoding="utf-8")
     assert install(settings, check=True) == 1
+
+
+def test_the_checkout_templates_win_over_the_running_board(tmp_path):
+    """An older installed `board` rendered its own release's text and --check
+    called it up to date (#116)."""
+    templates = boardkit_checkout(tmp_path)
+    settings = config(tmp_path)
+    assert install(settings) == 0
+    edited = templates / SKILLS["board"].name
+    edited.write_text(edited.read_text(encoding="utf-8") + "\nA new rule.\n",
+                      encoding="utf-8")
+    assert install(settings, check=True) == 1
+    assert install(settings) == 0
+    shipped = tmp_path / PLUGIN_SKILLS / "board" / "SKILL.md"
+    assert shipped.read_text(encoding="utf-8").endswith("A new rule.\n")
+    assert install(settings, check=True) == 0
+
+
+def test_a_checkout_without_its_templates_is_refused(tmp_path, capsys):
+    templates = boardkit_checkout(tmp_path)
+    (templates / SKILLS["board-admin"].name).unlink()
+    assert install(config(tmp_path)) == 1
+    assert "no template for board-admin" in capsys.readouterr().out
+    assert not (tmp_path / PLUGIN_SKILLS).exists()
 
 
 def test_a_hand_written_skill_beside_them_is_left_alone(tmp_path, capsys):

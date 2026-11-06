@@ -5,6 +5,13 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Fixes
+- `board install-skill` in boardkit's own repository rendered, and `--check`
+  compared against, the templates of whichever `board` ran. An older installed
+  release wrote its own skill text and called it up to date. It now reads the
+  checkout's templates, and refuses when they are missing (#116).
+- CI checks that the committed plugin skills match their templates.
+
 ## 0.4.9 — 2026-11-06
 
 ### Changes

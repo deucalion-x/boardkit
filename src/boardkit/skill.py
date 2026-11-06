@@ -28,8 +28,10 @@ GENERATED = (
 )
 
 
-def render(name: str) -> str:
-    body = SKILLS[name].read_text(encoding="utf-8").rstrip() + "\n"
+def render(name: str, templates: pathlib.Path | None = None) -> str:
+    """The skill as shipped; `templates` is a folder other than this package's."""
+    source = templates / SKILLS[name].name if templates else SKILLS[name]
+    body = source.read_text(encoding="utf-8").rstrip() + "\n"
     # The banner sits under the frontmatter, which must stay the first line.
     head, _, rest = body.partition("---\n\n")
     return f"{head}---\n\n{GENERATED}\n\n{rest}" if rest else body
@@ -59,6 +61,10 @@ def committed(config: Config) -> list[pathlib.Path]:
 # the `board` it runs; install.sh copies the same files for other agents.
 PLUGIN_SKILLS = "plugin/skills"
 PLUGIN_MANIFEST = "plugin/.claude-plugin/plugin.json"
+# The plugin's copies come from the checkout's templates, never from those of
+# whichever `board` runs: an older installed release would render, and check
+# against, its own text and call the result up to date.
+REPO_TEMPLATES = "src/boardkit/templates/skills"
 ELSEWHERE = ("Install them per user instead: the Claude Code plugin for Claude, "
              "install.sh from boardkit for Codex and other agents.")
 
@@ -77,7 +83,15 @@ def install(config: Config, check: bool = False) -> int:
             print("Skills are not kept in a repository. " + ELSEWHERE)
         return 1 if left else 0
 
-    wanted = {config.path(PLUGIN_SKILLS) / name / "SKILL.md": render(name)
+    templates = config.path(REPO_TEMPLATES)
+    missing = [name for name, path in SKILLS.items()
+               if not (templates / path.name).is_file()]
+    if missing:
+        print(f"{REPO_TEMPLATES} has no template for {', '.join(missing)}; "
+              "the plugin's skills are rendered from this checkout, not from "
+              f"the `board` running ({pathlib.Path(__file__).parent}).")
+        return 1
+    wanted = {config.path(PLUGIN_SKILLS) / name / "SKILL.md": render(name, templates)
               for name in SKILLS}
     if check:
         stale = [path for path, text in wanted.items()
