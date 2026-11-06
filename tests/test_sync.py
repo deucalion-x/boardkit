@@ -912,6 +912,7 @@ def pulling(tmp_path, monkeypatch, created, listed=()):
     monkeypatch.setattr(sync, "fetch_board", lambda config, number: {
         "id": "PVT_1", "url": "u", "views": [], "fields": [], "items": list(listed)})
     monkeypatch.setattr(sync, "repo_issues", lambda config, store, names: ((), ""))
+    monkeypatch.setattr(sync, "fetch_open_prs", lambda config: [])
     asked = []
 
     def by_id(args):
@@ -1001,3 +1002,29 @@ def test_a_young_item_deleted_since_does_not_fail_the_pull(tmp_path, monkeypatch
     monkeypatch.setattr(sync, "fetch_items", refused)
     rows, recent = sync.unlisted(store.config, store, [])
     assert rows == [] and "GONE" in recent
+
+
+def test_an_open_pull_request_is_unlinked_only_when_nothing_names_it():
+    config = Config(root=pathlib.Path("."), owner="octo", project="4", repo="octo/widgets")
+    prs = [
+        {"number": 20, "title": "On the board", "body": ""},
+        {"number": 21, "title": "Closes one", "body": "",
+         "closingIssuesReferences": {"nodes": [{"number": 5}]}},
+        {"number": 22, "title": "Mentions one", "body": "Refs #5, follow-up"},
+        {"number": 23, "title": "By URL", "body": "see https://github.com/o/r/issues/5"},
+        {"number": 24, "title": "Loose", "body": "fixes the build, see #999 and abc#5"},
+    ]
+    loose = sync.unlinked_prs(prs, on_board={20}, issues={5}, config=config)
+    assert [item.number for item in loose] == [24]
+    assert loose[0].type == "PULL_REQUEST" and not loose[0].on_board
+
+
+def test_a_pull_that_cannot_read_pull_requests_keeps_the_last_listing(
+        tmp_path, monkeypatch):
+    from boardkit.board import ProjectItem
+    config, store, _ = pulling(tmp_path, monkeypatch, {})
+    kept = (ProjectItem(number=37, type="PULL_REQUEST", on_board=False),)
+    store.save_state(store.state().model_copy(update={"unlinked": kept}))
+    monkeypatch.setattr(sync, "fetch_open_prs", lambda config: None)
+    sync.pull(config, store)
+    assert store.state().unlinked == kept

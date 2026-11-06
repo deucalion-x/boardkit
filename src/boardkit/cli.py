@@ -97,6 +97,14 @@ from .gh import BoardError, RateLimited, Unreachable
 from .store import Snapshot, Store, Write
 
 BOARD_COMMANDS = {"list", "item", "find", "json", "views", "report"}
+UNLINKED_HINT = ("a pull request no card knows about: give it one "
+                 "(Closes #n in its description) or add it to the board")
+
+
+def show_unlinked(prs: list, view) -> None:
+    if prs:
+        print(f"open pull requests with no card ({len(prs)}): {UNLINKED_HINT}")
+        board_module.show(prs, view)
 # What changes an item. A portfolio's items are copies, overwritten by the
 # next `board portfolio sync`, so these are refused there.
 WRITES = {"add", "promote", "set", "comment", "close", "reopen", "edit", "drop"}
@@ -308,7 +316,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     items = list(snapshot.items)
     # Reads about one item, or a search, also see closed work; the listing
     # and everything that writes see open work only.
-    everything = [*items, *snapshot.closed, *snapshot.elsewhere]
+    known = [*items, *snapshot.closed, *snapshot.elsewhere]
+    # Open pull requests no card knows about: read and searched, never counted.
+    unlinked = list(snapshot.unlinked)
+    everything = [*known, *unlinked]
     index = {item.ref: item for item in everything}
     # How to read this board: config where it asserts, the snapshot otherwise.
     view = board_module.shape(config, snapshot.fields)
@@ -319,7 +330,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     #
     # Not on `json`: that output feeds jq, where a header is a parse error.
     if command == "report":
-        built = report.build(everything, view, config.blocked_field,
+        built = report.build(known, view, config.blocked_field,
                              board=snapshot.project_url)
         print(report.as_json(built) if "--json" in args else
               "\n".join(filter(None, [snapshot.project_url, report.render(built)])))
@@ -333,6 +344,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             print("No views; `board sync` has not seen any.")
     elif command == "list":
         board_module.show(items, view)
+        show_unlinked(unlinked, view)
         report_queue(store)
     elif command == "item":
         ref = args[0].lstrip("#")
@@ -360,7 +372,9 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             why = found.state_reason.replace("_", " ").lower()
             print(f"  closed{' as ' + why if why else ''}"
                   f"{', ' + found.closed_at[:10] if found.closed_at else ''}")
-        if found is not None and not found.on_board:
+        if found in unlinked:
+            print(f"  {UNLINKED_HINT}")
+        elif found is not None and not found.on_board:
             print("  not on the board")
         if found is not None and not found.body:
             # Silence read as "the skill lied about showing the full text".
@@ -391,7 +405,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         hits = board_module.matching(everything, " ".join(args))
         live = [h for h in hits if not h.closed and h.on_board]
         done = [h for h in hits if h.closed]
-        off = [h for h in hits if not h.closed and not h.on_board]
+        loose = [h for h in hits if h in unlinked]
+        off = [h for h in hits if not h.closed and not h.on_board and h not in loose]
         if live or not hits:
             board_module.show(live, view)
         if off:
@@ -400,11 +415,13 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         if done:
             print("closed:")
             board_module.show(done, view)
+        show_unlinked(loose, view)
     elif command == "json":
         json.dump([{**item.flat(), "closed": item.closed, "on_board": item.on_board,
                     "state_reason": item.state_reason, "type": item.type,
                     "linked_prs": list(item.linked_prs), "review": item.review,
-                    "mergeable": item.mergeable, "checks": item.checks}
+                    "mergeable": item.mergeable, "checks": item.checks,
+                    "unlinked": item in unlinked}
                    for item in everything],
                   sys.stdout, indent=2)
         print()

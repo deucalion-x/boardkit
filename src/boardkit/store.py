@@ -99,6 +99,9 @@ class Snapshot(BaseModel):
     # part of it the board does not list.
     repo_issues: tuple[ProjectItem, ...] = ()
     issues_synced_at: str = ""
+    # Open pull requests no card knows about: not on the board, closing no
+    # issue and naming none. Shown in `board` and found by `board find`.
+    unlinked: tuple[ProjectItem, ...] = ()
     # Items this checkout created, by id, with when. GitHub lists a new item
     # on the board a few seconds after adding it, so a pull in that window
     # does not return it; these are read by id instead, which works at once.

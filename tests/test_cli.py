@@ -727,3 +727,26 @@ def test_a_closed_issue_off_the_board_is_still_refused(seeded, capsys):
         ProjectItem(number=12, title="Archived", on_board=False, closed=True),)}))
     assert cli.main(["set", "12", "status", "Done"]) == 1
     assert "#12 is not on the board" in capsys.readouterr().out
+
+
+@pytest.fixture
+def with_unlinked(seeded):
+    seeded.save_state(seeded.state().model_copy(update={"unlinked": (
+        ProjectItem(number=37, type="PULL_REQUEST", title="PKCE and Postgres TLS",
+                    url="https://github.com/o/r/pull/37", on_board=False),)}))
+    return seeded
+
+
+def test_the_listing_names_a_pull_request_no_card_knows_about(with_unlinked, capsys):
+    """An open PR with no card was invisible, and an agent started the same
+    work again on a card made later."""
+    assert cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert "open pull requests with no card (1)" in out and "PKCE" in out
+
+
+def test_find_and_item_reach_an_unlinked_pull_request(with_unlinked, capsys):
+    assert cli.main(["find", "postgres"]) == 0
+    assert "open pull requests with no card" in capsys.readouterr().out
+    assert cli.main(["item", "37"]) == 0
+    assert "no card knows about" in capsys.readouterr().out

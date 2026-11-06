@@ -73,6 +73,7 @@ having one. So it is run by hand, and the result goes in the table below.
 | 0.3.2 | 2026-10-12, reused project 3, pass (85s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Setting, removing and refusing a milestone checked by hand on the sandbox board; the contract does not cover milestones. |
 | 0.3.3 | 2026-10-12, reused project 3, pass (84s) | As 0.3.2, plus the three template tabs read back with their filters. What the type filters match was checked through `items(query:)`: hiding a type hides only that type's items, keeps their children, and an unknown type hides nothing. |
 | 0.3.5 | 2026-10-14, reused project 3, pass (93s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Not covered live: `board init`'s owner-type lookup and the app owner check, which need an org repo and a browser; `board add labels=` passes `--label` to `gh issue create`, unit-tested only. |
+| 0.4.11 | 2026-11-06, skipped; checked live | A new read only (open pull requests); no mutation changed. Pulled live on boardkit and Novatix-production-template. |
 | 0.4.10 | 2026-11-06, skipped | Skill rendering is local; no GitHub call changed. |
 | 0.4.9 | 2026-11-06, skipped | Skill text only; no GitHub call changed. |
 | 0.4.8 | 2026-11-06, skipped | One message's wording; no GitHub call changed. |

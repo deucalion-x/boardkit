@@ -118,6 +118,14 @@ draft in Inbox
    that closes an issue is that acceptance: the automation then moves the
    issue to `Done` on its own. Never merge a pull request yourself.
 
+**Every pull request has a card.** Its description says `Closes #<n>` for
+the one issue it delivers; work too large for one pull request is split into
+child issues, one each. Work with no card gets one before the pull request is
+opened. A pull request no card knows about is invisible to whoever checks the
+board before starting, and they will start the same work. `board` lists open
+pull requests with no card; before starting work, give any that overlap it a
+card, or ask its author.
+
 Close rejected, duplicate, or abandoned issues with `board close <ref>
 --not-planned`. Never move them through `Done`; the Project automation
 archives them.

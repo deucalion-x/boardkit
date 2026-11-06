@@ -10,6 +10,7 @@ can then be tested without a token or a project.
 from __future__ import annotations
 
 import datetime
+import re
 
 from .board import MISSING, ProjectItem, key, normalize
 from .config import Config, DataType, ProjectField
@@ -526,6 +527,66 @@ def repo_issues(config: Config, store: Store, names: tuple[str, ...]):
             started.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
 
+# Open pull requests, so one with no card is seen rather than invisible: an
+# agent checks the board before starting work, and a PR the board does not
+# know about is how two people end up doing the same thing.
+PR_FIELDS = (
+    "number title url body isDraft "
+    "labels(first: 100) { nodes { name } } "
+    "assignees(first: 100) { nodes { login } } "
+    "closingIssuesReferences(first: 10) { nodes { number } } ")
+# A mention of an issue in the PR's text: `#12`, `Refs #12`, or its URL.
+MENTION = re.compile(r"(?:^|[^\w/])#(\d+)\b|/issues/(\d+)\b")
+
+
+def fetch_open_prs(config: Config) -> list[dict] | None:
+    """Every open pull request of the repository, or None when GitHub would
+    not say. One query a pull, paged only on a repository with over a hundred
+    open; a refusal costs the listing, never the sync."""
+    owner, name = config.repo.split("/", 1)
+    rows, after = [], ""
+    try:
+        while True:
+            cursor = f", after: {quoted(after)}" if after else ""
+            query = (f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+                     f"{{ pullRequests(states: OPEN, first: 100{cursor}) "
+                     f"{{ pageInfo {{ hasNextPage endCursor }} nodes {{ {PR_FIELDS} }} }} }} }}")
+            payload = run_json(["gh", "api", "graphql", "-f", f"query={query}"])
+            found = (((payload or {}).get("data") or {}).get("repository") or {}).get(
+                "pullRequests")
+            if found is None:
+                return None
+            rows += [node for node in found.get("nodes") or [] if node]
+            page = found.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                return rows
+            after = page.get("endCursor") or ""
+    except BoardError as error:
+        note("prs_unread", said=str(error)[:200])
+        return None
+
+
+def linked(pr: dict, on_board: set[int], issues: set[int]) -> bool:
+    """On the board, closing an issue, or naming one in its text."""
+    if pr.get("number") in on_board:
+        return True
+    if any(node for node in (pr.get("closingIssuesReferences") or {}).get("nodes") or []):
+        return True
+    named = {int(a or b) for a, b in MENTION.findall(pr.get("body") or "")}
+    named |= {int(a or b) for a, b in MENTION.findall(pr.get("title") or "")}
+    return bool(named & issues)
+
+
+def unlinked_prs(prs: list[dict], on_board: set[int], issues: set[int],
+                 config: Config) -> tuple[ProjectItem, ...]:
+    """The open pull requests no card knows about, as items off the board."""
+    loose = [pr for pr in prs if not linked(pr, on_board, issues)]
+    rows = [{"id": "", "type": "PULL_REQUEST", "content": pr} for pr in loose]
+    numbers = {pr["number"] for pr in loose}
+    return tuple(item.model_copy(update={"on_board": False, "fields": {}})
+                 for item in normalize(rows, numbers, config, ()))
+
+
 def pull(config: Config, store: Store) -> Snapshot:
     """Replace the snapshot with what GitHub currently holds."""
     target = number(config, store)
@@ -550,6 +611,9 @@ def pull(config: Config, store: Store) -> Snapshot:
     every = normalize(rows, still_open, config, names, keep_closed=True)
     on_board = {item.number for item in every if item.number}
     issues, issues_at = repo_issues(config, store, names)
+    prs = fetch_open_prs(config)
+    unlinked = (store.state().unlinked if prs is None else
+                unlinked_prs(prs, on_board, {item.number for item in issues}, config))
     snapshot = Snapshot(
         project_id=board["id"],
         project_url=board.get("url", ""),
@@ -562,6 +626,7 @@ def pull(config: Config, store: Store) -> Snapshot:
         elsewhere=tuple(item for item in issues if item.number not in on_board),
         repo_issues=issues,
         issues_synced_at=issues_at,
+        unlinked=unlinked,
         created=recent,
     )
     snapshot = store.update_state(lambda current: kept_young(snapshot, current))

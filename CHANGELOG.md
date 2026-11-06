@@ -5,6 +5,13 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- Open pull requests that no card knows about (not on the board, closing no
+  issue, naming none) are listed in `board`, found by `board find`, shown by
+  `board item` and marked `unlinked` in `board json`. One query per sync (#115).
+- Board skill: every pull request closes a card; work too large for one is
+  split into child issues (#115).
+
 ## 0.4.10 — 2026-11-06
 
 ### Fixes
