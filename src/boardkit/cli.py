@@ -13,6 +13,8 @@ Reads answer from the local store; only the sync verbs touch GitHub.
   board add <title> [f=v]    create an issue and put it on the board
                              --body <text> for its text
                              --draft for a board card with no issue behind it
+  board add --from <file>    many issues in one run, from a JSON list of
+                             {"title", "body", field: value}; - for stdin
   board promote <ref>        turn a draft card into an issue, keeping its fields
   board comment <ref> <text> record a result or decision on the issue
   board close <ref> [--not-planned]   close it; not planned for dropped work
@@ -226,6 +228,10 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
         verbs = [a for a in args if not a.startswith("-")]
         return run_sync(config, store, verbs[0] if verbs else "pull")
     if command == "add":
+        if args[:1] == ["--from"]:
+            if len(args) != 2:
+                return usage()
+            return create.add_from(config, store, args[1])
         title, body, values, draft = create.parse(args)
         if draft:
             return create.add_draft(config, store, title, body, values)

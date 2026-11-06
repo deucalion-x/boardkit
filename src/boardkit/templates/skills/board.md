@@ -71,6 +71,13 @@ board edit ~a1b2c3 --title "…"            # reword a draft card
 board drop ~a1b2c3                        # delete a draft that will not be pursued
 ```
 
+Several issues at once — breaking a parent down, filing a meeting's actions —
+go in one run rather than one `board add` each: `board add --from cards.json`
+(or `-` for stdin), with a list of objects shaped like `board add`'s
+arguments: `[{"title": "…", "body": "…", "type": "Task", "parent": 12,
+"labels": ["dev"], "status": "Inbox"}]`. It is one request for all of them,
+and a name that does not exist stops it before any is made.
+
 Create an **issue** for work that carries a plan or acceptance criteria — it
 can be reviewed, linked from a commit, and closed by one. Create a **draft**
 for an idea that has not earned that yet.

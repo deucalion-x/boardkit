@@ -256,7 +256,11 @@ def run(args: list[str]) -> str:
     """
     if shutil.which(args[0]) is None:
         raise BoardError(f"{args[0]} is not installed or not on PATH")
-    result = once(args)
+    return checked(args, once(args))
+
+
+def checked(args: list[str], result: subprocess.CompletedProcess) -> str:
+    """The output of a finished command, or its failure as advice."""
     if result.returncode == 0:
         return result.stdout
     detail = (result.stderr or result.stdout).strip()
@@ -283,6 +287,31 @@ def run(args: list[str]) -> str:
 
 def run_json(args: list[str]):
     return json.loads(run(args))
+
+
+def graphql_partial(document: str) -> dict:
+    """A GraphQL answer even when part of it was refused.
+
+    `gh` exits non-zero when the answer carries any error, though its `data`
+    may hold work that was done: the mutations of a document run in order and
+    do not roll back. A caller that has to report what landed reads both; any
+    failure that left no data is raised as `run` raises it.
+    """
+    args = ["gh", "api", "graphql", "-f", f"query={document}"]
+    if shutil.which("gh") is None:
+        raise BoardError("gh is not installed or not on PATH")
+    result = once(args)
+    if result.returncode != 0:
+        try:
+            payload = json.loads(result.stdout)
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and any((payload.get("data") or {}).values()):
+            note("partial", errors=len(payload.get("errors") or []),
+                 said=str(payload.get("errors"))[:400])
+            return payload
+    # Whole, or refused whole: reported the way every call is.
+    return json.loads(checked(args, result))
 
 
 def gh(*args: str) -> str:

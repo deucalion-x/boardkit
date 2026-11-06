@@ -419,6 +419,25 @@ def check_issue_verbs(where: pathlib.Path, issue: str, stamp: str,
     child = child.rstrip("/").rsplit("/", 1)[-1]
     made.append(child)
     held(child.isdigit() and f"#{child}" in item(), f"#{child} is a child of #{issue}")
+    cards = where / "cards.json"
+    cards.write_text(json.dumps([
+        {"title": f"Contract batch {stamp} {n}", "type": "Task", "parent": int(issue),
+         "labels": ["backlog"], "status": "Todo",
+         "body": "Made by scripts/contract.py in one batch. Deletable."}
+        for n in (1, 2)]), encoding="utf-8")
+    said = board(where, "add", "--from", str(cards))
+    batch = [w.rstrip("/").rsplit("/", 1)[-1] for w in said.split()
+             if w.startswith("https://") and "/issues/" in w]
+    made.extend(batch)
+    held(len(batch) == 2, "a batch of two cards made two issues")
+    state = snapshot(where)
+    rows = [row for row in state["items"] if str(row.get("number")) in batch]
+    held(len(rows) == 2, "both batch cards are in the snapshot without a sync")
+    held(all("backlog" in row.get("labels", []) and row.get("parent") == int(issue)
+             for row in rows), "each batch card carries its label and parent")
+    held(all(row.get("issue_type") == "Task" for row in rows), "each batch card is a Task")
+    held(all(value(state, one, "status") == "Todo" for one in batch),
+         "each batch card's status reads back from the snapshot")
     board(where, "close", issue, "--not-planned")
     closed = item()
     held("closed as not planned" in closed, "a not-planned close reads back with its reason")

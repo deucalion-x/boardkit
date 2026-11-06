@@ -21,7 +21,9 @@ import datetime
 import json
 import os
 import pathlib
+import time
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -201,6 +203,12 @@ class Rejection(BaseModel):
 # A lock held longer than this is assumed to belong to a process that died.
 # Generous, because a slow pull of a large board is minutes of legitimate work.
 STALE_LOCK = 15 * 60
+# How long to wait for another process to let go before giving up. Every
+# holder only reads and rewrites a file or two, never the network, so a few
+# seconds covers a crowd: a dozen `board add` run side by side queue here
+# rather than failing — or, as before the snapshot was written under the lock
+# at all, overwriting one another.
+LOCK_WAIT = 10.0
 
 
 class Busy(BoardError):
@@ -239,6 +247,20 @@ class Store:
     def save_state(self, snapshot: Snapshot) -> None:
         self._write(STATE, snapshot.model_dump(mode="json"))
 
+    def update_state(self, change: Callable[[Snapshot], Snapshot]) -> Snapshot:
+        """Re-read the snapshot, change it, and write it back, under the lock.
+
+        Read, then work, then write is a lost update when two processes do it
+        at once: the last to write puts back the snapshot it read, without the
+        other's change. Parallel `board add` lost items that way. So whatever
+        the network answered is folded into the snapshot as it is *now*, read
+        inside the lock, and never into one read before the work began.
+        """
+        with self.held():
+            snapshot = change(self.state())
+            self.save_state(snapshot)
+        return snapshot
+
     @contextlib.contextmanager
     def held(self):
         """Exclusive access for the length of a change.
@@ -247,19 +269,30 @@ class Store:
         case rather than the exotic one — and `pending.json` is read, extended
         and written back, which interleaves badly. A lock file created with
         O_EXCL is enough: it is one machine and one directory.
+
+        A held lock is waited for, briefly: holders are quick, and refusing
+        at once turned an ordinary crowd of agents into errors.
         """
         lock = directory(self.config) / "lock"
-        try:
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            age = _now() - lock.stat().st_mtime if lock.exists() else 0
-            if age < STALE_LOCK:
-                raise Busy(
-                    f"another boardkit process is working (lock held {int(age)}s). "
-                    f"If nothing else is running, delete {lock}.") from None
-            # Older than any real run: whoever held it is gone.
-            lock.unlink(missing_ok=True)
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError:
+                try:
+                    age = _now() - lock.stat().st_mtime
+                except FileNotFoundError:
+                    continue          # Let go between the two calls: try again.
+                if age >= STALE_LOCK:
+                    # Older than any real run: whoever held it is gone.
+                    lock.unlink(missing_ok=True)
+                    continue
+                if time.monotonic() >= deadline:
+                    raise Busy(
+                        f"another boardkit process is working (lock held {int(age)}s). "
+                        f"If nothing else is running, delete {lock}.") from None
+                time.sleep(0.05)
         try:
             os.write(handle, str(os.getpid()).encode())
             os.close(handle)

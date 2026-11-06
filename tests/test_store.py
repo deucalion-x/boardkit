@@ -108,9 +108,11 @@ def test_the_trail_rotates_rather_than_growing_without_bound(tmp_path):
     assert (here / "log.jsonl.1").exists()
 
 
-def test_a_second_process_is_refused_rather_than_interleaved(tmp_path):
+def test_a_second_process_is_refused_rather_than_interleaved(tmp_path, monkeypatch):
     """Agents are the intended caller, so two at once is the normal case."""
+    from boardkit import store as module
     from boardkit.store import Busy
+    monkeypatch.setattr(module, "LOCK_WAIT", 0.2)
     kept = store(tmp_path)
     with kept.held():
         try:
@@ -200,3 +202,33 @@ def test_a_host_application_can_capture_the_namespace(tmp_path, caplog):
         trail.note("pulled", items=3)
     assert any('"action": "pulled"' in record.message for record in caplog.records)
     assert [r.name for r in caplog.records] == ["boardkit.trail"]
+
+
+def test_a_held_lock_is_waited_for_rather_than_refused(tmp_path):
+    """Holders only rewrite a file; a crowd of agents queues behind one."""
+    import threading
+    import time
+
+    from boardkit.store import directory
+    kept = store(tmp_path)
+    lock = directory(kept.config) / "lock"
+    lock.write_text("1")
+    threading.Timer(0.3, lock.unlink).start()
+    began = time.monotonic()
+    with kept.held():
+        pass
+    assert time.monotonic() - began >= 0.25
+
+
+def test_a_change_is_made_to_the_snapshot_as_it_is_now(tmp_path):
+    """Not to one read before the work began, which another process may
+    have replaced in the meantime."""
+    from boardkit.board import ProjectItem
+    from boardkit.store import Snapshot
+    kept = store(tmp_path)
+    kept.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00"))
+    kept.save_state(kept.state().model_copy(
+        update={"items": (ProjectItem(id="A", number=1),)}))
+    kept.update_state(lambda now: now.model_copy(
+        update={"items": (*now.items, ProjectItem(id="B", number=2))}))
+    assert [item.id for item in kept.state().items] == ["A", "B"]

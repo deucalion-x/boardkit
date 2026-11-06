@@ -355,7 +355,7 @@ the next sync:
 
 | Command | Does |
 |---|---|
-| `board add <title> [field=value]` | Create an issue and put it on the board. `--body <text>` for its text, `--draft` for a card with no issue behind it. |
+| `board add <title> [field=value]` | Create an issue and put it on the board. `--body <text>` for its text, `--draft` for a card with no issue behind it. `--from <file.json>` creates many in one run. |
 | `board set <ref> <field> <value>` | Change a field. Sent now; queued if it cannot be, or with `--later`. `labels`, `assignees` and `parent` change the issue itself. |
 | `board comment <ref> <text>` | Record a result or a decision on the issue. |
 | `board close <ref>` / `--not-planned` | Close as completed, or as not planned for dropped work. |

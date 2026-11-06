@@ -958,3 +958,28 @@ def test_a_write_to_a_closed_card_still_applies():
     assert applies == [write] and lost == []
     folded = sync.patched(remote, [write])
     assert folded.closed[0].fields["status"] == "Done"
+
+
+def test_a_pull_keeps_an_item_another_process_created_while_it_ran():
+    """#96: a pull replaces the snapshot wholesale, so an item a parallel
+    `board add` recorded after the pull read the board was dropped."""
+    from boardkit.board import ProjectItem
+    from boardkit.store import Snapshot, now
+    from boardkit.sync import kept_young
+    pulled = Snapshot(synced_at=now(), items=(ProjectItem(id="OLD", number=1),))
+    current = Snapshot(synced_at=now(), created={"NEW": now()},
+                       items=(ProjectItem(id="OLD", number=1),
+                              ProjectItem(id="NEW", number=2)))
+    kept = kept_young(pulled, current)
+    assert [item.id for item in kept.items] == ["OLD", "NEW"]
+    assert "NEW" in kept.created
+
+
+def test_a_pull_that_lists_the_new_item_takes_its_own_copy():
+    from boardkit.board import ProjectItem
+    from boardkit.store import Snapshot, now
+    from boardkit.sync import kept_young
+    pulled = Snapshot(synced_at=now(), items=(ProjectItem(id="NEW", number=2, title="fresh"),))
+    current = Snapshot(synced_at=now(), created={"NEW": now()},
+                       items=(ProjectItem(id="NEW", number=2, title="stale"),))
+    assert [item.title for item in kept_young(pulled, current).items] == ["fresh"]

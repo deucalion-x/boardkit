@@ -322,20 +322,28 @@ def fetch_items(config: Config, ids: list[str]) -> tuple[list[dict], bool]:
 def created(store: Store, item_id: str) -> None:
     """Note an item this checkout just made, so the next pulls read it by id
     until the board lists it."""
-    if not item_id:
-        return
-    snapshot = store.state()
-    store.save_state(snapshot.model_copy(
-        update={"created": {**snapshot.created, item_id: now()}}))
+    created_all(store, [item_id])
+
+
+def created_all(store: Store, ids: list[str]) -> None:
+    stamp = now()
+    ids = [identity for identity in ids if identity]
+    if ids:
+        store.update_state(lambda snapshot: snapshot.model_copy(update={
+            "created": {**snapshot.created, **dict.fromkeys(ids, stamp)}}))
+
+
+def young(created: dict[str, str]) -> dict[str, str]:
+    """The created entries still worth reading by id."""
+    cutoff = (datetime.datetime.now(datetime.UTC)
+              - datetime.timedelta(seconds=UNLISTED_SECONDS)).isoformat(timespec="seconds")
+    return {identity: at for identity, at in created.items() if at >= cutoff}
 
 
 def unlisted(config: Config, store: Store, rows: list[dict]) -> tuple[list[dict], dict]:
     """Rows for the items created lately that the pull did not list, and the
     created entries still young enough to keep watching."""
-    cutoff = (datetime.datetime.now(datetime.UTC)
-              - datetime.timedelta(seconds=UNLISTED_SECONDS)).isoformat(timespec="seconds")
-    recent = {identity: at for identity, at in store.state().created.items()
-              if at >= cutoff}
+    recent = young(store.state().created)
     listed = {row.get("id") for row in rows}
     missing = [identity for identity in recent if identity not in listed]
     if not missing:
@@ -360,11 +368,10 @@ def refresh(config: Config, store: Store, ids: list[str]) -> bool:
     ids = [identity for identity in ids if identity]
     if not ids:
         return False
-    snapshot = store.state()
     rows, complete = fetch_items(config, ids)
     if not complete:
         return False
-    names = tuple(field.name for field in snapshot.fields)
+    names = tuple(field.name for field in store.state().fields)
     still_open = {row["content"]["number"] for row in rows
                   if row.get("content", {}).get("state") == "OPEN"}
     fresh = normalize(rows, still_open, config, names, keep_closed=True)
@@ -374,7 +381,9 @@ def refresh(config: Config, store: Store, ids: list[str]) -> bool:
     def stays(item) -> bool:
         return item.id not in ids_seen and not (item.number and item.number in numbers)
 
-    store.save_state(snapshot.model_copy(update={
+    # Folded into the snapshot as it is once the read is back, not as it was
+    # before: another process may have written it in between.
+    store.update_state(lambda snapshot: snapshot.model_copy(update={
         "items": (*filter(stays, snapshot.items),
                   *(item for item in fresh if not item.closed)),
         "closed": (*filter(stays, snapshot.closed),
@@ -532,7 +541,7 @@ def pull(config: Config, store: Store) -> Snapshot:
         issues_synced_at=issues_at,
         created=recent,
     )
-    store.save_state(snapshot)
+    snapshot = store.update_state(lambda current: kept_young(snapshot, current))
     store.ignore_file()
     note("pulled", project=target, items=len(snapshot.items),
             fields=len(snapshot.fields))
@@ -540,6 +549,22 @@ def pull(config: Config, store: Store) -> Snapshot:
         print(f"warning: {warning}")
         note("warned", about=warning)
     return snapshot
+
+
+def kept_young(pulled: Snapshot, current: Snapshot) -> Snapshot:
+    """The pull, with what another process created while it was in flight.
+
+    A pull replaces the snapshot wholesale, so an item another `board add`
+    created and recorded after this pull's read began would be dropped by it.
+    Those are the young `created` entries the pull did not list: they are
+    kept, as the snapshot now holds them, until a pull does list them.
+    """
+    created = {**young(current.created), **pulled.created}
+    listed = {item.id for item in (*pulled.items, *pulled.closed)}
+    late = tuple(item for item in current.items
+                 if item.id in created and item.id not in listed)
+    return pulled.model_copy(update={"created": created,
+                                     "items": (*pulled.items, *late)})
 
 
 def drift(snapshot: Snapshot, config: Config) -> list[str]:
@@ -849,6 +874,14 @@ def patched(snapshot: Snapshot, writes: list[Write]) -> Snapshot:
                                        "closed": folded(snapshot.closed)})
 
 
+def fresher(current: Snapshot, remote: Snapshot, refs: set[str]) -> Snapshot:
+    """`current`, with the items a push re-read taken from `remote`."""
+    read = {item.ref: item for item in remote.items if item.ref in refs}
+    return current.model_copy(update={"items": tuple(
+        read.get(item.ref, item) for item in current.items
+        if item.ref not in refs or item.ref in read)})
+
+
 def unresolved(snapshot: Snapshot, writes: list[Write]) -> list[Write]:
     """Writes whose target field the snapshot cannot name an id for."""
     return [write for write in writes
@@ -868,12 +901,11 @@ def with_fields(config: Config, store: Store, writes: list[Write]) -> None:
     Only when some write needs it, and only the fields: items are re-read
     separately, and an ordinary push asks for nothing extra here.
     """
-    snapshot = store.state()
-    if not unresolved(snapshot, writes):
+    if not unresolved(store.state(), writes):
         return
     fields = parse_fields(fetch_fields(config, number(config, store)), config)
     if fields:
-        store.save_state(snapshot.model_copy(update={"fields": fields}))
+        store.update_state(lambda snapshot: snapshot.model_copy(update={"fields": fields}))
 
 
 def refreshed(config: Config, store: Store, writes: list[Write]) -> Snapshot:
@@ -966,5 +998,7 @@ def push(config: Config, store: Store) -> tuple[int, int]:
         # roll back, so a partial failure is possible.
         store.save_pending([w for w in store.pending() if w.id not in done])
     if landed:
-        store.save_state(patched(remote, landed))
+        # Onto the snapshot as it now is: `remote` was read before the send.
+        store.update_state(lambda current: patched(
+            fresher(current, remote, {write.ref for write in writes}), landed))
     return len(landed), len(lost)
