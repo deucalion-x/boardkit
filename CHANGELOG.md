@@ -5,6 +5,17 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.7 — 2026-11-06
+
+### Changes
+- `board admin apply` creates a board under the repository's own credential;
+  `--as-me` is no longer needed for it. Checked live: the org-wide app with
+  Projects permission can create and delete a board in its organisation.
+- Linking the board to the repository is the one step GitHub refuses to an
+  app. `apply` now says so and carries on instead of failing, and the link
+  goes through GitHub's mutation rather than `gh project link`, which first
+  reads the default branch (Contents). `board admin link --as-me` links it.
+
 ## 0.4.6 — 2026-11-06
 
 ### Changes
