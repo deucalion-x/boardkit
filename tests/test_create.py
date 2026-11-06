@@ -578,3 +578,17 @@ def test_a_parent_in_the_snapshot_needs_no_lookup(made):
     add(config, store, "A child", "", {"parent": "9"})
     assert len(store.github.lookups()) == 1
     assert 'parentIssueId: "I_NINE"' in store.github.creates()[-1]
+
+
+def test_a_new_card_starts_in_the_first_column_unless_told_otherwise(tmp_path):
+    """GitHub's default workflow put every new item in Todo, so an idea
+    nobody had looked at read as ready work."""
+    from boardkit.config import Config
+    from boardkit.create import in_intake
+    config = Config(root=tmp_path, owner="o", project="1", repo="o/r",
+                    status_order=("Inbox", "Todo", "Done"))
+    assert in_intake(config, {}) == {"status": "Inbox"}
+    assert in_intake(config, {"Status": "Todo"}) == {"Status": "Todo"}
+    assert in_intake(config, {"area": "Core"}) == {"area": "Core", "status": "Inbox"}
+    bare = Config(root=tmp_path, owner="o", project="1", repo="o/r")
+    assert in_intake(bare, {}) == {}

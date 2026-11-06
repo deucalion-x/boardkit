@@ -5,6 +5,11 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Fixes
+- `board add` puts a new card, issue or draft, in the board's first column
+  when no status is given. GitHub's default "Item added to project" workflow
+  put it in Todo, so an unexamined idea read as ready work.
+
 ## 0.4.11 — 2026-11-06
 
 ### Changes

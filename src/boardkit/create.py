@@ -20,6 +20,20 @@ from .store import Store, Write
 from .trail import note
 
 
+def in_intake(config: Config, values: dict[str, str]) -> dict[str, str]:
+    """A new card starts in the first column unless a status was given.
+
+    GitHub's "Item added to project" workflow, on by default, puts every new
+    item in Todo: an idea nobody has looked at then reads as ready work.
+    """
+    from .board import key
+
+    if not config.status_order or any(key(name) == key(config.status_field)
+                                      for name in values):
+        return values
+    return {**values, config.status_field: config.status_order[0]}
+
+
 def add_draft(config: Config, store: Store, title: str, body: str,
               values: dict[str, str]) -> int:
     """Put a note on the board without making an issue of it.
@@ -31,6 +45,7 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     """
     if not title.strip():
         raise BoardError("a draft needs a title")
+    values = in_intake(config, values)
     number = store.state().project_number or config.require("project")
     made = gh_json("project", "item-create", number, "--owner", config.owner,
                    "--title", title, "--body", body or "", "--format", "json")
@@ -96,7 +111,7 @@ def add(config: Config, store: Store, title: str, body: str,
     phase, `type=<name>` sets its type as the organisation names it, and
     `labels=` and `assignees=` take names separated by commas.
     """
-    return add_many(config, store, [asked(title, body, values)])
+    return add_many(config, store, [asked(title, body, in_intake(config, values))])
 
 
 def add_from(config: Config, store: Store, source: str) -> int:
@@ -123,8 +138,8 @@ def add_from(config: Config, store: Store, source: str) -> int:
         return "" if value is None else str(value)
 
     cards = [asked(text_of(row.get("title")), text_of(row.get("body")),
-                   {key: text_of(value) for key, value in row.items()
-                    if key not in ("title", "body")})
+                   in_intake(config, {key: text_of(value) for key, value in row.items()
+                                      if key not in ("title", "body")}))
              for row in rows]
     return add_many(config, store, cards) if cards else 0
 
