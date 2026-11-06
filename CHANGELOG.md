@@ -5,6 +5,13 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.8 — 2026-11-06
+
+### Fixes
+- `board portfolio sync` on a portfolio with no board yet said
+  `board admin apply --as-me` creates it; `--as-me` is no longer needed for
+  that since 0.4.7.
+
 ## 0.4.7 — 2026-11-06
 
 ### Changes
