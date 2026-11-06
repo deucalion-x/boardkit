@@ -35,6 +35,11 @@ jobs:
       - name: test
         run: uv run pytest -q
 
+      # The committed plugin copies are what a release ships to every agent;
+      # render from this checkout's templates and refuse any drift.
+      - name: skills match their templates
+        run: uv run board install-skill --check
+
   # Everything above runs against `src/` through `pythonpath`, which cannot
   # see a file that is missing from the distribution. The skill templates are
   # data, not code, so they are exactly what a packaging mistake drops
