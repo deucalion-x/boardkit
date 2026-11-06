@@ -5,6 +5,16 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.6 — 2026-11-06
+
+### Changes
+- `board add` is three GitHub calls per batch: create, put on the board,
+  write fields. The ids it names labels, types, milestones, assignees,
+  parents, the repository and the project by are kept in the snapshot, so
+  the lookup runs only for a name not seen before; one gone stale is looked
+  up again and the create retried. The add and the field writes answer with
+  each card as a pull reads it, so nothing is read back afterwards.
+
 ## 0.4.5 — 2026-11-06
 
 ### Changes
