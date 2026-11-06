@@ -344,20 +344,24 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
 
     created = not found
     if created:
-        try:
-            credential.elevated(f"creating project {config.name!r}")
-        except credential.Missing as refused:
-            raise BoardError(str(refused)) from None
+        # Under the repository's own credential: an app with Projects
+        # permission may create a board, as checked live against the org-wide
+        # novatix-pm app. Only linking it to the repository is refused to it.
         made = gh_json("project", "create", "--owner", config.owner,
                        "--title", config.name, "--format", "json")
         number = str(made.get("number", ""))
         print(f"Created project {number}: {made.get('url', '')}")
         note("created_project", project=number, title=config.name)
         record_url(config, made.get("url", ""))
-        # Linked at birth, under the same login that made it: the repo's own
-        # app may not link, and an unlinked board is missing from the repo's
-        # Projects tab and from its issues' sidebar.
-        attach(config, number)
+        # Linked at birth when the credential may: an unlinked board is
+        # missing from the repo's Projects tab and its issues' sidebar. An app
+        # may not, and that is no reason to stop: the board is made and set
+        # up all the same, and linking is the one step left to a person.
+        try:
+            attach(config, made.get("id", ""), number)
+        except BoardError as refused:
+            print(f"  not linked to {config.repo}: {refused}")
+            note("link_refused", project=number, said=str(refused)[:200])
         if made.get("url"):
             # The kind of owner, which a repo not yet naming its board may
             # have left to the default.
@@ -716,17 +720,36 @@ def link(config: Config) -> int:
     number = locate(config)
     if not number:
         raise BoardError("no project to link; run `board admin create` first")
-    attach(config, number)
+    found = existing(config, number)
+    attach(config, found[0] if found else "", number)
     return 0
 
 
-def attach(config: Config, number: str) -> None:
+def attach(config: Config, project_id: str, number: str) -> None:
     """Link the project to the repository, as `board admin link` does.
 
-    Linking changes the repository, which an app scoped to issues and
-    projects may not do; it runs under whoever created the board.
+    GitHub refuses this to an app scoped to issues and projects ("Resource
+    not accessible by integration", checked live): it changes the
+    repository. So it is said plainly what to run instead.
+
+    The mutation rather than `gh project link`, which first reads the
+    repository's default branch — Contents, which a board's app lacks.
     """
-    # `link` is the one project verb with no --format flag; it prints a line.
-    gh("project", "link", number, "--owner", config.owner, "--repo", config.repo)
+    from .gh import graphql_partial
+    owner, name = config.repo.split("/", 1)
+    found = graphql_partial(f"{{ repository(owner: {quoted(owner)}, name: {quoted(name)}) "
+                            "{ id } }")
+    repository = ((found.get("data") or {}).get("repository") or {}).get("id")
+    if not project_id or not repository:
+        raise BoardError(f"could not read the ids of project {number} and {config.repo}")
+    answer = graphql_partial(
+        f"mutation {{ linkProjectV2ToRepository(input: {{ projectId: {quoted(project_id)}, "
+        f"repositoryId: {quoted(repository)} }}) {{ repository {{ id }} }} }}")
+    if not ((answer.get("data") or {}).get("linkProjectV2ToRepository") or {}).get("repository"):
+        said = "; ".join(e.get("message", "") for e in answer.get("errors") or [])
+        raise BoardError(
+            f"GitHub refused the link ({said or 'no reason given'}). Linking changes the "
+            "repository, which this repository's app may not do: run "
+            "`board admin link --as-me`, or link it in the board's settings.")
     print(f"  linked project {number} to {config.repo}")
     note("linked_project", project=number, repo=config.repo)

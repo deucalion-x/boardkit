@@ -74,9 +74,12 @@ unless it says otherwise.
 2. **Configure the repository:** `board init` writes `owner`, `repo` and the
    board's title. Add `--preset pm` for a board that tracks Initiatives
    along time; see [Presets](#presets).
-3. **Create the board**, if it does not exist yet: `board admin apply --as-me`.
-   Creating a project is beyond any one repository, so it uses your own `gh`
-   login, once.
+3. **Create the board**, if it does not exist yet: `board admin apply`. With
+   an app that has the Projects permission — an organisation's shared app,
+   named by `board init --app` — that is all. GitHub refuses one thing to an
+   app: linking the board to the repository, which changes the repository.
+   `apply` says so and goes on; `board admin link --as-me` links it with your
+   own `gh` login, once. Before any app exists, `--as-me` on `apply` does both.
 4. **Give the repository its own GitHub App:** `board auth app create`. It
    opens GitHub with the app already defined (`boardkit-<org>-<repo>`,
    private, no webhook, the permissions an agent needs), you click Create,

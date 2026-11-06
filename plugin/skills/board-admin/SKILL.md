@@ -96,10 +96,12 @@ the person word for word, links included, as the last thing in your reply. Do
 not summarise it or say the board is ready without it. `board admin checklist`
 prints it again, whenever someone asks how to finish the board.
 
-These run under the repository's own credential. Creating a project reaches
-beyond it, so `board admin apply` refuses and asks for `--as-me`, which uses
-the person's own gh login. Ask the person before adding `--as-me`; never add it
-to get past a refusal on your own.
+These run under the repository's own credential, creating the project
+included. Linking the project to the repository is refused to an app, because
+it changes the repository: `apply` says so and carries on, and
+`board admin link --as-me` does it with the person's own gh login. Creating an
+organisation issue type also asks for `--as-me`. Ask the person before adding
+`--as-me`; never add it to get past a refusal on your own.
 
 ## A portfolio
 

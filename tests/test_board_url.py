@@ -111,25 +111,25 @@ def test_a_created_board_is_recorded_by_url(tmp_path, capsys):
 def test_admin_create_records_the_new_board_by_url(tmp_path, monkeypatch):
     """The number exists only once GitHub has made the board, so `create`
     is where the config learns it."""
-    from boardkit import admin, credential
+    from boardkit import admin
     config = config_from(tmp_path, setup.rendered(
         {"owner": "octo", "owner_type": "org", "repo": "octo/places",
          "project_name": "Places"}))
     monkeypatch.setattr(admin.auth, "require", lambda *_: None)
-    monkeypatch.setattr(credential, "elevated", lambda *_: None)
     monkeypatch.setattr(admin, "locate", lambda _: "")
     monkeypatch.setattr(admin, "existing", lambda _c, n: ("PVT_1", ()) if n else None)
     monkeypatch.setattr(admin, "plan", lambda *_: [])
     monkeypatch.setattr(admin, "missing_labels", lambda _: [])
     monkeypatch.setattr(admin, "fetch_fields", lambda *_: [])
     monkeypatch.setattr(admin, "apply_views", lambda *_, **__: None)
-    monkeypatch.setattr(admin, "gh_json", lambda *args: {"number": 16, "url": URL})
+    monkeypatch.setattr(admin, "gh_json",
+                        lambda *args: {"number": 16, "url": URL, "id": "PVT_16"})
     sent = []
-    monkeypatch.setattr(admin, "gh", lambda *args: sent.append(args) or "")
+    monkeypatch.setattr(admin, "attach", lambda *args: sent.append(args[1:]))
     admin.apply(config, browser=False)
     assert load(tmp_path).project_url == URL
     # Linked at birth: unlinked, the repo's Projects tab and issue sidebar miss it.
-    assert ("project", "link", "16", "--owner", "octo", "--repo", "octo/places") in sent
+    assert ("PVT_16", "16") in sent
 
 
 # project.toml: the repository's identity, shared with other tools.
