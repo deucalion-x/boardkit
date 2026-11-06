@@ -348,7 +348,15 @@ def unlisted(config: Config, store: Store, rows: list[dict]) -> tuple[list[dict]
     missing = [identity for identity in recent if identity not in listed]
     if not missing:
         return [], recent
-    found, _ = fetch_items(config, missing)
+    try:
+        found, _ = fetch_items(config, missing)
+    except (Unreachable, RateLimited):
+        raise
+    except BoardError as refused:
+        # One of them deleted since — a dropped draft — refuses the whole
+        # read. They are only the young ones the pull missed: go without.
+        note("unlisted_refused", items=len(missing), said=str(refused)[-200:])
+        return [], recent
     if found:
         note("unlisted", items=len(found), reason="created moments ago, not yet listed")
     return found, recent

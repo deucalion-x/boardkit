@@ -109,10 +109,10 @@ def perform(config: Config, store: Store, action: Action) -> None:
                 f"{quoted(args['project'])}, itemId: {quoted(args['item'])} }}) "
                 "{ deletedItemId } }")
         # Gone on GitHub, so gone here, as a pull would have it.
-        with store.held():
-            snapshot = store.state()
-            store.save_state(snapshot.model_copy(update={
-                "items": tuple(i for i in snapshot.items if i.id != args["item"])}))
+        # Out of `created` too, or the next pull reads it by id and is refused.
+        store.update_state(lambda snapshot: snapshot.model_copy(update={
+            "items": tuple(i for i in snapshot.items if i.id != args["item"]),
+            "created": {k: v for k, v in snapshot.created.items() if k != args["item"]}}))
     elif action.kind == "edit" and "item" in args:
         # A draft: its title and body live on the DraftIssue, not the item.
         found = graphql(f"{{ node(id: {quoted(args['item'])}) {{ ... on ProjectV2Item "

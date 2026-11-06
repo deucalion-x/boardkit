@@ -983,3 +983,21 @@ def test_a_pull_that_lists_the_new_item_takes_its_own_copy():
     current = Snapshot(synced_at=now(), created={"NEW": now()},
                        items=(ProjectItem(id="NEW", number=2, title="stale"),))
     assert [item.title for item in kept_young(pulled, current).items] == ["fresh"]
+
+
+def test_a_young_item_deleted_since_does_not_fail_the_pull(tmp_path, monkeypatch):
+    """A draft dropped moments after it was made stays in `created`; reading
+    it by id is refused, and that must not take the whole pull down."""
+    from boardkit import sync
+    from boardkit.config import Config
+    from boardkit.gh import BoardError
+    from boardkit.store import Snapshot, Store, now
+    store = Store(Config(root=tmp_path, owner="o", repo="o/p"))
+    store.save_state(Snapshot(synced_at=now(), created={"GONE": now()}))
+
+    def refused(config, ids):
+        raise BoardError("Could not resolve to a node with the global id of 'GONE'")
+
+    monkeypatch.setattr(sync, "fetch_items", refused)
+    rows, recent = sync.unlisted(store.config, store, [])
+    assert rows == [] and "GONE" in recent
