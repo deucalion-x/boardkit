@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.10 — 2026-11-06
+
 ### Fixes
 - `board install-skill` in boardkit's own repository rendered, and `--check`
   compared against, the templates of whichever `board` ran. An older installed
