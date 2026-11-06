@@ -145,6 +145,12 @@ A parent needs its own review. Accepted children do not accept the parent.
 
 ## When a change does not land
 
+**Tell the person first.** A change that did not reach GitHub, whether refused
+before it ran, kept because GitHub was unreachable, or rejected, is the first
+line of your reply, before anything else you say about it. Until it lands, it
+is not on the board the person is looking at: never describe it as created or
+set.
+
 GitHub is the source of truth. If someone changed the same field there after
 you read it, your change loses:
 
