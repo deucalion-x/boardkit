@@ -5,6 +5,25 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.5 — 2026-11-06
+
+### Changes
+- `board add` is five GitHub calls instead of about ten: one lookup of every
+  id, one `createIssue` carrying labels, assignees, milestone, type and
+  parent, one adding it to the board, one writing its fields, one read back.
+  An unknown type or a missing parent now stops the create before anything is
+  made, as an unknown label already did. (#97)
+- `board add --from <file.json>` (or `-` for stdin) creates many issues in
+  one run, with the same five calls however many cards. (#97)
+
+### Fixes
+- Several `board add` at once no longer drop each other's items from the
+  snapshot. Every write of `state.json` now re-reads it under the lock, and a
+  held lock is waited for briefly rather than refused. (#96)
+- A sync just after `board drop` failed: the dropped draft was still listed
+  as created moments ago, and reading it by id was refused. `drop` now clears
+  it, and such a refusal no longer fails the pull.
+
 ## 0.4.4 — 2026-10-26
 
 ### Changes
