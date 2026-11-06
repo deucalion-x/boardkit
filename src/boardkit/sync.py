@@ -847,7 +847,7 @@ def apply_and_read(config: Config, writes: list[Write],
     return landed, rows
 
 
-def write_parts(writes: list[Write], snapshot: Snapshot, read: set[int] = frozenset(),
+def write_parts(writes: list[Write], snapshot: Snapshot, read: frozenset[int] | set[int] = frozenset(),
                 selection: str = "") -> list[str]:
     """One aliased mutation per write; those in `read` answer with
     `selection` rather than the bare id."""
