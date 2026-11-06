@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.11 — 2026-11-06
+
 ### Changes
 - Open pull requests that no card knows about (not on the board, closing no
   issue, naming none) are listed in `board`, found by `board find`, shown by
