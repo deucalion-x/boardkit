@@ -12,6 +12,8 @@ It then moves the changelog heading, sets the plugin's version, runs the CI
 checks, commits and pushes, waits for CI on that commit, and only then tags.
 Tagging last matters: the plugin's `scripts/board` installs the tag its version
 names, so a plugin that updated before the tag existed could not install.
+The `stable` branch then moves to the tag, for marketplaces that list the
+plugin by branch rather than follow main.
 
 Every `gh` call runs under whatever `GH_TOKEN` the caller set, or else the
 coding identity's (`board auth token --coding`): a release pushes, tags and
@@ -132,7 +134,7 @@ def release(version: str, dry: bool) -> None:
     manifest = with_version(PLUGIN.read_text(encoding="utf-8"), version)
     if dry:
         print(f"Would release {version}: changelog heading, plugin version, checks, "
-              f"commit, push, wait for CI, tag v{version}.")
+              f"commit, push, wait for CI, tag v{version}, move stable to it.")
         return
     CHANGELOG.write_text(changelog, encoding="utf-8")
     PLUGIN.write_text(manifest, encoding="utf-8")
@@ -147,6 +149,11 @@ def release(version: str, dry: bool) -> None:
     wait_for_ci(sha)
     run("git", "tag", f"v{version}")
     run("git", "push", "--quiet", "origin", f"v{version}", capture=False)
+    # `stable` is the latest release as a branch: a marketplace that lists the
+    # plugin by `ref = "stable"` gets releases only, never main between them.
+    # A plain push, so a stable that is not behind this tag is refused, not lost.
+    run("git", "push", "--quiet", "origin", f"v{version}^{{commit}}:refs/heads/stable",
+        capture=False)
     print(f"\nReleased v{version}. The plugin updates on its next start; for the "
           f"command alone:\n  uv tool install --force "
           f"\"git+https://github.com/{REPO}@v{version}\"")

@@ -43,6 +43,11 @@ changes), runs the CI checks, commits and pushes, waits for CI on that commit,
 and tags only once it is green — until the tag exists, a plugin that updated
 to the new version could not install its `board`.
 
+Last, it moves the `stable` branch to the tag. A marketplace that lists the
+plugin from this repository names `ref = "stable"`, so it carries releases
+only: on `main` the skills and hook run ahead of the `board` the launcher
+installs. novatix-skills lists it that way.
+
 ## The live contract check
 
 Every test in `tests/` mocks `gh`, so they assert the document boardkit would
