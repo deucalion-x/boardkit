@@ -18,6 +18,10 @@ A repository uses a board when it has a `project.toml` naming one, or a
 boardkit config. If `board` answers that it finds no configuration, this
 repository has no board: say so, and do not use this skill here.
 
+In Claude Code the plugin puts `board` on PATH as a session starts. If
+`board` is not found, run `"${CLAUDE_PLUGIN_ROOT}/scripts/board"` in its
+place, with the same arguments.
+
 ## Reads are free after the first, so ask as many as you need
 
 `board` answers from a snapshot on disk, so there is no reason to ration

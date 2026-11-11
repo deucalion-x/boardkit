@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"${CLAUDE_ENV_FILE:-}\" ] && \"${CLAUDE_PLUGIN_ROOT}/bin/board\" auth agent-env >> \"$CLAUDE_ENV_FILE\" 2>/dev/null; exit 0"
+            "command": "[ -n \"${CLAUDE_ENV_FILE:-}\" ] && { printf 'export PATH=\"%s:$PATH\"\\n' \"${CLAUDE_PLUGIN_ROOT}/scripts\"; \"${CLAUDE_PLUGIN_ROOT}/scripts/board\" auth agent-env 2>/dev/null; } >> \"$CLAUDE_ENV_FILE\"; exit 0"
           }
         ]
       }

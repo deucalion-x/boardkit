@@ -37,7 +37,7 @@ in your own terminal it uses your own git credentials.
 
 It refuses without both of the above, off `main`, behind `origin/main`, with
 other uncommitted changes, or for a version not after the latest tag. It then
-moves the changelog heading, sets the plugin's version (its `bin/board`
+moves the changelog heading, sets the plugin's version (its `scripts/board`
 installs that tag, and Claude Code updates a plugin only when the string
 changes), runs the CI checks, commits and pushes, waits for CI on that commit,
 and tags only once it is green — until the tag exists, a plugin that updated
@@ -73,6 +73,7 @@ having one. So it is run by hand, and the result goes in the table below.
 | 0.3.2 | 2026-10-12, reused project 3, pass (85s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Setting, removing and refusing a milestone checked by hand on the sandbox board; the contract does not cover milestones. |
 | 0.3.3 | 2026-10-12, reused project 3, pass (84s) | As 0.3.2, plus the three template tabs read back with their filters. What the type filters match was checked through `items(query:)`: hiding a type hides only that type's items, keeps their children, and an unknown type hides nothing. |
 | 0.3.5 | 2026-10-14, reused project 3, pass (93s) | Shape read back; six field types written and read back, five cleared, sprint refused; one issue created, placed, commented, edited, labelled, parented, closed and reopened, then deleted. Not covered live: `board init`'s owner-type lookup and the app owner check, which need an org repo and a browser; `board add labels=` passes `--label` to `gh issue create`, unit-tested only. |
+| 0.4.13 | 2026-11-11, skipped | No GitHub call changed: the plugin's launcher moved to `scripts/` and the SessionStart hook puts it on PATH; the login message is local. The hook was run against a temporary `CLAUDE_ENV_FILE` and `board` resolved from the plugin's `scripts/`. `claude plugin validate` passed for the marketplace and the plugin. |
 | 0.4.12 | 2026-11-06, skipped; checked live | Same field write `board add` already makes when a status is given. A draft added on boardkit's board stayed in Inbox after a sync. |
 | 0.4.11 | 2026-11-06, skipped; checked live | A new read only (open pull requests); no mutation changed. Pulled live on boardkit and Novatix-production-template. |
 | 0.4.10 | 2026-11-06, skipped | Skill rendering is local; no GitHub call changed. |

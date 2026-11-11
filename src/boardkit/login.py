@@ -109,8 +109,15 @@ def renew(app: str, tokens: dict, again: str) -> dict:
     return stamped(answer)
 
 
-def login(app: str, repo: str) -> int:
+def login(app: str, repo: str, user_board: bool = False) -> int:
     """The device flow: show a code, open the page, wait for approval."""
+    if not app and user_board:
+        # Not a missing setting: GitHub gives an app no access to a personal
+        # account's boards, so there is no app to name.
+        print(f"{repo}'s board belongs to a personal account, and GitHub gives an "
+              f"app no access to those, so there is no app to sign in through. "
+              f"Run `board auth setup` for a token for this board instead.")
+        return 1
     if not app:
         print(f"{repo} names no GitHub App to sign in through. Set app_client_id "
               f"in its boardkit config, or use `board auth setup` for a token "

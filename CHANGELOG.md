@@ -5,6 +5,19 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Fixes
+- The plugin ships `board` under `scripts/`, not `bin/`. claude.ai refuses a
+  plugin with a top-level `bin/` on organisation sync, so the novatix-skills
+  marketplace skipped boardkit. A SessionStart hook now puts it on PATH, and
+  the skills name `${CLAUDE_PLUGIN_ROOT}/scripts/board` for a shell the hook
+  did not reach (#117).
+- install.sh and `board doctor` recognise the plugin from any marketplace,
+  not only boardkit's own. With the plugin from an organisation's
+  marketplace, install.sh wrote a second copy of the skills (#117).
+- `board auth login` on a board owned by a personal account says no app can
+  reach it and names `board auth setup`, rather than asking for an
+  `app_client_id` that cannot exist.
+
 ## 0.4.12 — 2026-11-06
 
 ### Fixes

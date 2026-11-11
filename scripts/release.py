@@ -10,7 +10,7 @@ it covered. The script refuses to start without both.
 
 It then moves the changelog heading, sets the plugin's version, runs the CI
 checks, commits and pushes, waits for CI on that commit, and only then tags.
-Tagging last matters: the plugin's `bin/board` installs the tag its version
+Tagging last matters: the plugin's `scripts/board` installs the tag its version
 names, so a plugin that updated before the tag existed could not install.
 
 Every `gh` call runs under whatever `GH_TOKEN` the caller set, or else the

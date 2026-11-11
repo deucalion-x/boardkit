@@ -20,9 +20,10 @@ def config(tmp_path: pathlib.Path, **overrides) -> Config:
 
 def test_the_text_is_the_same_in_every_repo():
     """Rendered per board, two repos open at once carried two different skills
-    under one name."""
-    assert "$" not in render("board")
-    assert "$" not in render("board-admin")
+    under one name. The one `$` allowed is Claude Code's own, which it fills in
+    a plugin skill: the same text in every repository."""
+    for name in ("board", "board-admin"):
+        assert "$" not in render(name).replace("${CLAUDE_PLUGIN_ROOT}", "")
 
 
 def test_the_frontmatter_stays_first_so_the_skill_still_loads():

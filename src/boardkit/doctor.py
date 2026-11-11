@@ -28,8 +28,18 @@ def fallback_home() -> pathlib.Path:
                         or home() / ".local" / "share" / "boardkit")
 
 
+def plugin_marketplace() -> str:
+    """The marketplace the Claude Code plugin came from, or "" without it.
+    The cache keeps a plugin under its marketplace: boardkit's own, or an
+    organisation's that lists it."""
+    for found in sorted((home() / ".claude" / "plugins" / "cache").glob("*/boardkit")):
+        if found.is_dir():
+            return found.parent.name
+    return ""
+
+
 def plugin_installed() -> bool:
-    return (home() / ".claude" / "plugins" / "cache" / "boardkit").is_dir()
+    return bool(plugin_marketplace())
 
 
 def user_roots() -> list[pathlib.Path]:
@@ -179,7 +189,7 @@ def update(args: list[str]) -> int:
     if not script.is_file():
         if plugin_installed():
             print("This board comes from the Claude Code plugin, which updates itself: "
-                  "`claude plugin update boardkit@boardkit`.")
+                  f"`claude plugin update boardkit@{plugin_marketplace()}`.")
         else:
             print("This board was not installed by install.sh, so there is nothing to "
                   "update from here. Run install.sh from the boardkit repository.")

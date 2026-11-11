@@ -79,3 +79,13 @@ def test_each_app_keeps_its_own_sign_in(keychain, monkeypatch):
     credential.configure("octo/gadgets", app_id="Iv1.other")
     with pytest.raises(gh.BoardError, match="no GitHub credential for octo/gadgets"):
         gh.environment(["gh", "api", "user"])
+
+
+def test_a_personal_board_is_pointed_at_a_token_not_an_app(capsys):
+    """GitHub gives an app no access to a personal account's boards, so asking
+    for an app_client_id there sends a person looking for one that cannot exist."""
+    assert login.login("", "someone/notes", user_board=True) == 1
+    said = capsys.readouterr().out
+    assert "board auth setup" in said and "app_client_id" not in said
+    assert login.login("", "acme/widgets") == 1
+    assert "app_client_id" in capsys.readouterr().out

@@ -40,7 +40,7 @@ def shipped(name: str) -> str:
 def test_a_fresh_install_links_board_and_writes_the_skills_for_codex(home):
     install(home)
     board = home / ".local" / "bin" / "board"
-    assert f'exec "{home}/.local/share/boardkit/plugin/bin/board"' in board.read_text()
+    assert f'exec "{home}/.local/share/boardkit/plugin/scripts/board"' in board.read_text()
     for name in skill.SKILLS:
         assert (home / ".codex/skills" / name / "SKILL.md").read_text() == shipped(name)
     # No Claude Code on this machine, so no Claude skills either.
@@ -53,9 +53,18 @@ def test_claude_gets_the_skills_unless_the_plugin_already_carries_them(home):
     assert (home / ".claude/skills/board/SKILL.md").is_file()
 
     shutil.rmtree(home / ".claude/skills")
-    (home / ".claude/plugins/cache/boardkit").mkdir(parents=True)
+    (home / ".claude/plugins/cache/boardkit/boardkit").mkdir(parents=True)
     install(home)
     assert not (home / ".claude/skills").exists()
+
+
+def test_the_plugin_counts_from_any_marketplace(home):
+    """An organisation's marketplace that lists boardkit caches it under its own
+    name; its skills load just the same, so a second copy would too."""
+    (home / ".claude/plugins/cache/novatix-skills/boardkit").mkdir(parents=True)
+    install(home)
+    assert not (home / ".claude/skills").exists()
+    assert doctor.plugin_marketplace() == "novatix-skills"
 
 
 def test_board_on_path_runs_the_installed_version(home):
@@ -128,8 +137,8 @@ def test_doctor_names_every_board_on_path_and_which_wins(home, monkeypatch):
 
 
 def test_doctor_names_skill_copies_kept_in_a_repository(home, monkeypatch, tmp_path):
-    (home / ".claude/plugins/cache/boardkit").mkdir(parents=True)
-    on_path(monkeypatch, executable(home / ".claude/plugins/cache/boardkit/bin/board").parent)
+    plugin = home / ".claude/plugins/cache/boardkit/boardkit/0.4.13"
+    on_path(monkeypatch, executable(plugin / "scripts/board").parent)
     repo = tmp_path / "repo"
     copy = repo / ".claude/skills/board/SKILL.md"
     copy.parent.mkdir(parents=True)

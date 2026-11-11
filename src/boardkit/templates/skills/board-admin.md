@@ -8,6 +8,10 @@ description: Change the shape of this repository's GitHub Project board itself â
 If `board` answers that it finds no configuration, this repository has no
 board yet: `board init` makes one, and that is the only step to offer.
 
+In Claude Code the plugin puts `board` on PATH as a session starts. If
+`board` is not found, run `"${CLAUDE_PLUGIN_ROOT}/scripts/board"` in its
+place, with the same arguments.
+
 Work items are moved with `board set`; this is for when the value you need
 does not exist.
 

@@ -228,7 +228,8 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
             from . import app
             return app.create(config)
         if args[:1] == ["login"]:
-            return login.login(config.app_client_id, config.repo)
+            return login.login(config.app_client_id, config.repo,
+                               user_board=config.owner_type == "user")
         if args[:1] == ["logout"]:
             return login.logout(config.app_client_id, config.repo)
         return auth.report(config, refresh="--refresh" in args)

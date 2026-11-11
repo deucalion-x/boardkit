@@ -22,9 +22,11 @@ bin="${BOARDKIT_BIN:-$HOME/.local/bin}"
 say() { echo "boardkit: $*" >&2; }
 
 # Each agent's user skill directory. Claude's is skipped when the plugin is
-# installed, which carries the same skills: two copies would both load.
+# installed, which carries the same skills: two copies would both load. The
+# plugin is cached under the marketplace it came from (boardkit's own, or an
+# organisation's that lists it), so any marketplace counts.
 targets=("${CODEX_HOME:-$HOME/.codex}/skills")
-if [ -d "$HOME/.claude" ] && [ ! -d "$HOME/.claude/plugins/cache/boardkit" ]; then
+if [ -d "$HOME/.claude" ] && ! compgen -G "$HOME/.claude/plugins/cache/*/boardkit" >/dev/null; then
   targets+=("$HOME/.claude/skills")
 fi
 
@@ -74,7 +76,7 @@ rm -rf "$home/plugin" && mv "$home/plugin.new" "$home/plugin"
 # A wrapper rather than a link: a launcher from before links were resolved
 # looks for its manifest beside the path it was started by.
 rm -f "$bin/board"
-printf '#!/bin/sh\n# boardkit install.sh\nexec "%s/plugin/bin/board" "$@"\n' "$home" > "$bin/board"
+printf '#!/bin/sh\n# boardkit install.sh\nexec "%s/plugin/scripts/board" "$@"\n' "$home" > "$bin/board"
 chmod +x "$bin/board"
 version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$home/plugin/.claude-plugin/plugin.json")"
 
