@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-11
+
 ### Changes
 - boardkit writes only to the board linked to its repository. Before the
   first write to the board in a run, it reads the repository's linked
