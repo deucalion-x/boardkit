@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.5.1 — 2026-11-11
+
 ### Changes
 - A new board can be a copy of a template board: `[board] template = <url>`,
   `board init --template <url>`, or `board admin apply --template <url>` for
