@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.4.13 — 2026-11-11
+
 ### Fixes
 - The plugin ships `board` under `scripts/`, not `bin/`. claude.ai refuses a
   plugin with a top-level `bin/` on organisation sync, so the novatix-skills
