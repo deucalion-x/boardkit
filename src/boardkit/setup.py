@@ -20,6 +20,7 @@ from .config import (
     PROJECT_KEYS,
     Config,
     ProjectField,
+    board_url,
     find_identity,
     ignored_keys,
     preset_file,
@@ -154,6 +155,12 @@ def rendered(settings: dict, exists: bool = True, nested: bool = False,
         text = re.sub(r"^(repo = .*)$",
                       lambda line: f'{line[1]}\napp_client_id = "{settings["app_client_id"]}"',
                       text, count=1, flags=re.MULTILINE)
+    if settings.get("template"):
+        text = re.sub(r"^(preset = .*)$",
+                      lambda line: (f'{line[1]}\n# New boards are copied from this one, '
+                                    f'with what the API cannot set.\n'
+                                    f'template = "{settings["template"]}"'),
+                      text, count=1, flags=re.MULTILINE)
     if settings.get("url"):
         text = with_url(text, settings["url"])
     if nested:
@@ -184,7 +191,8 @@ def target(where: pathlib.Path) -> pathlib.Path:
     return pyproject if pyproject.exists() else where / "boardkit.toml"
 
 
-def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") -> int:
+def init(title: str = "", dry: bool = False, preset: str = "", app: str = "",
+         template: str = "") -> int:
     """`app` is the client ID of a GitHub App the repository signs in
     through, for an organisation that shares one app across its boards.
     Without it the config names no app: `board auth app create` makes one for
@@ -206,6 +214,11 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
         settings["project_name"] = title
     if app:
         settings["app_client_id"] = app
+    if template:
+        try:
+            settings["template"] = board_url(template)["project_url"]
+        except ValueError as wrong:
+            raise BoardError(f"--template: {wrong}. Nothing was written.") from None
     file = target(where)
     url = board_exists(settings)
     if url:

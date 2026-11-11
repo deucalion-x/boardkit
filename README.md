@@ -263,6 +263,40 @@ its item reaches Done and auto-archive work closed as not planned; `pm` adds
 grouping Timeline by Parent issue, sorting it by Start, and drawing both
 time views from Start to Target. `board admin checklist` prints them again.
 
+### Template boards
+
+Those steps are done once, not once per board, when new boards are copied
+from a template. GitHub's `copyProjectV2` carries everything the API cannot
+set: workflows with their filters, a view's grouping and sort, a roadmap's
+date fields. It also carries the fields, columns and views (checked live: the
+copy read back the same as its template, and the browser-only settings were
+there).
+
+```toml
+[board]
+preset = "pm"
+template = "https://github.com/orgs/<org>/projects/<number>"
+```
+
+`board init --template <url>` writes that line. `board admin apply --template
+<url>` uses one for that run only, for a repository that keeps no `[board]`
+section; the template only matters when the board is made. When `board admin apply`
+creates the board, it copies the template instead of building it, and skips
+the browser steps. It then links the repository and adds anything config
+declares that the template lacks, such as the repository's own fields. A board
+that already exists is never copied over.
+
+To make a template, once per organisation and preset:
+
+1. `board init --preset pm` in any repository, or build the board by hand.
+2. Do the steps `board admin checklist` prints.
+3. Remove anything specific to that repository, such as its own fields, then
+   mark the board as a template in its settings. It then also appears in the
+   organisation's "new project" picker.
+
+A change to the template reaches new boards only; existing boards keep the
+shape they were copied with.
+
 ### Portfolio
 
 A portfolio is an organisation's board whose items are the Initiatives of

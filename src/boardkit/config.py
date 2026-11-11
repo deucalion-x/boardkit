@@ -329,6 +329,11 @@ class Config(BaseModel):
     # settings above by `load`. Kept so `admin` can say what the preset leaves
     # to the browser.
     preset: str = ""
+    # A board a new one is copied from, rather than built field by field:
+    # `copyProjectV2` carries what the API cannot set (workflows and their
+    # filters, a roadmap's dates, a view's grouping and sort), which a preset
+    # can only list as steps for the browser. Set once per organisation.
+    template: str = ""
     # `mirror` and `links` are optional; a repo may want the board reader alone.
     # Records per request, not a cap: a pull pages until the board is
     # exhausted. 100 is GitHub's own ceiling — `first: 150` is refused with
@@ -469,6 +474,11 @@ class Config(BaseModel):
     @classmethod
     def _repo_either_form(cls, value):
         return repo_name(value)
+
+    @field_validator("template", mode="before")
+    @classmethod
+    def _template_is_a_board(cls, value):
+        return board_url(value)["project_url"] if value else value
 
     @field_validator("views", "labels", "issue_types", mode="before")
     @classmethod

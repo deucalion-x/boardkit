@@ -352,10 +352,14 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         # Under the repository's own credential: an app with Projects
         # permission may create a board, as checked live against the org-wide
         # novatix-pm app. Only linking it to the repository is refused to it.
-        made = gh_json("project", "create", "--owner", config.owner,
-                       "--title", config.name, "--format", "json")
+        if config.template:
+            made = copy_template(config)
+        else:
+            made = gh_json("project", "create", "--owner", config.owner,
+                           "--title", config.name, "--format", "json")
         number = str(made.get("number", ""))
-        print(f"Created project {number}: {made.get('url', '')}")
+        print(f"Created project {number}: {made.get('url', '')}"
+              + (f", a copy of {config.template}" if config.template else ""))
         note("created_project", project=number, title=config.name)
         record_url(config, made.get("url", ""))
         # Linked at birth when the credential may: an unlinked board is
@@ -415,7 +419,8 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
                           if entry.get("id") and key(entry.get("name", "")) in BUILT_IN})
     # Last, so it is the last thing read. `init` asks for it after its own
     # closing lines instead, for the same reason.
-    if config.preset and browser:
+    # A copy of the template arrives with what the browser steps would set.
+    if config.preset and browser and not (created and config.template):
         print()
         checklist(config, number)
     return 0
@@ -517,6 +522,9 @@ def checklist(config: Config, number: str = "") -> int:
         print("This board names no preset, so there is nothing boardkit knows "
               "to be left for the browser.")
         return 0
+    if config.template:
+        print(f"New boards are copied from {config.template}, which carries these "
+              "settings. Only a board made before `template` was set needs them by hand.")
     steps = preset_steps(config.preset)
     if not steps:
         return 0
@@ -728,6 +736,37 @@ def link(config: Config) -> int:
     found = existing(config, number)
     attach(config, found[0] if found else "", number)
     return 0
+
+
+def copy_template(config: Config) -> dict:
+    """A new board for this repository: a copy of `config.template`, titled
+    and owned as `gh project create` would make it, without the template's
+    drafts. Answers as `gh project create` does: id, number and url."""
+    from .gh import graphql_partial
+    source = board_url(config.template)
+    found = graphql_partial(
+        f"{{ template: repositoryOwner(login: {quoted(source['owner'])}) "
+        f"{{ ... on ProjectV2Owner {{ projectV2(number: {int(source['project'])}) {{ id }} }} }} "
+        f"owner: repositoryOwner(login: {quoted(config.owner)}) {{ id }} }}")
+    data = found.get("data") or {}
+    template = ((data.get("template") or {}).get("projectV2") or {}).get("id")
+    owner = (data.get("owner") or {}).get("id")
+    if not template:
+        raise BoardError(f"could not read the template {config.template}; nothing was created. "
+                         "Can this credential see it?")
+    if not owner:
+        raise BoardError(f"could not read {config.owner}; nothing was created")
+    answer = graphql_partial(
+        f"mutation {{ copyProjectV2(input: {{ projectId: {quoted(template)}, "
+        f"ownerId: {quoted(owner)}, title: {quoted(config.name)}, "
+        "includeDraftIssues: false }) { projectV2 { id number url } } }")
+    made = (((answer.get("data") or {}).get("copyProjectV2") or {}).get("projectV2") or {})
+    if not made.get("number"):
+        said = "; ".join(e.get("message", "") for e in answer.get("errors") or [])
+        raise BoardError(f"GitHub did not copy {config.template} "
+                         f"({said or 'no reason given'}); nothing was created")
+    note("copied_template", template=config.template, project=made["number"])
+    return made
 
 
 def attach(config: Config, project_id: str, number: str) -> None:

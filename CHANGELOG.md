@@ -5,6 +5,15 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- A new board can be a copy of a template board: `[board] template = <url>`,
+  `board init --template <url>`, or `board admin apply --template <url>` for
+  one run. GitHub's `copyProjectV2` carries what its API cannot set
+  (workflows and their filters, a view's grouping and sort, a roadmap's
+  dates), so a board made from a template needs no browser checklist, and
+  apply skips it. `board admin checklist` says where new boards come from.
+  README: "Template boards", including how to make one (#118).
+
 ## 0.5.0 — 2026-11-11
 
 ### Changes

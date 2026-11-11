@@ -45,13 +45,15 @@ Reads answer from the local store; only the sync verbs touch GitHub.
                              coding identity (the plugin's SessionStart hook)
   --as-me                    on any verb: use your own gh login instead of
                              this repo's credential; approved and logged
-  board init [-n] [--preset pm] [--app <client-id>] [title]
+  board init [-n] [--preset pm] [--app <client-id>] [--template <board url>] [title]
                              write the three settings a repo must decide;
                              --preset starts the board from a shipped shape;
-                             --app names the organisation's shared app
+                             --app names the organisation's shared app;
+                             --template copies a board made once by hand
   board schema               the configuration's shape, as JSON schema
-  board admin apply [-n] [--reconcile] [--prune-views] [--preset pm]
-                             add missing shape; optionally update view filters
+  board admin apply [-n] [--reconcile] [--prune-views] [--preset pm] [--template <board url>]
+                             add missing shape; optionally update view filters;
+                             a board it creates is a copy of --template
   board admin checklist      what the preset leaves to set in the browser
   board admin link           attach the project to the repository
   board portfolio sync [-n]  on a portfolio: add the listed repositories'
@@ -93,7 +95,7 @@ from . import (
     trail,
 )
 from . import board as board_module
-from .config import load
+from .config import board_url, load
 from .gh import BoardError, RateLimited, Unreachable
 from .store import Snapshot, Store, Write
 
@@ -172,13 +174,21 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     if command == "init":
         preset, args = option(args, "--preset")
         client_id, args = option(args, "--app")
+        template, args = option(args, "--template")
         return setup.init(" ".join(a for a in args if a != "-n"), dry="-n" in args,
-                          preset=preset, app=client_id)
+                          preset=preset, app=client_id, template=template)
     if command == "schema":
         return setup.schema()
 
     preset, args = option(args, "--preset") if command == "admin" else ("", args)
+    template, args = option(args, "--template") if command == "admin" else ("", args)
     config = load(preset=preset)
+    if template:
+        # For this run, as --preset is: a board is copied once, when it is made.
+        try:
+            config = config.model_copy(update={"template": board_url(template)["project_url"]})
+        except ValueError as wrong:
+            raise BoardError(f"--template: {wrong}. Nothing was written.") from None
     doctor.nudge(config.root)
     credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
