@@ -558,7 +558,11 @@ global state.
 
 - **Projects access is organisation-wide.** GitHub has no per-board scope, so a
   repository's app can reach every board of its organisation. boardkit itself
-  only touches the board its config names.
+  only writes to the board its config names, and only once that board is
+  linked to the repository: before the first write it checks the
+  repository's linked projects, and refuses otherwise, naming `board admin
+  link --as-me`. A snapshot left from another board (after the repository or
+  its board changed) is discarded rather than written through.
 - **Code work is limited by the coding identity, not by the board app.**
   Without one (see [Agent identity](#agent-identity)), pushes and pull
   requests go through your own git and `gh` credentials. Either way, what

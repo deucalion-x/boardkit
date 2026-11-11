@@ -73,6 +73,7 @@ include = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = ["link_check: runs the real check that a board is linked to its repository"]
 
 [tool.ruff]
 # Matches the prose style already in the source: a full sentence fits on a

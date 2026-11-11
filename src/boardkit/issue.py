@@ -104,6 +104,9 @@ def perform(config: Config, store: Store, action: Action) -> None:
     """Send one queued change to GitHub."""
     issue, args = action.ref, action.args
     repo = ["--repo", config.repo]
+    if action.kind in ("drop", "edit") and ("project" in args or "item" in args):
+        from . import target
+        target.check(config, store, args.get("project", ""))
     if action.kind == "drop":
         graphql(f"mutation {{ deleteProjectV2Item(input: {{ projectId: "
                 f"{quoted(args['project'])}, itemId: {quoted(args['item'])} }}) "

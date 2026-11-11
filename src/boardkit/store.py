@@ -80,6 +80,14 @@ class Snapshot(BaseModel):
     # before it was carried, which prints nothing rather than a wrong link.
     project_url: str = ""
     project_number: str = ""
+    # Whose board, and for which repository: a number alone names a different
+    # board under another owner. A snapshot of another board is discarded
+    # (`target.forget_other`), never read or written through.
+    owner: str = ""
+    repo: str = ""
+    # "<repo>|<owner>/<number>|<project id>": the board was found linked to
+    # the repository, so writes may go to it (`target.check`).
+    linked: str = ""
     synced_at: str = ""
     fields: tuple[ProjectField, ...] = ()
     # Saved tab names, so a tab deleted in the browser is noticed. Only the

@@ -5,6 +5,24 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Changes
+- boardkit writes only to the board linked to its repository. Before the
+  first write to the board in a run, it reads the repository's linked
+  projects and refuses, with nothing written, unless the board config names
+  is one of them. The answer is kept in the snapshot, so later writes cost
+  nothing. A board `admin apply` could not link (the organisation's app may
+  not) needs `board admin link --as-me` before items are written to it.
+  A refused field change stays queued and lands once the board is linked (#119).
+
+### Fixes
+- `board add`, drafts and `promote` took the board number from the snapshot
+  before the config. After a repository moved from a user to an
+  organisation, a snapshot still naming the user's project 1 put new issues
+  on the organisation's project 1, another team's board. The board now
+  always comes from the config. A snapshot records its owner and repository,
+  and one from another board is discarded, with a message, before anything
+  reads it (#119).
+
 ## 0.4.13 — 2026-11-11
 
 ### Fixes

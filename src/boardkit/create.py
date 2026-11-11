@@ -46,7 +46,9 @@ def add_draft(config: Config, store: Store, title: str, body: str,
     if not title.strip():
         raise BoardError("a draft needs a title")
     values = in_intake(config, values)
-    number = store.state().project_number or config.require("project")
+    from . import sync, target
+    target.check(config, store)
+    number = sync.number(config, store)
     made = gh_json("project", "item-create", number, "--owner", config.owner,
                    "--title", title, "--body", body or "", "--format", "json")
     from .board import ProjectItem
@@ -156,8 +158,10 @@ def add_many(config: Config, store: Store, cards: list[Asked]) -> int:
     The ids those name are kept in the snapshot, so the lookup that finds
     them is a fourth call only for a name not seen before.
     """
-    number = store.state().project_number or config.require("project")
+    from . import sync, target
+    number = sync.number(config, store)
     ids = lookup(config, store, number, cards)
+    target.check(config, store, ids["project"])
     made, refused = create_all(config, ids, cards)
     stale = [card for card, why in refused if STALE in why]
     if stale:
@@ -226,7 +230,7 @@ def lookup(config: Config, store: Store, number: str, cards: list[Asked],
                       and not parents_known.get(card.parent)
                       and not have("parents", str(card.parent))})
     kinds = any(card.kind and not have("types", card.kind) for card in cards)
-    repository_kept, project_kept = have("repository", config.repo), have("project", str(number))
+    repository_kept, project_kept = have("repository", config.repo), have("project", f"{config.owner}/{number}")
 
     found: dict[str, dict[str, str]] = {}
     if labels or people or phases or parents or kinds or not repository_kept \
@@ -239,7 +243,7 @@ def lookup(config: Config, store: Store, number: str, cards: list[Asked],
 
     if not have("repository", config.repo):
         raise BoardError(f"could not read {config.repo}; nothing was created")
-    if not have("project", str(number)):
+    if not have("project", f"{config.owner}/{number}"):
         raise BoardError(f"could not read project {number} of {config.owner}; "
                          "nothing was created")
 
@@ -262,7 +266,7 @@ def lookup(config: Config, store: Store, number: str, cards: list[Asked],
     if missing:
         raise BoardError(f"{config.repo} has {'; '.join(missing)}; nothing was created")
     return {"repository": have("repository", config.repo),
-            "project": have("project", str(number)),
+            "project": have("project", f"{config.owner}/{number}"),
             "labels": {one: have("labels", one) for c in cards for one in c.labels},
             "assignees": {one: have("assignees", one) for c in cards for one in c.assignees},
             "milestones": {c.milestone: have("milestones", c.milestone)
@@ -308,7 +312,7 @@ def fetch_ids(config: Config, number: str, labels: list[str], people: list[str],
     types = [node for node in (repository.get("issueTypes") or {}).get("nodes") or [] if node]
     return {
         "repository": kept([(config.repo, repository.get("id", ""))]),
-        "project": kept([(str(number), project or "")]),
+        "project": kept([(f"{config.owner}/{number}", project or "")]),
         "labels": kept((one, (repository.get(f"l{i}") or {}).get("id", ""))
                        for i, one in enumerate(labels)),
         "assignees": kept((one, matching(f"u{i}", one, "login"))
@@ -411,8 +415,9 @@ def onto_board(config: Config, store: Store, issue: int, url: str) -> None:
     own, and its fields cannot be set until it is there. `item-add` is
     idempotent, so an issue already on it is left as it is.
     """
-    from . import sync
-    number = store.state().project_number or config.require("project")
+    from . import sync, target
+    target.check(config, store)
+    number = sync.number(config, store)
     added = gh_json("project", "item-add", number, "--owner", config.owner,
                     "--url", url, "--format", "json")
     print(f"Added #{issue} to the board")
@@ -446,6 +451,8 @@ def promote(config: Config, store: Store, ref: str) -> int:
     if not item.draft:
         raise BoardError(
             f"#{item.ref} is already an issue ({item.url or 'no url recorded'})")
+    from . import target
+    target.check(config, store, snapshot.project_id)
     # The repository's node id, which the mutation needs and the snapshot has
     # no reason to carry: this is the only call that wants it.
     owner, name = config.repo.split("/", 1)

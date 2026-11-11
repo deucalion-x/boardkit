@@ -43,3 +43,14 @@ def no_real_identities(monkeypatch):
     from boardkit import coding, doctor
     monkeypatch.setattr(coding, "stored", lambda: None)
     monkeypatch.setattr(doctor, "personal_login", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def boards_are_linked(request, monkeypatch):
+    """Every board a test writes to counts as its repository's, unless the
+    test is about that check (`@pytest.mark.link_check`): the check is one
+    more GitHub call that every other test would otherwise have to mock."""
+    if "link_check" in request.keywords:
+        return
+    from boardkit import target
+    monkeypatch.setattr(target, "check", lambda config, store, project_id="": project_id)

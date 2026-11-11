@@ -365,14 +365,27 @@ def test_a_draft_is_remembered_as_a_draft_not_an_issue(made):
     assert item is not None and item.draft and item.number == 0
 
 
-def test_the_project_number_comes_from_the_snapshot_when_it_has_one(made):
+def test_the_board_config_names_wins_over_the_snapshot(made):
+    """#119: a snapshot kept from the repository's old board said project 9,
+    config named 4, and the issue went to the 9 of the new owner, another
+    team's board. The snapshot is a cache of config's board, never which one."""
+    from boardkit.create import add
+    config, store, calls = made
+    store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00",
+                              project_number="9"))
+    add(config, store, "A thing", "", {})
+    assert "projectV2(number: 4)" in sent(calls)[0]
+    assert "number: 9" not in sent(calls)[0]
+
+
+def test_a_board_named_by_title_uses_the_number_the_snapshot_found(made):
     """Config may name the project by title rather than number, and the
     snapshot is where the looked-up number is kept."""
     from boardkit.create import add
     config, store, calls = made
     store.save_state(Snapshot(synced_at="2026-10-03T00:00:00+00:00",
                               project_number="9"))
-    add(config, store, "A thing", "", {})
+    add(config.model_copy(update={"project": ""}), store, "A thing", "", {})
     assert "projectV2(number: 9)" in sent(calls)[0]
 
 

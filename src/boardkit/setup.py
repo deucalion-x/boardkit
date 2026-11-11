@@ -249,6 +249,8 @@ def init(title: str = "", dry: bool = False, preset: str = "", app: str = "") ->
     config = load(where)
     store = Store(config)
     admin.apply(config, browser=False)
+    config = load(where)
+    store = Store(config)
     sync.pull(config, store)
     # From the snapshot: a board created just now is not in `config`, which
     # was read before `apply` recorded its URL.

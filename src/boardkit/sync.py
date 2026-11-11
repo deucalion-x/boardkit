@@ -618,6 +618,8 @@ def pull(config: Config, store: Store) -> Snapshot:
         project_id=board["id"],
         project_url=board.get("url", ""),
         project_number=target,
+        owner=config.owner,
+        repo=config.repo,
         synced_at=now(),
         fields=fields,
         views=tuple(board.get("views", ())),
@@ -652,7 +654,8 @@ def kept_young(pulled: Snapshot, current: Snapshot) -> Snapshot:
     late = tuple(item for item in current.items
                  if item.id in created and item.id not in listed)
     return pulled.model_copy(update={"created": created,
-                                     "items": (*pulled.items, *late)})
+                                     "items": (*pulled.items, *late),
+                                     "linked": current.linked})
 
 
 def drift(snapshot: Snapshot, config: Config) -> list[str]:
@@ -1095,6 +1098,9 @@ def push(config: Config, store: Store) -> tuple[int, int]:
     # no-op.
     for write, current, why in lost:
         store.reject(write, remote=current, reason=why)
+    if applies:
+        from . import target
+        target.check(config, store, remote.project_id)
     landed = apply_all(applies, remote)
     for write in landed:
         note("pushed", id=write.id, ref=write.ref, field=write.field,

@@ -89,6 +89,7 @@ from . import (
     setup,
     skill,
     sync,
+    target,
     trail,
 )
 from . import board as board_module
@@ -181,6 +182,7 @@ def dispatch(command: str, args: list[str], as_me: bool = False) -> int:
     doctor.nudge(config.root)
     credential.configure(config.repo, elevated=as_me, app_id=config.app_client_id)
     store = Store(config)
+    target.forget_other(config, store)
     quota.begin(command)
     # Named once per command, because three files can hold this configuration
     # and the costly confusion is editing one that is not the one being read.

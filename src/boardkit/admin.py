@@ -343,6 +343,11 @@ def apply(config: Config, dry: bool = False, reconcile: bool = False,
         return 0
 
     created = not found
+    if found is not None:
+        from .store import Store
+        from .target import check
+        located = config if config.project else config.model_copy(update={"project": number})
+        check(located, Store(config), found[0])
     if created:
         # Under the repository's own credential: an app with Projects
         # permission may create a board, as checked live against the org-wide
