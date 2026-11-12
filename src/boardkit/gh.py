@@ -70,10 +70,16 @@ def environment(args: list[str]) -> dict[str, str] | None:
     anything else — `git` above all — keeps its own."""
     if args[0] != "gh":
         return None
+    from . import login
     try:
         return credential.environment()
     except credential.Missing as missing:
         raise BoardError(str(missing)) from None
+    except login.Unanswered as silent:
+        # Unreachable, so a read falls back to the snapshot as it would for
+        # any call GitHub left unanswered.
+        note("unreachable", command="sign-in renewal", said=str(silent))
+        raise Unreachable(str(silent)) from None
 
 
 def once(args: list[str]) -> subprocess.CompletedProcess:

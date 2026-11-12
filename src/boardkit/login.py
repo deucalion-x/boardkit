@@ -36,6 +36,11 @@ class LoginError(RuntimeError):
     """Signing in, or staying signed in, did not work. Says what to do."""
 
 
+class Unanswered(LoginError):
+    """GitHub did not answer a renewal. The stored sign-in is untouched, so
+    waiting is the fix, not signing in again."""
+
+
 def post(url: str, fields: dict[str, str]) -> dict:
     """One form POST to GitHub's OAuth endpoints, answered in JSON."""
     request = urllib.request.Request(
@@ -101,8 +106,15 @@ def renew(app: str, tokens: dict, again: str) -> dict:
     """A fresh pair from the refresh token, or a LoginError naming `again`."""
     if not tokens.get("refresh_token") or tokens.get("refresh_expires_at", 0) <= time.time():
         raise LoginError(f"your boardkit sign-in has expired. Run `{again}`.")
-    answer = post(TOKEN, {"client_id": app, "grant_type": "refresh_token",
-                          "refresh_token": tokens["refresh_token"]})
+    try:
+        answer = post(TOKEN, {"client_id": app, "grant_type": "refresh_token",
+                              "refresh_token": tokens["refresh_token"]})
+    except OSError as silent:
+        # A timeout or a dropped connection, typically the first call after
+        # the machine wakes. Said as unreachability, not as a lapsed sign-in.
+        raise Unanswered(f"GitHub did not answer the renewal of your boardkit "
+                         f"sign-in ({getattr(silent, 'reason', silent) or 'no response'}). "
+                         f"Nothing was lost; run this again in a moment.") from None
     if "access_token" not in answer:
         raise LoginError(f"GitHub would not renew your boardkit sign-in "
                          f"({answer.get('error', 'no reason given')}). Run `{again}`.")

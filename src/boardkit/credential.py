@@ -105,6 +105,8 @@ def environment() -> dict[str, str] | None:
     if not token:
         try:
             token = login.access_token(app)
+        except login.Unanswered:
+            raise
         except login.LoginError as expired:
             raise Missing(str(expired)) from None
     token = token or stored(repo)

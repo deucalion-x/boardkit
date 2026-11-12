@@ -89,3 +89,22 @@ def test_a_personal_board_is_pointed_at_a_token_not_an_app(capsys):
     assert "board auth setup" in said and "app_client_id" not in said
     assert login.login("", "acme/widgets") == 1
     assert "app_client_id" in capsys.readouterr().out
+
+
+def test_a_renewal_github_leaves_unanswered_is_unreachable_not_a_lapsed_sign_in(keychain, monkeypatch):
+    stored = {"access_token": "old", "refresh_token": "ghr_x",
+              "expires_at": time.time() + 10, "refresh_expires_at": time.time() + 9999}
+    keychain[APP] = dict(stored)
+
+    def silent(url, fields):
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(login, "post", silent)
+    monkeypatch.setattr(gh, "note", lambda *a, **k: None)
+    credential.configure("octo/widgets", app_id=APP)
+    try:
+        with pytest.raises(gh.Unreachable, match="did not answer the renewal"):
+            gh.environment(["gh", "api"])
+    finally:
+        credential.configure(None)  # type: ignore[arg-type]
+    # The sign-in is kept as it was, to renew on the next call.
+    assert keychain[APP] == stored
