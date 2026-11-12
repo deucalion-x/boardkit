@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.5.2 — 2026-11-12
+
 ### Fixes
 - A sign-in renewal GitHub leaves unanswered, typically the first call after
   the machine wakes, is now said as GitHub being unreachable: a read answers
