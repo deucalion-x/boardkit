@@ -154,9 +154,10 @@ def release(version: str, dry: bool) -> None:
     # A plain push, so a stable that is not behind this tag is refused, not lost.
     run("git", "push", "--quiet", "origin", f"v{version}^{{commit}}:refs/heads/stable",
         capture=False)
-    print(f"\nReleased v{version}. The plugin updates on its next start; for the "
-          f"command alone:\n  uv tool install --force "
-          f"\"git+https://github.com/{REPO}@v{version}\"")
+    # Not `uv tool install`: a hand-made install never updates, and a stale
+    # `board` ahead on another agent's PATH is how Codex ended up on 0.4.12.
+    print(f"\nReleased v{version}. The plugin updates on its next start; Codex "
+          f"and other agents (install.sh) with:\n  board self update")
 
 
 def credential(environ: dict[str, str]) -> None:
