@@ -5,6 +5,8 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+## 0.5.3 — 2026-11-20
+
 ### Fixes
 - A local snapshot this version cannot read, such as one a newer boardkit
   wrote with fields this one does not know, is now pulled again from GitHub
