@@ -35,6 +35,17 @@ def test_a_snapshot_round_trips_with_the_ids_a_push_needs(tmp_path):
     assert read_back.field("workstream").option_ids == {"Maps": "O_1"}
 
 
+def test_a_snapshot_this_version_cannot_read_is_pulled_again(tmp_path):
+    kept = seeded(tmp_path)
+    path = tmp_path / ".boardkit" / "state.json"
+    newer = json.loads(path.read_text(encoding="utf-8"))
+    newer["carried_by_a_later_release"] = "x"
+    path.write_text(json.dumps(newer), encoding="utf-8")
+    assert kept.state().empty
+    path.write_text("{\"project_id\": ", encoding="utf-8")
+    assert kept.state().empty
+
+
 def test_a_queued_write_remembers_what_it_was_decided_against(tmp_path):
     kept = seeded(tmp_path)
     write = kept.queue("7", "status", "In progress")

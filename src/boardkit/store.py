@@ -26,7 +26,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from . import quota, trail
 from .board import ProjectItem
@@ -258,7 +258,13 @@ class Store:
 
     # state ---------------------------------------------------------------
     def state(self) -> Snapshot:
-        return Snapshot.model_validate(self._read(STATE, "{}"))
+        # A cache, so one this version cannot read is a miss, not a crash: a
+        # snapshot written by another boardkit (a newer one carries fields an
+        # older one forbids) or cut short is pulled again from GitHub.
+        try:
+            return Snapshot.model_validate(self._read(STATE, "{}"))
+        except (ValidationError, ValueError):
+            return Snapshot()
 
     def save_state(self, snapshot: Snapshot) -> None:
         self._write(STATE, snapshot.model_dump(mode="json"))

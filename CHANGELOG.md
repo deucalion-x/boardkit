@@ -5,6 +5,12 @@ All notable changes to boardkit are recorded here. Releases follow
 
 ## Unreleased
 
+### Fixes
+- A local snapshot this version cannot read, such as one a newer boardkit
+  wrote with fields this one does not know, is now pulled again from GitHub
+  instead of crashing every read. Two `board` versions on one machine (the
+  plugin's for Claude Code, an older one for Codex) no longer break each other.
+
 ## 0.5.2 — 2026-11-12
 
 ### Fixes
